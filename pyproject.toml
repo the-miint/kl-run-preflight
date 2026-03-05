@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64", "versioningit>=2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sequencing-brief"
+dynamic = ["version"]
+description = "Normalized SQLite representation of sequencing sample sheets, with round-trip support for legacy omnibus CSV formats."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.versioningit]
+
+[tool.versioningit.write]
+file = "src/sequencing_brief/_version.py"
+
+[tool.setuptools.package-data]
+sequencing_brief = ["sql/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"

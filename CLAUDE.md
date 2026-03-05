@@ -1,4 +1,4 @@
-# sql_samplesheet
+# sequencing_brief
 
 ## Naming
 
@@ -9,8 +9,7 @@ the vendor-specific input file submitted to the sequencing facility — that is 
 Illumina "sample sheet," a PacBio "manifest," etc. Historically this concept was
 called a "sample sheet" because it originated from the Illumina term, but that
 name is being retired to avoid conflating the internal handoff with any
-vendor-specific format. The repository is currently named `sql_samplesheet`
-pending rename.
+vendor-specific format.
 
 ## Project Overview
 
@@ -81,7 +80,7 @@ unless the format introduces structurally new data.
 
 ## Project Structure
 
-No pyproject.toml yet. Source is in `src/sequencing_brief/`.
+Build config is in `pyproject.toml`. Source is in `src/sequencing_brief/`.
 Tests are in `tests/`. SQL schema is in `src/sequencing_brief/sql/`.
 
 | File | Role |
@@ -95,11 +94,15 @@ Tests are in `tests/`. SQL schema is in `src/sequencing_brief/sql/`.
 | `src/sequencing_brief/formatting.py` | Defines shared formatting (boolean columns, bcl_scrub_name) |
 | `src/sequencing_brief/cli.py` | Specifies CLI entry point for round-trip testing |
 
+## Ticket Tracking
+
+When a ticket is completed, move it from "Open Tickets" to the "Completed"
+table in `docs/tickets.md` before considering the work done.
+
 ## Testing
 
-- Framework: **unittest** (not pytest)
-- VS Code configured for unittest discovery
-- Run tests: `python -m unittest discover -v -s . -p "test_*.py"`
+- Framework: **pytest**
+- Run tests: `pytest`
 - Tests are round-trip: parse real CSV → DB → reconstruct → compare to original
 - Test data: real sample sheet CSVs in `tests/data/`
 - `DEBUG_OUTPUT_DIR` in test_roundtrip.py writes DB + CSV to disk when set
