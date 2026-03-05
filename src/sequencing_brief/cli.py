@@ -74,9 +74,17 @@ def main():
     # Print table row counts for verification.
     cur = conn.cursor()
     for table in [
-        "assay_type", "sequencing_platform", "project", "input_plate",
-        "sample_type", "input_sample", "sequencing_run", "compression_sample",
-        "illumina_run", "illumina_sample", "pacbio_sample",
+        "assay_type",
+        "sequencing_platform",
+        "project",
+        "input_plate",
+        "sample_type",
+        "input_sample",
+        "sequencing_run",
+        "compression_sample",
+        "illumina_run",
+        "illumina_sample",
+        "pacbio_sample",
         "metagenomic_absquant_sample",
     ]:
         cur.execute(f"SELECT COUNT(*) FROM {table}")

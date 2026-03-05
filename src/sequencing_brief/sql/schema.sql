@@ -129,6 +129,38 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'orig_name,destination_well_384',
      'contains_replicates', 'Well_description');
 
+-- Format: pacbio_metag v10
+INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
+    VALUES ('pacbio_metag', 10);
+
+INSERT INTO legacy_samplesheet_view VALUES
+    (4, 'Header',         1, 'omnibus_pacbio_absquant_v11_header',         'header_kv'),
+    (4, 'Data',           2, 'omnibus_pacbio_metag_v10_data',              'tabular'),
+    (4, 'Bioinformatics', 3, 'omnibus_pacbio_absquant_v11_bioinformatics', 'tabular'),
+    (4, 'Contact',        4, 'omnibus_contact',                            'tabular'),
+    (4, 'SampleContext',  5, 'omnibus_sample_context',                     'tabular');
+
+INSERT INTO legacy_samplesheet_optional_columns VALUES
+    (4, 'Data', 'replicates',
+     'orig_name,destination_well_384',
+     'contains_replicates', 'Well_description');
+
+-- Format: pacbio_absquant v10
+INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
+    VALUES ('pacbio_absquant', 10);
+
+INSERT INTO legacy_samplesheet_view VALUES
+    (5, 'Header',         1, 'omnibus_pacbio_absquant_v11_header',         'header_kv'),
+    (5, 'Data',           2, 'omnibus_pacbio_absquant_v10_data',           'tabular'),
+    (5, 'Bioinformatics', 3, 'omnibus_pacbio_absquant_v11_bioinformatics', 'tabular'),
+    (5, 'Contact',        4, 'omnibus_contact',                            'tabular'),
+    (5, 'SampleContext',  5, 'omnibus_sample_context',                     'tabular');
+
+INSERT INTO legacy_samplesheet_optional_columns VALUES
+    (5, 'Data', 'replicates',
+     'orig_name,destination_well_384',
+     'contains_replicates', 'Well_description');
+
 -- ============================================================
 -- Core Domain Tables
 -- ============================================================
@@ -333,14 +365,15 @@ CREATE VIEW omnibus_pacbio_absquant_v11_header AS
     JOIN assay_type at ON sr.assay_type_id = at.assay_type_id
     JOIN legacy_samplesheet_format lf ON sr.legacy_format_id = lf.legacy_format_id;
 
-CREATE VIEW omnibus_pacbio_absquant_v11_data AS
+-- Base PacBio absquant data view (no twist_adaptor_id or syndna_is_twisted).
+-- v11 builds on this by adding those columns.
+CREATE VIEW omnibus_pacbio_absquant_v10_data AS
     SELECT cs.run_id,
         cs.compression_sample_id AS "Sample_ID",
         COALESCE(cs.sample_name, ins.sample_name) AS "Sample_Name",
         ip.plate_name AS "Sample_Plate",
         ins.well AS "Sample_Well",
         ps.barcode_id AS "barcode_id",
-        ps.twist_adaptor_id AS "twist_adaptor_id",
         COALESCE(p.project_name,
             (SELECT p2.project_name FROM project p2
              WHERE p2.project_id = ip.primary_project_id)
@@ -350,7 +383,6 @@ CREATE VIEW omnibus_pacbio_absquant_v11_data AS
         ma.extracted_gdna_concentration AS "extracted_gdna_concentration_ng_ul",
         ip.elution_vol AS "vol_extracted_elution_ul",
         ma.syndna_pool_number AS "syndna_pool_number",
-        ps.syndna_is_twisted AS "syndna_is_twisted",
         ins.sample_name AS "orig_name",
         cs.compression_well AS "destination_well_384",
         1 AS "Lane"
@@ -361,6 +393,28 @@ CREATE VIEW omnibus_pacbio_absquant_v11_data AS
     JOIN pacbio_sample ps ON cs.compression_sample_id = ps.compression_sample_id
     LEFT JOIN metagenomic_absquant_sample ma
         ON cs.compression_sample_id = ma.compression_sample_id;
+
+-- Adds twist_adaptor_id and syndna_is_twisted to the v10 base view.
+CREATE VIEW omnibus_pacbio_absquant_v11_data AS
+    SELECT v10.run_id,
+        v10."Sample_ID",
+        v10."Sample_Name",
+        v10."Sample_Plate",
+        v10."Sample_Well",
+        v10."barcode_id",
+        ps.twist_adaptor_id AS "twist_adaptor_id",
+        v10."Sample_Project",
+        v10."Well_description",
+        v10."mass_syndna_input_ng",
+        v10."extracted_gdna_concentration_ng_ul",
+        v10."vol_extracted_elution_ul",
+        v10."syndna_pool_number",
+        ps.syndna_is_twisted AS "syndna_is_twisted",
+        v10."orig_name",
+        v10."destination_well_384",
+        v10."Lane"
+    FROM omnibus_pacbio_absquant_v10_data v10
+    JOIN pacbio_sample ps ON v10."Sample_ID" = ps.compression_sample_id;
 
 CREATE VIEW omnibus_pacbio_absquant_v11_bioinformatics AS
     SELECT DISTINCT cs.run_id,
@@ -379,17 +433,18 @@ CREATE VIEW omnibus_pacbio_absquant_v11_bioinformatics AS
              p.experiment_design_description;
 
 -- ============================================================
--- Omnibus Reconstruction Views — PacBio Metag v11
+-- Omnibus Reconstruction Views — PacBio Metag v10
 -- ============================================================
 
-CREATE VIEW omnibus_pacbio_metag_v11_data AS
+-- Base PacBio metag data view (no twist_adaptor_id).
+-- v11 builds on this by adding twist_adaptor_id.
+CREATE VIEW omnibus_pacbio_metag_v10_data AS
     SELECT cs.run_id,
         cs.compression_sample_id AS "Sample_ID",
         COALESCE(cs.sample_name, ins.sample_name) AS "Sample_Name",
         ip.plate_name AS "Sample_Plate",
         ins.well AS "Sample_Well",
         ps.barcode_id AS "barcode_id",
-        ps.twist_adaptor_id AS "twist_adaptor_id",
         COALESCE(p.project_name,
             (SELECT p2.project_name FROM project p2
              WHERE p2.project_id = ip.primary_project_id)
@@ -403,6 +458,27 @@ CREATE VIEW omnibus_pacbio_metag_v11_data AS
     JOIN input_plate ip ON ins.input_plate_id = ip.input_plate_id
     LEFT JOIN project p ON ins.project_id = p.project_id
     JOIN pacbio_sample ps ON cs.compression_sample_id = ps.compression_sample_id;
+
+-- ============================================================
+-- Omnibus Reconstruction Views — PacBio Metag v11
+-- ============================================================
+
+-- Adds twist_adaptor_id to the v10 base view.
+CREATE VIEW omnibus_pacbio_metag_v11_data AS
+    SELECT v10.run_id,
+        v10."Sample_ID",
+        v10."Sample_Name",
+        v10."Sample_Plate",
+        v10."Sample_Well",
+        v10."barcode_id",
+        ps.twist_adaptor_id AS "twist_adaptor_id",
+        v10."Sample_Project",
+        v10."Well_description",
+        v10."orig_name",
+        v10."destination_well_384",
+        v10."Lane"
+    FROM omnibus_pacbio_metag_v10_data v10
+    JOIN pacbio_sample ps ON v10."Sample_ID" = ps.compression_sample_id;
 
 -- ============================================================
 -- Omnibus Reconstruction Views — Standard Metag v101

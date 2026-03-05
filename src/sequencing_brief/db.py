@@ -4,11 +4,14 @@ The schema DDL lives in ``schema.sql`` alongside this module so it can be
 read and edited independently of the Python code.
 """
 
+from __future__ import annotations
+
 import sqlite3
 from pathlib import Path
 
 from .constants import (
     COL_BARCODE_ID,
+    COL_RUN_ID,
     COL_BARCODES_ARE_RC,
     COL_DESTINATION_WELL_384,
     COL_EMAIL,
@@ -97,8 +100,74 @@ def create_db(db_path: str) -> sqlite3.Connection:
 
 
 # ---------------------------------------------------------------------------
+# View introspection
+# ---------------------------------------------------------------------------
+
+
+def introspect_view(cur, view_name: str) -> tuple[list[str], bool]:
+    """Return column names (excluding run_id) and whether run_id exists.
+
+    Issues a single PRAGMA table_info call per view so callers never
+    need to re-query the view schema.
+
+    Args:
+        cur: An open SQLite cursor.
+        view_name: Name of the SQL view to introspect.
+
+    Returns:
+        tuple[list[str], bool]: (column names sans run_id, has_run_id).
+    """
+    cur.execute(f"PRAGMA table_info({view_name})")
+    all_info = cur.fetchall()
+    has_run_id = any(row[1] == COL_RUN_ID for row in all_info)
+    cols = [row[1] for row in all_info if row[1] != COL_RUN_ID]
+    return cols, has_run_id
+
+
+def get_view_columns(cur, view_name: str) -> list[str]:
+    """Return the column names of a SQL view, excluding run_id.
+
+    Thin wrapper around introspect_view for callers that only need
+    the column list.
+
+    Args:
+        cur: An open SQLite cursor.
+        view_name: Name of the SQL view to introspect.
+
+    Returns:
+        list[str]: Ordered list of column names from the view, with
+        run_id omitted.
+    """
+    cols, _ = introspect_view(cur, view_name)
+    return cols
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _parse_bool_str(value: str | None, *, nullable: bool = False) -> int | None:
+    """Convert a boolean-ish string to an integer 0 or 1.
+
+    Recognises "false" and "0" (case-insensitive) as falsy; everything
+    else is truthy.  When *nullable* is True, empty strings and None
+    return None instead of an integer.
+
+    Args:
+        value: The string to parse ("True", "False", "0", "1", etc.).
+        nullable: If True, return None for empty or None values.
+
+    Returns:
+        int | None: 0 for falsy, 1 for truthy, or None if nullable and
+        the value is empty/None.
+    """
+    if nullable and value in ("", None):
+        return None
+    if isinstance(value, str) and value.lower() in ("false", "0"):
+        return 0
+    return 1
+
 
 def _lookup_id(cur, table: str, col: str, value) -> int:
     """Return the primary-key rowid for the row where *col* equals *value*.
@@ -125,6 +194,7 @@ def _lookup_id(cur, table: str, col: str, value) -> int:
 # ---------------------------------------------------------------------------
 # Main populate entry-point
 # ---------------------------------------------------------------------------
+
 
 def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     """Insert all parsed omnibus data into *conn*.
@@ -160,13 +230,8 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         control_names[row[COL_SC_SAMPLE_NAME]] = CONTEXT_TYPE_MAP.get(st, st)
 
     # -- Resolve reference-table IDs ----------------------------------------
-    cur.execute("SELECT assay_type_id FROM assay_type WHERE name = ?",
-                (header[FIELD_ASSAY],))
-    assay_type_id = cur.fetchone()[0]
-
-    cur.execute("SELECT platform_id FROM sequencing_platform WHERE name = ?",
-                (platform_name,))
-    platform_id = cur.fetchone()[0]
+    assay_type_id = _lookup_id(cur, "assay_type", "name", header[FIELD_ASSAY])
+    platform_id = _lookup_id(cur, "sequencing_platform", "name", platform_name)
 
     # Cache all sample_type IDs for quick lookup.
     cur.execute("SELECT sample_type_id, name FROM sample_type")
@@ -189,9 +254,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     project_ids: dict[str, int] = {}
     for bio in bio_rows:
         proj_name = bio[COL_SAMPLE_PROJECT]
-        human_filt = (
-            0 if bio.get(COL_HUMAN_FILTERING, "True").lower() == "false" else 1
-        )
+        human_filt = _parse_bool_str(bio.get(COL_HUMAN_FILTERING, "True"))
         cur.execute(
             """INSERT INTO project
                (project_name, qiita_id, contact_email,
@@ -207,6 +270,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
                 bio[COL_EXPERIMENT_DESIGN_DESCRIPTION],
             ),
         )
+        assert cur.lastrowid is not None
         project_ids[proj_name] = cur.lastrowid
 
     # -- Insert input plates ------------------------------------------------
@@ -230,6 +294,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             "VALUES (?, ?, ?)",
             (pname, proj_id, elution),
         )
+        assert cur.lastrowid is not None
         plate_ids[pname] = cur.lastrowid
 
     # -- Insert sequencing run ----------------------------------------------
@@ -251,6 +316,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             legacy_format_id,
         ),
     )
+    assert cur.lastrowid is not None
     run_id = cur.lastrowid
 
     # -- Illumina-specific run config (Reads + Settings + Bioinformatics) ---
@@ -274,7 +340,9 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         project_name = row[COL_SAMPLE_PROJECT]
 
         # For replicates, the real sample identity is orig_name.
-        orig_name = row.get(COL_ORIG_NAME, sample_name) if has_replicates else sample_name
+        orig_name = (
+            row.get(COL_ORIG_NAME, sample_name) if has_replicates else sample_name
+        )
         dest_well = row.get(COL_DESTINATION_WELL_384, well) if has_replicates else well
 
         is_control = sample_name in control_names or orig_name in control_names
@@ -297,9 +365,15 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
                 """INSERT INTO input_sample
                    (sample_name, input_plate_id, well, project_id, sample_type_id)
                    VALUES (?, ?, ?, ?, ?)""",
-                (orig_name, plate_ids[plate_name], well,
-                 sample_project_id, type_ids[st_name]),
+                (
+                    orig_name,
+                    plate_ids[plate_name],
+                    well,
+                    sample_project_id,
+                    type_ids[st_name],
+                ),
             )
+            assert cur.lastrowid is not None
             input_sample_id = cur.lastrowid
             input_sample_cache[cache_key] = input_sample_id
 
@@ -313,6 +387,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
                VALUES (?, ?, ?, ?, ?)""",
             (run_id, input_sample_id, dest_well, comp_sample_name, well_desc),
         )
+        assert cur.lastrowid is not None
         cs_id = cur.lastrowid
 
         # -- Platform-specific sample tables --
@@ -327,6 +402,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 # ---------------------------------------------------------------------------
 # Platform-specific helpers
 # ---------------------------------------------------------------------------
+
 
 def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
     """Insert a single illumina_run row for the given sequencing run.
@@ -350,8 +426,7 @@ def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
     read2 = int(reads[1]) if len(reads) > 1 else 0
 
     # ReverseComplement is stored as "0"/"1" in Settings.
-    rc = settings.get(FIELD_REVERSE_COMPLEMENT, "0")
-    rc_bool = 0 if rc in ("0", "False", "false") else 1
+    rc_bool = _parse_bool_str(settings.get(FIELD_REVERSE_COMPLEMENT, "False"))
 
     # Adapter sequences and BarcodesAreRC come from Bioinformatics
     # (same for every project in a run, so we grab from the first row).
@@ -364,12 +439,15 @@ def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
             forward_adapter, reverse_adapter, barcodes_are_rc)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            run_id, read1, read2, rc_bool,
+            run_id,
+            read1,
+            read2,
+            rc_bool,
             settings.get(FIELD_MASK_SHORT_READS),
             settings.get(FIELD_OVERRIDE_CYCLES),
             first_bio.get(COL_FORWARD_ADAPTER, ""),
             first_bio.get(COL_REVERSE_ADAPTER, ""),
-            0 if first_bio.get(COL_BARCODES_ARE_RC, "False").lower() == "false" else 1,
+            _parse_bool_str(first_bio.get(COL_BARCODES_ARE_RC, "False")),
         ),
     )
 
@@ -389,17 +467,18 @@ def _populate_pacbio_sample(cur, cs_id: int, row: dict):
             columns.
     """
     # Parse syndna_is_twisted boolean (may be empty or absent).
-    twisted_str = row.get(COL_SYNDNA_IS_TWISTED, "")
-    twisted = (
-        None if twisted_str in ("", None)
-        else (0 if twisted_str.lower() == "false" else 1)
-    )
+    twisted = _parse_bool_str(row.get(COL_SYNDNA_IS_TWISTED), nullable=True)
 
     cur.execute(
         "INSERT INTO pacbio_sample "
         "(compression_sample_id, barcode_id, twist_adaptor_id, syndna_is_twisted) "
         "VALUES (?, ?, ?, ?)",
-        (cs_id, row.get(COL_BARCODE_ID, ""), row.get(COL_TWIST_ADAPTOR_ID) or None, twisted),
+        (
+            cs_id,
+            row.get(COL_BARCODE_ID, ""),
+            row.get(COL_TWIST_ADAPTOR_ID) or None,
+            twisted,
+        ),
     )
 
     # AbsQuant columns are only present in absquant sheet types.
@@ -409,7 +488,8 @@ def _populate_pacbio_sample(cur, cs_id: int, row: dict):
     mass = float(row[COL_MASS_SYNDNA_INPUT]) if row.get(COL_MASS_SYNDNA_INPUT) else None
     conc = (
         float(row[COL_EXTRACTED_GDNA_CONC])
-        if row.get(COL_EXTRACTED_GDNA_CONC) else None
+        if row.get(COL_EXTRACTED_GDNA_CONC)
+        else None
     )
 
     cur.execute(

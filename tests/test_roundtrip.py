@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,8 +19,22 @@ DEBUG_OUTPUT_DIR = ""
 
 
 def _normalize_csv(text: str) -> str:
-    """Normalize boolean case in a CSV string (FALSE → False, TRUE → True)."""
-    return text.replace("FALSE", "False").replace("TRUE", "True")
+    """Normalize input CSV text to match reconstruction output.
+
+    Applies two normalizations:
+      - Boolean case: FALSE → False, TRUE → True
+      - Whole-number floats: e.g. 1.0 → 1, 110.0 → 110
+    """
+    # Normalize boolean case
+    text = text.replace("FALSE", "False").replace("TRUE", "True")
+
+    # Strip trailing .0 from whole-number floats. The pattern matches one
+    # or more digits followed by literal ".0" where the "0" is NOT followed
+    # by another digit. This converts "1.0" → "1" and "110.0" → "110"
+    # while leaving "1.01", "0.2", and "1.00" unchanged.
+    text = re.sub(r"(\d+)\.0(?!\d)", r"\1", text)
+
+    return text
 
 
 def _roundtrip(csv_path: str, test_name: str) -> tuple[str, str]:
@@ -77,7 +92,10 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_celeste_adaptation_novaseq(self):
         original, reconstructed = _roundtrip(
-            str(DATA_DIR / "YYYY_MM_DD_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"),
+            str(
+                DATA_DIR
+                / "YYYY_MM_DD_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"
+            ),
             "standard_metag_v101_novaseq",
         )
         self.assertEqual(original, reconstructed)
@@ -86,6 +104,20 @@ class TestRoundTrip(unittest.TestCase):
         original, reconstructed = _roundtrip(
             str(DATA_DIR / "good_pacbio_metagv11.csv"),
             "pacbio_metag_v11",
+        )
+        self.assertEqual(original, reconstructed)
+
+    def test_good_pacbio_metagv10(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "good_pacbio_metagv10.csv"),
+            "pacbio_metag_v10",
+        )
+        self.assertEqual(original, reconstructed)
+
+    def test_good_pacbio_absquantv10(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "good_pacbio_absquantv10.csv"),
+            "pacbio_absquant_v10",
         )
         self.assertEqual(original, reconstructed)
 

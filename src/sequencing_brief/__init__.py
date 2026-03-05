@@ -10,5 +10,5 @@ __all__ = [
     "create_db",
     "populate_db",
     "reconstruct_omnibus",
-    "validate_omnibus"
+    "validate_omnibus",
 ]

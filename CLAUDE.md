@@ -47,6 +47,16 @@ reconstruction read this registry at runtime. Adding a new legacy format means
 adding rows and views to `schema.sql` — no new Python code paths are needed
 unless the format introduces structurally new data.
 
+### Platforms vs library prep protocols
+
+There are only two sequencing platforms: **Illumina** and **PacBio**. These are
+the physical instruments that perform sequencing. **TellSeq is a library prep
+protocol, not a sequencing platform** — TellSeq-prepared samples are sequenced
+on Illumina instruments. A TellSeq run therefore uses `illumina_run` config
+(read lengths, override cycles, etc.) because the sequencer is Illumina. The
+`tellseq_sample` table captures the TellSeq-specific per-sample barcode, but
+the run-level configuration is Illumina.
+
 ### Key domain rules
 
 - Controls have NULL `project_id` on `input_sample`; they inherit project

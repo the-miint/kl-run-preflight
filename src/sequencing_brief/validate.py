@@ -18,7 +18,7 @@ from .constants import (
     FORMAT_VALUES_ONLY,
     SECTION_HEADER,
 )
-from .reconstruct import _get_view_columns
+from .db import get_view_columns
 
 
 def validate_omnibus(conn, sections: dict) -> list[str]:
@@ -91,7 +91,7 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
         if section_name not in sections:
             continue
 
-        all_view_cols = _get_view_columns(cur, view_name)
+        all_view_cols = get_view_columns(cur, view_name)
         section_optional = optional_cols.get(section_name, set())
         required_cols = [c for c in all_view_cols if c not in section_optional]
         file_section = sections[section_name]
@@ -100,10 +100,13 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
             actual_cols = (
                 list(file_section.keys()) if isinstance(file_section, dict) else []
             )
-            _check_columns(errors, section_name, required_cols, actual_cols, section_optional)
+            _check_columns(
+                errors, section_name, required_cols, actual_cols, section_optional
+            )
 
         elif section_format == FORMAT_VALUES_ONLY:
-            if isinstance(file_section, list) and len(file_section) != len(all_view_cols):
+            if isinstance(file_section, list) and \
+                len(file_section) != len(all_view_cols):
                 errors.append(
                     f"[{section_name}] expected {len(all_view_cols)} values, "
                     f"got {len(file_section)}"
@@ -112,7 +115,9 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
         elif section_format == FORMAT_TABULAR:
             if file_section:
                 actual_cols = list(file_section[0].keys())
-                _check_columns(errors, section_name, required_cols, actual_cols, section_optional)
+                _check_columns(
+                    errors, section_name, required_cols, actual_cols, section_optional
+                )
 
     return errors
 

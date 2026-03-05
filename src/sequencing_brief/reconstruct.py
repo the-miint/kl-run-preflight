@@ -15,19 +15,20 @@ import io
 from .constants import (
     CHECK_CONTAINS_KATHAROSEQ,
     CHECK_CONTAINS_REPLICATES,
-    COL_RUN_ID,
     COL_SAMPLE_ID,
     COL_SAMPLE_NAME,
     FORMAT_HEADER_KV,
     FORMAT_TABULAR,
     FORMAT_VALUES_ONLY,
 )
+from .db import introspect_view
 from .formatting import bcl_scrub_name, format_value
 
 
 # ---------------------------------------------------------------------------
 # CSV post-processing
 # ---------------------------------------------------------------------------
+
 
 def _pad_to_max_width(csv_text: str) -> str:
     """Pad every row in the CSV to have the same number of columns.
@@ -62,43 +63,9 @@ def _pad_to_max_width(csv_text: str) -> str:
     return "".join(padded)
 
 
-# ---------------------------------------------------------------------------
-# View introspection helpers
-# ---------------------------------------------------------------------------
-
-def _get_view_columns(cur, view_name: str) -> list[str]:
-    """Return the column names of a SQL view, excluding run_id.
-
-    run_id is a filter column used internally and is never written to
-    the output CSV.
-
-    Args:
-        cur: An open SQLite cursor.
-        view_name: Name of the SQL view to introspect.
-
-    Returns:
-        list[str]: Ordered list of column names from the view, with
-        run_id omitted.
-    """
-    cur.execute(f"PRAGMA table_info({view_name})")
-    return [row[1] for row in cur.fetchall() if row[1] != COL_RUN_ID]
-
-
-def _view_has_run_id(cur, view_name: str) -> bool:
-    """Check whether a SQL view contains a run_id column.
-
-    Args:
-        cur: An open SQLite cursor.
-        view_name: Name of the SQL view to introspect.
-
-    Returns:
-        bool: True if the view has a column named run_id.
-    """
-    cur.execute(f"PRAGMA table_info({view_name})")
-    return any(row[1] == COL_RUN_ID for row in cur.fetchall())
-
-
-def _query_view(cur, view_name: str, col_names: list[str], run_id: int):
+def _query_view(
+    cur, view_name: str, col_names: list[str], has_run_id: bool, run_id: int
+):
     """Query a view for the given run and return all matching rows.
 
     Most views have a run_id column and are filtered directly. Shared
@@ -109,6 +76,7 @@ def _query_view(cur, view_name: str, col_names: list[str], run_id: int):
         cur: An open SQLite cursor.
         view_name: Name of the SQL view to query.
         col_names: Column names to select (should exclude run_id).
+        has_run_id: Whether the view contains a run_id column.
         run_id: The sequencing_run.run_id to filter on.
 
     Returns:
@@ -117,7 +85,7 @@ def _query_view(cur, view_name: str, col_names: list[str], run_id: int):
     """
     select_cols = ", ".join(f'"{c}"' for c in col_names)
 
-    if _view_has_run_id(cur, view_name):
+    if has_run_id:
         # Direct filter on run_id.
         cur.execute(
             f'SELECT {select_cols} FROM "{view_name}" WHERE run_id = ?',
@@ -160,36 +128,26 @@ def _query_view(cur, view_name: str, col_names: list[str], run_id: int):
 
 
 # ---------------------------------------------------------------------------
-# Section writers (one per section_format)
+# Section writers (pure formatters — no DB access)
 # ---------------------------------------------------------------------------
 
-def _write_header_kv(cur, writer, section_name, view_name, run_id):
+
+def _write_header_kv(writer, section_name, col_names, row):
     """Write a key-value section like [Header] or [Settings].
 
     Each column in the view becomes one key,value row in the CSV output.
 
     Args:
-        cur: An open SQLite cursor.
         writer: A csv.writer instance to write rows to.
         section_name: The section label (written as [SectionName]).
-        view_name: Name of the SQL view to read data from.
-        run_id: The sequencing_run.run_id to filter on.
+        col_names: Column names (excluding run_id).
+        row: A single data tuple matching col_names, or None.
     """
-    col_names = _get_view_columns(cur, view_name)
-
-    # Fetch the single row for this run.
-    if _view_has_run_id(cur, view_name):
-        cur.execute(f"SELECT * FROM {view_name} WHERE run_id = ?", (run_id,))
-    else:
-        cur.execute(f"SELECT * FROM {view_name}")
-    row = cur.fetchone()
     if not row:
         return
 
-    # Map all columns (including run_id) to values, then skip run_id.
-    cur.execute(f"PRAGMA table_info({view_name})")
-    all_cols = [r[1] for r in cur.fetchall()]
-    values = {col: val for col, val in zip(all_cols, row) if col != COL_RUN_ID}
+    # Map column names to values from the single returned row.
+    values = dict(zip(col_names, row))
 
     writer.writerow([f"[{section_name}]"])
     for col in col_names:
@@ -197,54 +155,47 @@ def _write_header_kv(cur, writer, section_name, view_name, run_id):
     writer.writerow([])
 
 
-def _write_values_only(cur, writer, section_name, view_name, col_names, run_id):
+def _write_values_only(writer, section_name, row):
     """Write a values-only section like [Reads].
 
-    Each column in the single view row becomes one bare-value row in the
-    CSV output.
+    Each value in the single row becomes one bare-value row in the CSV.
 
     Args:
-        cur: An open SQLite cursor.
         writer: A csv.writer instance to write rows to.
         section_name: The section label (written as [SectionName]).
-        view_name: Name of the SQL view to read data from.
-        col_names: Column names to select from the view.
-        run_id: The sequencing_run.run_id to filter on.
+        row: A single data tuple, or None.
     """
-    rows = _query_view(cur, view_name, col_names, run_id)
-
     writer.writerow([f"[{section_name}]"])
-    if rows:
-        # The view returns one row with N columns; emit each column as
-        # its own CSV row (e.g. "151\n151\n").
-        for val in rows[0]:
+    if row:
+        # Emit each column value as its own CSV row (e.g. "151\n151\n").
+        for val in row:
             writer.writerow([format_value(val, "")])
     writer.writerow([])
 
 
-def _write_tabular(cur, writer, section_name, view_name, col_names, run_id):
+def _write_tabular(writer, section_name, col_names, rows):
     """Write a tabular section like [Data] or [Bioinformatics].
 
-    Emits a header row followed by one data row per view result.
+    Emits a header row followed by one data row per result.
     Sample_ID columns are derived via bcl_scrub_name(Sample_Name).
 
     Args:
-        cur: An open SQLite cursor.
         writer: A csv.writer instance to write rows to.
         section_name: The section label (written as [SectionName]).
-        view_name: Name of the SQL view to read data from.
-        col_names: Column names to select and emit as the header row.
-        run_id: The sequencing_run.run_id to filter on.
+        col_names: Column names to emit as the header row.
+        rows: List of data tuples matching col_names.
     """
-    rows = _query_view(cur, view_name, col_names, run_id)
-
     writer.writerow([f"[{section_name}]"])
     writer.writerow(col_names)
 
     # Pre-compute column indices for Sample_ID / Sample_Name so we can
     # derive Sample_ID from Sample_Name via bcl_scrub_name.
-    sample_id_idx = col_names.index(COL_SAMPLE_ID) if COL_SAMPLE_ID in col_names else None
-    sample_name_idx = col_names.index(COL_SAMPLE_NAME) if COL_SAMPLE_NAME in col_names else None
+    sample_id_idx = (
+        col_names.index(COL_SAMPLE_ID) if COL_SAMPLE_ID in col_names else None
+    )
+    sample_name_idx = (
+        col_names.index(COL_SAMPLE_NAME) if COL_SAMPLE_NAME in col_names else None
+    )
 
     for row in rows:
         formatted = []
@@ -294,7 +245,11 @@ def _db_has_rows(cur, sql: str, params: tuple) -> bool:
 
 
 def _get_active_columns(
-    cur, legacy_format_id: int, section_name: str, all_cols: list[str], run_id: int,
+    cur,
+    legacy_format_id: int,
+    section_name: str,
+    all_cols: list[str],
+    run_id: int,
 ) -> list[str]:
     """Return the subset of all_cols that should appear in the output.
 
@@ -338,13 +293,6 @@ def _get_active_columns(
 # ---------------------------------------------------------------------------
 # Top-level reconstruction
 # ---------------------------------------------------------------------------
-
-# Dispatch table: section_format string → writer function.
-_WRITERS = {
-    FORMAT_HEADER_KV: _write_header_kv,
-    FORMAT_VALUES_ONLY: _write_values_only,
-    FORMAT_TABULAR: _write_tabular,
-}
 
 
 def reconstruct_omnibus(conn, run_id: int) -> str:
@@ -397,21 +345,26 @@ def reconstruct_omnibus(conn, run_id: int) -> str:
     output = io.StringIO()
     writer = csv.writer(output, lineterminator="\n")
     for section_name, view_name, section_format in section_views:
-        # Get all columns the view defines.
-        all_cols = _get_view_columns(cur, view_name)
+        # Introspect the view once to get columns and run_id presence
+        all_cols, has_run_id = introspect_view(cur, view_name)
 
         if section_format == FORMAT_TABULAR:
-            # Filter out inactive optional columns before writing.
+            # Filter out inactive optional columns before querying
             active_cols = _get_active_columns(
                 cur, legacy_format_id, section_name, all_cols, run_id
             )
-            _write_tabular(cur, writer, section_name, view_name, active_cols, run_id)
-
-        elif section_format == FORMAT_VALUES_ONLY:
-            _write_values_only(cur, writer, section_name, view_name, all_cols, run_id)
-
+            rows = _query_view(cur, view_name, active_cols, has_run_id, run_id)
+            _write_tabular(writer, section_name, active_cols, rows)
         else:
-            # header_kv — col_names read inside the writer.
-            _write_header_kv(cur, writer, section_name, view_name, run_id)
+            # Single-row sections (header_kv, values_only)
+            rows = _query_view(cur, view_name, all_cols, has_run_id, run_id)
+            row = rows[0] if rows else None
+
+            if section_format == FORMAT_VALUES_ONLY:
+                _write_values_only(writer, section_name, row)
+            elif section_format == FORMAT_HEADER_KV:
+                _write_header_kv(writer, section_name, all_cols, row)
+            else:
+                raise ValueError(f"Unknown section_format {section_format!r}")
 
     return _pad_to_max_width(output.getvalue())
