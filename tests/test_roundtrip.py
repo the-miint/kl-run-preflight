@@ -1,0 +1,94 @@
+"""Round-trip tests: parse CSV → populate DB → reconstruct CSV → compare."""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from sequencing_brief.db import create_db, populate_db
+from sequencing_brief.parser import parse_omnibus
+from sequencing_brief.reconstruct import reconstruct_omnibus
+
+DATA_DIR = Path(__file__).parent / "data"
+
+# Set to a directory path to write out the SQLite DB and reconstructed CSV
+# for each test (e.g. "/tmp/roundtrip_debug").  Leave empty to disable.
+DEBUG_OUTPUT_DIR = ""
+
+
+def _normalize_csv(text: str) -> str:
+    """Normalize boolean case in a CSV string (FALSE → False, TRUE → True)."""
+    return text.replace("FALSE", "False").replace("TRUE", "True")
+
+
+def _roundtrip(csv_path: str, test_name: str) -> tuple[str, str]:
+    """Run the full round-trip and return (normalized_original, reconstructed)."""
+    sections = parse_omnibus(csv_path)
+
+    if DEBUG_OUTPUT_DIR:
+        out_dir = Path(DEBUG_OUTPUT_DIR)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        db_path = str(out_dir / f"{test_name}.db")
+    else:
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        db_path = tmp.name
+        tmp.close()
+
+    Path(db_path).unlink(missing_ok=True)
+    try:
+        conn = create_db(db_path)
+        populate_db(conn, sections)
+        reconstructed = reconstruct_omnibus(conn, 1)
+        conn.close()
+    finally:
+        if not DEBUG_OUTPUT_DIR:
+            Path(db_path).unlink(missing_ok=True)
+
+    if DEBUG_OUTPUT_DIR:
+        out_dir = Path(DEBUG_OUTPUT_DIR)
+        (out_dir / f"{test_name}.csv").write_text(reconstructed)
+
+    original_text = Path(csv_path).read_text()
+    return _normalize_csv(original_text), reconstructed
+
+
+class TestRoundTrip(unittest.TestCase):
+    def test_good_pacbio_absquantv11(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "good_pacbio_absquantv11.csv"),
+            "good_pacbio_absquantv11",
+        )
+        self.assertEqual(original, reconstructed)
+
+    def test_pacbio_v11_absquant_unpooled(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "pacbio_v11_absquant_unpooled_sample_sheet.csv"),
+            "pacbio_absquant_v11_unpooled",
+        )
+        self.assertEqual(original, reconstructed)
+
+    def test_skin_replicates_novaseq(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "Test1_Skin_replicates_15459_novaseq.csv"),
+            "standard_metag_v101_replicates_novaseq",
+        )
+        self.assertEqual(original, reconstructed)
+
+    def test_celeste_adaptation_novaseq(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "YYYY_MM_DD_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"),
+            "standard_metag_v101_novaseq",
+        )
+        self.assertEqual(original, reconstructed)
+
+    def test_good_pacbio_metagv11(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "good_pacbio_metagv11.csv"),
+            "pacbio_metag_v11",
+        )
+        self.assertEqual(original, reconstructed)
+
+
+if __name__ == "__main__":
+    unittest.main()

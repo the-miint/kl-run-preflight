@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sequencing Sample Sheet Schema v3</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;700&display=swap');
+
+  :root {
+    --bg: #0e1117;
+    --surface: #161b22;
+    --surface-hover: #1c2129;
+    --border: #30363d;
+    --border-accent: #58a6ff;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #484f58;
+    --pk: #f0883e;
+    --fk: #58a6ff;
+    --ref-table: #3fb950;
+    --core-table: #d2a8ff;
+    --platform-table: #f778ba;
+    --workflow-table: #79c0ff;
+    --legacy-table: #ffa657;
+    --view-color: #56d364;
+    --link-line: #30363d;
+    --link-line-hover: #58a6ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  #toolbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+  }
+
+  #toolbar h1 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  #toolbar .sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  #toolbar button {
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+  }
+  #toolbar button:hover { border-color: var(--border-accent); color: var(--text); }
+
+  svg {
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+  svg:active { cursor: grabbing; }
+
+  .table-group { cursor: move; }
+  .table-group:hover .table-bg { stroke: var(--border-accent); }
+
+  .table-bg {
+    fill: var(--surface);
+    stroke: var(--border);
+    stroke-width: 1;
+    rx: 6;
+  }
+
+  .table-header-bg { rx: 6; }
+  .table-header-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--bg);
+  }
+
+  .column-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    fill: var(--text-muted);
+  }
+  .column-text.pk { fill: var(--pk); }
+  .column-text.fk { fill: var(--fk); }
+
+  .type-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px;
+    fill: var(--text-dim);
+  }
+
+  .badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 8px;
+    font-weight: 600;
+  }
+
+  .link-line {
+    fill: none;
+    stroke: var(--link-line);
+    stroke-width: 1.2;
+    stroke-dasharray: 4,3;
+    pointer-events: none;
+  }
+
+  .view-group { cursor: move; }
+  .view-group:hover .view-bg { stroke: var(--view-color); }
+
+  .view-bg {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-dasharray: 3,2;
+    rx: 6;
+  }
+
+  .view-header-bg {
+    fill: var(--view-color);
+    opacity: 0.15;
+    rx: 6;
+  }
+  .view-header-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    fill: var(--view-color);
+  }
+
+  #tooltip {
+    position: fixed;
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'IBM Plex Mono', monospace;
+    z-index: 200;
+    pointer-events: none;
+    max-width: 320px;
+    line-height: 1.5;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>Schema v3</h1>
+  <div class="sep"></div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--ref-table)"></div> Reference</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--core-table)"></div> Core</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--platform-table)"></div> Platform</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--workflow-table)"></div> Workflow</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--legacy-table)"></div> Legacy Registry</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--view-color)"></div> Views</div>
+  <div class="sep"></div>
+  <div class="legend-item"><span style="color:var(--pk)">■</span> PK</div>
+  <div class="legend-item"><span style="color:var(--fk)">■</span> FK</div>
+  <div class="sep"></div>
+  <button onclick="resetView()">Reset View</button>
+  <button onclick="autoLayout()">Auto Layout</button>
+</div>
+
+<svg id="canvas"></svg>
+<div id="tooltip"></div>
+
+<script>
+const SCHEMA = {
+  tables: [
+    // Reference
+    { id: 'assay_type', category: 'ref', columns: [
+      { name: 'assay_type_id', type: 'INTEGER', pk: true },
+      { name: 'name', type: 'TEXT', note: 'Metagenomic, Metatranscriptomic, Amplicon' }
+    ]},
+    { id: 'sequencing_platform', category: 'ref', columns: [
+      { name: 'platform_id', type: 'INTEGER', pk: true },
+      { name: 'name', type: 'TEXT', note: 'Illumina, PacBio' }
+    ]},
+    { id: 'sample_type', category: 'ref', columns: [
+      { name: 'sample_type_id', type: 'INTEGER', pk: true },
+      { name: 'name', type: 'TEXT', note: 'standard, extraction_blank, katharoseq_cells_positive_control' }
+    ]},
+
+    // Core
+    { id: 'project', category: 'core', columns: [
+      { name: 'project_id', type: 'INTEGER', pk: true },
+      { name: 'project_name', type: 'TEXT' },
+      { name: 'qiita_id', type: 'TEXT' },
+      { name: 'contact_email', type: 'TEXT' },
+      { name: 'human_filtering', type: 'BOOLEAN' },
+      { name: 'library_construction_protocol', type: 'TEXT' },
+      { name: 'experiment_design_description', type: 'TEXT' }
+    ]},
+    { id: 'input_plate', category: 'core', columns: [
+      { name: 'input_plate_id', type: 'INTEGER', pk: true },
+      { name: 'plate_name', type: 'TEXT' },
+      { name: 'primary_project_id', type: 'INTEGER', fk: 'project' },
+      { name: 'elution_vol', type: 'REAL' }
+    ]},
+    { id: 'input_sample', category: 'core', columns: [
+      { name: 'input_sample_id', type: 'INTEGER', pk: true },
+      { name: 'sample_name', type: 'TEXT' },
+      { name: 'input_plate_id', type: 'INTEGER', fk: 'input_plate' },
+      { name: 'well', type: 'TEXT' },
+      { name: 'project_id', type: 'INTEGER', fk: 'project', note: 'NULL for controls' },
+      { name: 'sample_type_id', type: 'INTEGER', fk: 'sample_type' }
+    ]},
+    { id: 'sequencing_run', category: 'core', columns: [
+      { name: 'run_id', type: 'INTEGER', pk: true },
+      { name: 'experiment_name', type: 'TEXT' },
+      { name: 'run_date', type: 'TEXT' },
+      { name: 'sequencer', type: 'TEXT' },
+      { name: 'assay_type_id', type: 'INTEGER', fk: 'assay_type' },
+      { name: 'platform_id', type: 'INTEGER', fk: 'sequencing_platform' },
+      { name: 'compression_plate_name', type: 'TEXT' },
+      { name: 'description', type: 'TEXT' },
+      { name: 'legacy_format_id', type: 'INTEGER', fk: 'legacy_samplesheet_format', note: 'NULL for native runs' }
+    ]},
+    { id: 'compression_sample', category: 'core', columns: [
+      { name: 'compression_sample_id', type: 'INTEGER', pk: true },
+      { name: 'run_id', type: 'INTEGER', fk: 'sequencing_run' },
+      { name: 'input_sample_id', type: 'INTEGER', fk: 'input_sample' },
+      { name: 'compression_well', type: 'TEXT' },
+      { name: 'sample_name', type: 'TEXT', note: 'NULL unless renamed/replicate' },
+      { name: 'well_description', type: 'TEXT' }
+    ]},
+
+    // Platform - Run
+    { id: 'illumina_run', category: 'platform', columns: [
+      { name: 'run_id', type: 'INTEGER', pk: true, fk: 'sequencing_run' },
+      { name: 'read1_length', type: 'INTEGER' },
+      { name: 'read2_length', type: 'INTEGER' },
+      { name: 'reverse_complement', type: 'BOOLEAN' },
+      { name: 'mask_short_reads', type: 'TEXT' },
+      { name: 'override_cycles', type: 'TEXT' },
+      { name: 'forward_adapter', type: 'TEXT' },
+      { name: 'reverse_adapter', type: 'TEXT' },
+      { name: 'barcodes_are_rc', type: 'BOOLEAN' }
+    ]},
+
+    // Platform - Sample
+    { id: 'illumina_sample', category: 'platform', columns: [
+      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
+      { name: 'i7_index_id', type: 'TEXT' },
+      { name: 'i7_sequence', type: 'TEXT' },
+      { name: 'i5_index_id', type: 'TEXT' },
+      { name: 'i5_sequence', type: 'TEXT' }
+    ]},
+    { id: 'tellseq_sample', category: 'platform', columns: [
+      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
+      { name: 'barcode_id', type: 'TEXT' }
+    ]},
+    { id: 'pacbio_sample', category: 'platform', columns: [
+      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
+      { name: 'barcode_id', type: 'TEXT' },
+      { name: 'twist_adaptor_id', type: 'TEXT' },
+      { name: 'syndna_is_twisted', type: 'BOOLEAN' }
+    ]},
+
+    // Workflow
+    { id: 'metagenomic_absquant_sample', category: 'workflow', columns: [
+      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
+      { name: 'syndna_pool_mass_ng', type: 'REAL' },
+      { name: 'extracted_gdna_concentration', type: 'REAL' },
+      { name: 'syndna_pool_number', type: 'TEXT' }
+    ]},
+    { id: 'metatranscriptomic_sample', category: 'workflow', columns: [
+      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
+      { name: 'total_rna_concentration_ng_ul', type: 'REAL' }
+    ]},
+    { id: 'katharoseq_sample', category: 'workflow', columns: [
+      { name: 'input_sample_id', type: 'INTEGER', pk: true, fk: 'input_sample' },
+      { name: 'rack_id', type: 'TEXT' },
+      { name: 'tube_code', type: 'TEXT' },
+      { name: 'number_of_cells', type: 'INTEGER' }
+    ]},
+
+    // Legacy Registry
+    { id: 'legacy_section_format', category: 'legacy', columns: [
+      { name: 'format_name', type: 'TEXT', pk: true, note: 'header_kv, tabular, values_only' }
+    ]},
+    { id: 'legacy_samplesheet_format', category: 'legacy', columns: [
+      { name: 'legacy_format_id', type: 'INTEGER', pk: true },
+      { name: 'legacy_sheet_type', type: 'TEXT' },
+      { name: 'legacy_version', type: 'INTEGER' }
+    ]},
+    { id: 'legacy_samplesheet_view', category: 'legacy', columns: [
+      { name: 'legacy_format_id', type: 'INTEGER', pk: true, fk: 'legacy_samplesheet_format' },
+      { name: 'section_name', type: 'TEXT', pk: true },
+      { name: 'section_order', type: 'INTEGER' },
+      { name: 'view_name', type: 'TEXT' },
+      { name: 'section_format', type: 'TEXT', fk: 'legacy_section_format' }
+    ]},
+    { id: 'legacy_samplesheet_optional_columns', category: 'legacy', columns: [
+      { name: 'legacy_format_id', type: 'INTEGER', pk: true, fk: 'legacy_samplesheet_format' },
+      { name: 'section_name', type: 'TEXT', pk: true },
+      { name: 'group_name', type: 'TEXT', pk: true },
+      { name: 'column_names', type: 'TEXT' },
+      { name: 'check_function', type: 'TEXT' },
+      { name: 'insert_after', type: 'TEXT' }
+    ]}
+  ],
+
+  views: [
+    { id: 'input_plate_projects', note: 'All projects on a plate (primary + sample-level)' },
+    { id: 'control_project_associations', note: 'Maps controls → every project on their plate' },
+    { id: 'replicated_samples', note: 'Detects samples with multiple compression wells' },
+    { id: 'omnibus_contact', note: 'Shared: project contact emails' },
+    { id: 'omnibus_sample_context', note: 'Shared: control sample metadata' },
+    { id: 'omnibus_pacbio_absquant_v11_header', note: 'PacBio Header section' },
+    { id: 'omnibus_pacbio_absquant_v11_data', note: 'PacBio Data section (per-sample)' },
+    { id: 'omnibus_pacbio_absquant_v11_bioinformatics', note: 'PacBio Bioinformatics (per-project)' },
+    { id: 'omnibus_standard_metag_v101_header', note: 'Illumina Header section' },
+    { id: 'omnibus_standard_metag_v101_reads', note: 'Illumina Reads section' },
+    { id: 'omnibus_standard_metag_v101_settings', note: 'Illumina Settings section' },
+    { id: 'omnibus_standard_metag_v101_data', note: 'Illumina Data section (per-sample)' },
+    { id: 'omnibus_standard_metag_v101_bioinformatics', note: 'Illumina Bioinformatics (per-project)' }
+  ]
+};
+
+const CATEGORY_COLORS = {
+  ref: 'var(--ref-table)',
+  core: 'var(--core-table)',
+  platform: 'var(--platform-table)',
+  workflow: 'var(--workflow-table)',
+  legacy: 'var(--legacy-table)'
+};
+
+const COL_W = 260, ROW_H = 18, HEADER_H = 26, PAD = 8;
+
+function tableHeight(t) { return HEADER_H + t.columns.length * ROW_H + PAD; }
+
+// Initial positions - manually laid out for clarity
+const POSITIONS = {
+  // Reference tables - top
+  assay_type:             { x: 40,   y: 60 },
+  sequencing_platform:    { x: 340,  y: 60 },
+  sample_type:            { x: 640,  y: 60 },
+
+  // Core - middle
+  project:                { x: 40,   y: 180 },
+  input_plate:            { x: 380,  y: 180 },
+  input_sample:           { x: 380,  y: 320 },
+  sequencing_run:         { x: 40,   y: 380 },
+  compression_sample:     { x: 380,  y: 510 },
+
+  // Platform - right
+  illumina_run:           { x: 720,  y: 180 },
+  illumina_sample:        { x: 720,  y: 400 },
+  tellseq_sample:         { x: 720,  y: 530 },
+  pacbio_sample:          { x: 720,  y: 620 },
+
+  // Workflow - far right
+  metagenomic_absquant_sample: { x: 1020, y: 400 },
+  metatranscriptomic_sample:   { x: 1020, y: 530 },
+  katharoseq_sample:           { x: 1020, y: 300 },
+
+  // Legacy - bottom left
+  legacy_section_format:              { x: 40,  y: 600 },
+  legacy_samplesheet_format:          { x: 40,  y: 680 },
+  legacy_samplesheet_view:            { x: 340, y: 680 },
+  legacy_samplesheet_optional_columns:{ x: 340, y: 810 },
+};
+
+// View positions - bottom
+const VIEW_POSITIONS = {};
+SCHEMA.views.forEach((v, i) => {
+  const col = i % 5;
+  const row = Math.floor(i / 5);
+  VIEW_POSITIONS[v.id] = { x: 40 + col * 280, y: 960 + row * 36 };
+});
+
+const svg = document.getElementById('canvas');
+const tooltip = document.getElementById('tooltip');
+let transform = { x: 20, y: 20, k: 1 };
+
+function applyTransform() {
+  const g = document.getElementById('main-group');
+  g.setAttribute('transform', `translate(${transform.x},${transform.y}) scale(${transform.k})`);
+}
+
+function resetView() {
+  transform = { x: 20, y: 50, k: 0.85 };
+  applyTransform();
+}
+
+// SVG creation helpers
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  return el;
+}
+
+function render() {
+  svg.innerHTML = '';
+  const mainG = svgEl('g', { id: 'main-group' });
+  svg.appendChild(mainG);
+
+  // Draw FK lines first (below tables)
+  const linkG = svgEl('g', { id: 'links' });
+  mainG.appendChild(linkG);
+
+  const fkLinks = [];
+  for (const t of SCHEMA.tables) {
+    const pos = POSITIONS[t.id];
+    for (let ci = 0; ci < t.columns.length; ci++) {
+      const col = t.columns[ci];
+      if (col.fk) {
+        const targetPos = POSITIONS[col.fk];
+        if (!targetPos) continue;
+        const fromX = pos.x;
+        const fromY = pos.y + HEADER_H + ci * ROW_H + ROW_H / 2;
+        const toX = targetPos.x + COL_W;
+        const toY = targetPos.y + HEADER_H / 2;
+        fkLinks.push({ from: { x: fromX, y: fromY }, to: { x: toX, y: toY }, src: t.id, tgt: col.fk });
+      }
+    }
+  }
+
+  for (const link of fkLinks) {
+    const dx = link.to.x - link.from.x;
+    const dy = link.to.y - link.from.y;
+    const cx1 = link.from.x + dx * 0.3;
+    const cx2 = link.to.x - dx * 0.3;
+    const path = svgEl('path', {
+      class: 'link-line',
+      d: `M${link.from.x},${link.from.y} C${cx1},${link.from.y} ${cx2},${link.to.y} ${link.to.x},${link.to.y}`
+    });
+    linkG.appendChild(path);
+  }
+
+  // Draw tables
+  for (const t of SCHEMA.tables) {
+    const pos = POSITIONS[t.id];
+    const h = tableHeight(t);
+    const color = CATEGORY_COLORS[t.category];
+    const g = svgEl('g', { class: 'table-group', 'data-id': t.id });
+    g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+
+    // Background
+    g.appendChild(svgEl('rect', { class: 'table-bg', width: COL_W, height: h }));
+
+    // Header
+    g.appendChild(svgEl('rect', {
+      class: 'table-header-bg', width: COL_W, height: HEADER_H,
+      fill: color, opacity: 0.9
+    }));
+    const headerText = svgEl('text', {
+      class: 'table-header-text', x: 10, y: HEADER_H - 8
+    });
+    headerText.textContent = t.id;
+    g.appendChild(headerText);
+
+    // Columns
+    t.columns.forEach((col, i) => {
+      const y = HEADER_H + i * ROW_H + ROW_H - 4;
+      const cls = col.pk ? 'column-text pk' : col.fk ? 'column-text fk' : 'column-text';
+
+      const nameText = svgEl('text', { class: cls, x: 10, y });
+      nameText.textContent = (col.pk ? '⚿ ' : '') + col.name;
+      g.appendChild(nameText);
+
+      const typeText = svgEl('text', { class: 'type-text', x: COL_W - 10, y, 'text-anchor': 'end' });
+      typeText.textContent = col.type;
+      g.appendChild(typeText);
+
+      if (col.fk) {
+        const badge = svgEl('text', {
+          class: 'badge', x: COL_W - 10, y: y - 10, 'text-anchor': 'end',
+          fill: 'var(--fk)', opacity: 0.5
+        });
+        badge.textContent = '→ ' + col.fk;
+        g.appendChild(badge);
+      }
+
+      if (col.note) {
+        // Invisible hover rect for tooltip
+        const hoverRect = svgEl('rect', {
+          x: 0, y: HEADER_H + i * ROW_H, width: COL_W, height: ROW_H,
+          fill: 'transparent', cursor: 'help'
+        });
+        hoverRect.addEventListener('mouseenter', (e) => {
+          tooltip.style.display = 'block';
+          tooltip.textContent = col.note;
+          tooltip.style.left = (e.clientX + 12) + 'px';
+          tooltip.style.top = (e.clientY - 8) + 'px';
+        });
+        hoverRect.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        hoverRect.addEventListener('mousemove', (e) => {
+          tooltip.style.left = (e.clientX + 12) + 'px';
+          tooltip.style.top = (e.clientY - 8) + 'px';
+        });
+        g.appendChild(hoverRect);
+      }
+    });
+
+    // Drag behavior
+    let dragStart = null;
+    g.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      dragStart = { mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragStart) return;
+      pos.x = dragStart.ox + (e.clientX - dragStart.mx) / transform.k;
+      pos.y = dragStart.oy + (e.clientY - dragStart.my) / transform.k;
+      render();
+    });
+    window.addEventListener('mouseup', () => { dragStart = null; });
+
+    mainG.appendChild(g);
+  }
+
+  // Draw views
+  for (const v of SCHEMA.views) {
+    const pos = VIEW_POSITIONS[v.id];
+    const g = svgEl('g', { class: 'view-group' });
+    g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+
+    const w = Math.max(v.id.length * 7.2 + 20, 160);
+    g.appendChild(svgEl('rect', { class: 'view-bg', width: w, height: 28 }));
+    g.appendChild(svgEl('rect', { class: 'view-header-bg', width: w, height: 28 }));
+    const vText = svgEl('text', { class: 'view-header-text', x: 8, y: 18 });
+    vText.textContent = v.id;
+    g.appendChild(vText);
+
+    // Tooltip
+    const hoverRect = svgEl('rect', { x: 0, y: 0, width: w, height: 28, fill: 'transparent', cursor: 'help' });
+    hoverRect.addEventListener('mouseenter', (e) => {
+      tooltip.style.display = 'block';
+      tooltip.textContent = v.note;
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY - 8) + 'px';
+    });
+    hoverRect.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+    hoverRect.addEventListener('mousemove', (e) => {
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY - 8) + 'px';
+    });
+    g.appendChild(hoverRect);
+
+    // View drag
+    let vDrag = null;
+    g.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      vDrag = { mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!vDrag) return;
+      pos.x = vDrag.ox + (e.clientX - vDrag.mx) / transform.k;
+      pos.y = vDrag.oy + (e.clientY - vDrag.my) / transform.k;
+      render();
+    });
+    window.addEventListener('mouseup', () => { vDrag = null; });
+
+    mainG.appendChild(g);
+  }
+
+  applyTransform();
+}
+
+// Pan
+let panStart = null;
+svg.addEventListener('mousedown', (e) => {
+  if (e.target === svg || e.target.id === 'main-group') {
+    panStart = { mx: e.clientX, my: e.clientY, ox: transform.x, oy: transform.y };
+  }
+});
+window.addEventListener('mousemove', (e) => {
+  if (!panStart) return;
+  transform.x = panStart.ox + (e.clientX - panStart.mx);
+  transform.y = panStart.oy + (e.clientY - panStart.my);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { panStart = null; });
+
+// Zoom
+svg.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const scaleFactor = e.deltaY < 0 ? 1.08 : 0.92;
+  const newK = Math.max(0.3, Math.min(2.5, transform.k * scaleFactor));
+  const rect = svg.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  transform.x = cx - (cx - transform.x) * (newK / transform.k);
+  transform.y = cy - (cy - transform.y) * (newK / transform.k);
+  transform.k = newK;
+  applyTransform();
+});
+
+function autoLayout() {
+  // Simple force-directed nudge
+  const tables = SCHEMA.tables;
+  for (let iter = 0; iter < 50; iter++) {
+    for (let i = 0; i < tables.length; i++) {
+      for (let j = i + 1; j < tables.length; j++) {
+        const pi = POSITIONS[tables[i].id], pj = POSITIONS[tables[j].id];
+        const dx = pj.x - pi.x, dy = pj.y - pi.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const minDist = 300;
+        if (dist < minDist) {
+          const force = (minDist - dist) * 0.05;
+          const fx = (dx / dist) * force, fy = (dy / dist) * force;
+          pi.x -= fx; pi.y -= fy;
+          pj.x += fx; pj.y += fy;
+        }
+      }
+    }
+  }
+  render();
+}
+
+render();
+resetView();
+</script>
+</body>
+</html>
