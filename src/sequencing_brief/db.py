@@ -423,6 +423,9 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         else:
             _populate_illumina_sample(cur, cs_id, row)
 
+        # -- Workflow-specific sample tables (platform-independent) --
+        _populate_absquant_sample(cur, cs_id, row)
+
     conn.commit()
 
 
@@ -479,13 +482,40 @@ def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
     )
 
 
-def _populate_pacbio_sample(cur, cs_id: int, row: dict):
-    """Insert a pacbio_sample row and optionally a metagenomic_absquant_sample.
+def _populate_absquant_sample(cur, cs_id: int, row: dict):
+    """Insert a metagenomic_absquant_sample row if absquant columns are present.
 
-    All PacBio runs get a pacbio_sample row (barcode, twist adaptor, synDNA
-    flag).  Only absquant runs (those whose Data rows contain absquant
-    columns like mass_syndna_input_ng) also get a metagenomic_absquant_sample
-    row.
+    AbsQuant columns (mass_syndna_input_ng, etc.) appear in both PacBio and
+    Illumina absquant sheet types.  This helper is called after the
+    platform-specific sample insert.
+
+    Args:
+        cur: An open SQLite cursor.
+        cs_id: The compression_sample_id for this sample.
+        row: A single Data-section row dict.
+    """
+    # AbsQuant columns are only present in absquant sheet types.
+    if COL_MASS_SYNDNA_INPUT not in row:
+        return
+
+    mass = float(row[COL_MASS_SYNDNA_INPUT]) if row.get(COL_MASS_SYNDNA_INPUT) else None
+    conc = (
+        float(row[COL_EXTRACTED_GDNA_CONC])
+        if row.get(COL_EXTRACTED_GDNA_CONC)
+        else None
+    )
+
+    cur.execute(
+        "INSERT INTO metagenomic_absquant_sample "
+        "(compression_sample_id, syndna_pool_mass_ng, "
+        " extracted_gdna_concentration, syndna_pool_number) "
+        "VALUES (?, ?, ?, ?)",
+        (cs_id, mass, conc, row.get(COL_SYNDNA_POOL_NUMBER) or None),
+    )
+
+
+def _populate_pacbio_sample(cur, cs_id: int, row: dict):
+    """Insert a pacbio_sample row for a PacBio sample.
 
     Args:
         cur: An open SQLite cursor.
@@ -506,25 +536,6 @@ def _populate_pacbio_sample(cur, cs_id: int, row: dict):
             row.get(COL_TWIST_ADAPTOR_ID) or None,
             twisted,
         ),
-    )
-
-    # AbsQuant columns are only present in absquant sheet types.
-    if COL_MASS_SYNDNA_INPUT not in row:
-        return
-
-    mass = float(row[COL_MASS_SYNDNA_INPUT]) if row.get(COL_MASS_SYNDNA_INPUT) else None
-    conc = (
-        float(row[COL_EXTRACTED_GDNA_CONC])
-        if row.get(COL_EXTRACTED_GDNA_CONC)
-        else None
-    )
-
-    cur.execute(
-        "INSERT INTO metagenomic_absquant_sample "
-        "(compression_sample_id, syndna_pool_mass_ng, "
-        " extracted_gdna_concentration, syndna_pool_number) "
-        "VALUES (?, ?, ?, ?)",
-        (cs_id, mass, conc, row.get(COL_SYNDNA_POOL_NUMBER) or None),
     )
 
 

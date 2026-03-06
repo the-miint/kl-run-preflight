@@ -185,6 +185,40 @@ INSERT INTO legacy_samplesheet_view VALUES
     (7, 'Bioinformatics', 5, 'omnibus_standard_metag_v90_bioinformatics', 'tabular'),
     (7, 'Contact',        6, 'omnibus_contact',                           'tabular');
 
+-- Format: standard_metag v100
+INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
+    VALUES ('standard_metag', 100);
+
+INSERT INTO legacy_samplesheet_view VALUES
+    (8, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
+    (8, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
+    (8, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (8, 'Data',           4, 'omnibus_standard_metag_v101_data',           'tabular'),
+    (8, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
+    (8, 'Contact',        6, 'omnibus_contact',                            'tabular');
+
+INSERT INTO legacy_samplesheet_optional_columns VALUES
+    (8, 'Data', 'replicates',
+     'orig_name,destination_well_384',
+     'contains_replicates', 'Well_description');
+
+-- Format: abs_quant_metag v10
+INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
+    VALUES ('abs_quant_metag', 10);
+
+INSERT INTO legacy_samplesheet_view VALUES
+    (9, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
+    (9, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
+    (9, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (9, 'Data',           4, 'omnibus_abs_quant_metag_v10_data',           'tabular'),
+    (9, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
+    (9, 'Contact',        6, 'omnibus_contact',                            'tabular');
+
+INSERT INTO legacy_samplesheet_optional_columns VALUES
+    (9, 'Data', 'replicates',
+     'orig_name,destination_well_384',
+     'contains_replicates', 'Well_description');
+
 -- ============================================================
 -- Core Domain Tables
 -- ============================================================
@@ -665,3 +699,34 @@ CREATE VIEW omnibus_standard_metag_v101_bioinformatics AS
         EXISTS (SELECT 1 FROM replicated_samples rs
                 WHERE rs.run_id = v90.run_id) AS "contains_replicates"
     FROM omnibus_standard_metag_v90_bioinformatics v90;
+
+-- ============================================================
+-- Omnibus Reconstruction Views — AbsQuant Metag v10
+-- ============================================================
+
+-- Adds AbsQuant columns to the v101 Illumina Data base.
+CREATE VIEW omnibus_abs_quant_metag_v10_data AS
+    SELECT v101.run_id,
+        v101."Sample_ID",
+        v101."Sample_Name",
+        v101."Sample_Plate",
+        v101."well_id_384",
+        v101."I7_Index_ID",
+        v101."index",
+        v101."I5_Index_ID",
+        v101."index2",
+        v101."Sample_Project",
+        v101."Well_description",
+        ma.syndna_pool_mass_ng AS "mass_syndna_input_ng",
+        ma.extracted_gdna_concentration AS "extracted_gdna_concentration_ng_ul",
+        ip.elution_vol AS "vol_extracted_elution_ul",
+        ma.syndna_pool_number AS "syndna_pool_number",
+        v101."orig_name",
+        v101."destination_well_384",
+        v101."Lane"
+    FROM omnibus_standard_metag_v101_data v101
+    JOIN compression_sample cs ON v101."Sample_ID" = cs.compression_sample_id
+    JOIN input_sample ins ON cs.input_sample_id = ins.input_sample_id
+    JOIN input_plate ip ON ins.input_plate_id = ip.input_plate_id
+    LEFT JOIN metagenomic_absquant_sample ma
+        ON v101."Sample_ID" = ma.compression_sample_id;

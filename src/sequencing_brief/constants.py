@@ -78,6 +78,7 @@ COL_WELL_DESCRIPTION = "Well_description"
 COL_VOL_EXTRACTED_ELUTION = "vol_extracted_elution_ul"
 COL_ORIG_NAME = "orig_name"
 COL_DESTINATION_WELL_384 = "destination_well_384"
+COL_LANE = "Lane"
 
 # Illumina index columns
 COL_I7_INDEX_ID = "I7_Index_ID"

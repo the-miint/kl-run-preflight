@@ -263,6 +263,20 @@ class TestRoundTrip(unittest.TestCase):
         )
         self.assertEqual(original, reconstructed)
 
+    def test_good_standard_metagv100_wo_replicates(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "good_standard_metagv100_wo_replicates.csv"),
+            "standard_metag_v100_wo_replicates",
+        )
+        self.assertEqual(original, reconstructed)
+
+    def test_good_abs_quant_metagv10(self):
+        original, reconstructed = _roundtrip(
+            str(DATA_DIR / "good_abs_quant_metagv10.csv"),
+            "abs_quant_metag_v10",
+        )
+        self.assertEqual(original, reconstructed)
+
 
 if __name__ == "__main__":
     unittest.main()

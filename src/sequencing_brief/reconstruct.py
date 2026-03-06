@@ -118,7 +118,12 @@ def _write_header_kv(writer, section_name, col_names, row):
 
     writer.writerow([f"[{section_name}]"])
     for col in col_names:
-        writer.writerow([col, format_value(values.get(col, ""), col)])
+        raw = values.get(col)
+        # Skip keys whose DB value is NULL (e.g. settings not present
+        # for this sequencer). Empty strings are kept.
+        if raw is None:
+            continue
+        writer.writerow([col, format_value(raw, col)])
     writer.writerow([])
 
 
