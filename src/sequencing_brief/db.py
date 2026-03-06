@@ -143,6 +143,33 @@ def get_view_columns(cur, view_name: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Section format lookup
+# ---------------------------------------------------------------------------
+
+
+def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
+    """Return a mapping of section name to section format from the DB.
+
+    Queries the legacy_samplesheet_view table for all distinct
+    (section_name, section_format) pairs.  The result can be passed to
+    the parser so that section-format knowledge lives in one place
+    (the DB schema).
+
+    Args:
+        conn: An open SQLite connection with the schema already created.
+
+    Returns:
+        dict[str, str]: Mapping of section name (e.g. "Header", "Data")
+        to format string (e.g. "header_kv", "tabular").
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT DISTINCT section_name, section_format FROM legacy_samplesheet_view"
+    )
+    return {name: fmt for name, fmt in cur.fetchall()}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

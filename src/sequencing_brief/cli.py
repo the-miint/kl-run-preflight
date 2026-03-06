@@ -16,10 +16,10 @@ The script:
 import sys
 from pathlib import Path
 
+from .db import create_db, get_section_formats, populate_db
 from .parser import parse_omnibus
-from .db import create_db, populate_db
-from .validate import validate_omnibus
 from .reconstruct import reconstruct_omnibus
+from .validate import validate_omnibus
 
 # Default paths — work for the typical dev/test environment.
 DEFAULT_INPUT = "/mnt/user-data/uploads/good_pacbio_absquantv11.csv"
@@ -39,9 +39,15 @@ def main():
     print(f"DB:     {DB_PATH}")
     print(f"Output: {RECON_PATH}\n")
 
-    # -- (a) Parse ----------------------------------------------------------
-    print("(a) Parsing omnibus file...")
-    sections = parse_omnibus(omnibus_path)
+    # -- (a) Create database ------------------------------------------------
+    print("(a) Creating database...")
+    Path(DB_PATH).unlink(missing_ok=True)
+    conn = create_db(DB_PATH)
+    section_formats = get_section_formats(conn)
+
+    # -- (b) Parse ----------------------------------------------------------
+    print("\n(b) Parsing omnibus file...")
+    sections = parse_omnibus(omnibus_path, section_formats)
     for name, content in sections.items():
         if isinstance(content, dict):
             print(f"    [{name}]: {len(content)} key-value pairs")
@@ -49,11 +55,6 @@ def main():
             print(f"    [{name}]: {len(content)} rows")
         else:
             print(f"    [{name}]: {content}")
-
-    # -- (b) Create database ------------------------------------------------
-    print("\n(b) Creating database...")
-    Path(DB_PATH).unlink(missing_ok=True)
-    conn = create_db(DB_PATH)
 
     # -- (c) Validate -------------------------------------------------------
     print("    Validating file structure...")

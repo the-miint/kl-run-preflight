@@ -43,11 +43,12 @@ def _pad_to_max_width(csv_text: str) -> str:
         str: The CSV string with every row padded to the maximum column
         count found in the file.
     """
+    line_ends = "\n\r"
     lines = csv_text.splitlines(keepends=True)
     max_cols = 0
     for line in lines:
         # Count columns by counting commas in non-empty lines.
-        stripped = line.rstrip("\n\r")
+        stripped = line.rstrip(line_ends)
         if stripped:
             num_cols = stripped.count(",") + 1
             if num_cols > max_cols:
@@ -55,7 +56,7 @@ def _pad_to_max_width(csv_text: str) -> str:
 
     padded = []
     for line in lines:
-        stripped = line.rstrip("\n\r")
+        stripped = line.rstrip(line_ends)
         num_cols = stripped.count(",") + 1 if stripped else 1
         padding = "," * (max_cols - num_cols)
         padded.append(stripped + padding + "\n")
@@ -67,10 +68,6 @@ def _query_view(
     cur, view_name: str, col_names: list[str], has_run_id: bool, run_id: int
 ):
     """Query a view for the given run and return all matching rows.
-
-    Most views have a run_id column and are filtered directly. Shared
-    views (contact, sample_context) lack run_id, so they are filtered
-    via a sub-select on the relevant project or sample names for the run.
 
     Args:
         cur: An open SQLite cursor.
@@ -86,40 +83,10 @@ def _query_view(
     select_cols = ", ".join(f'"{c}"' for c in col_names)
 
     if has_run_id:
-        # Direct filter on run_id.
         cur.execute(
             f'SELECT {select_cols} FROM "{view_name}" WHERE run_id = ?',
             (run_id,),
         )
-
-    elif "contact" in view_name:
-        # Contact view has no run_id — filter by projects that appear in
-        # the run's compression samples, ordered by project insertion order.
-        cur.execute(
-            f"""SELECT {select_cols} FROM "{view_name}"
-                WHERE Sample_Project IN (
-                    SELECT DISTINCT p.project_name
-                    FROM compression_sample cs
-                    JOIN input_sample ins ON cs.input_sample_id = ins.input_sample_id
-                    JOIN project p ON ins.project_id = p.project_id
-                    WHERE cs.run_id = ?)
-                ORDER BY (SELECT p2.project_id FROM project p2
-                          WHERE p2.project_name = "{view_name}".Sample_Project)""",
-            (run_id,),
-        )
-
-    elif "sample_context" in view_name:
-        # SampleContext view — filter by control samples in this run.
-        cur.execute(
-            f"""SELECT {select_cols} FROM "{view_name}"
-                WHERE sample_name IN (
-                    SELECT COALESCE(cs.sample_name, ins.sample_name)
-                    FROM compression_sample cs
-                    JOIN input_sample ins ON cs.input_sample_id = ins.input_sample_id
-                    WHERE cs.run_id = ? AND ins.project_id IS NULL)""",
-            (run_id,),
-        )
-
     else:
         # Fallback: return everything (shouldn't happen in practice).
         cur.execute(f'SELECT {select_cols} FROM "{view_name}"')

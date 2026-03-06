@@ -105,8 +105,9 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
             )
 
         elif section_format == FORMAT_VALUES_ONLY:
-            if isinstance(file_section, list) and \
-                len(file_section) != len(all_view_cols):
+            if isinstance(file_section, list) and len(file_section) != len(
+                all_view_cols
+            ):
                 errors.append(
                     f"[{section_name}] expected {len(all_view_cols)} values, "
                     f"got {len(file_section)}"

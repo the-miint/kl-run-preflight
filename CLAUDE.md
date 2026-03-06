@@ -69,9 +69,10 @@ the run-level configuration is Illumina.
 ### Transitional workflows
 
 1) Read a legacy omnibus file into SQLite format:
-    - run `parser.parse_omnibus` to parse the data from the input file into sections
     - run `db.create_db` to create a new SQLite database
-    - run `validator.validate_omnibus` to check the validity of the input file format using per-section database views
+    - run `db.get_section_formats` to read section format definitions from the database
+    - run `parser.parse_omnibus` with section formats to parse the input file into sections
+    - run `validate.validate_omnibus` to check the validity of the input file format using per-section database views
     - only if the existing data validates, run `db.populate_db` to write it to the database
 
 2) Write a legacy omnibus file from SQLite format:
@@ -83,10 +84,12 @@ the run-level configuration is Illumina.
 3) Round-trip a legacy omnibus file through SQLite format (used only for testing)
     - run workflow 1
     - run workflow 2
-    - minimally modify the input csv file (AFTER workflow 1 usage) to be a known-good:
-        - replace any case of true and false with True and False
-        - order columns in the Data table according to what is expected in a "valid" output
-    - directly compare the raw text of the minimally modified known-good omnibus file to the output omnibus csv file
+    - normalize the input csv file (AFTER workflow 1 usage) to produce a known-good:
+        - replace FALSE/TRUE with False/True
+        - strip trailing .0 from whole-number floats (e.g. 1.0 → 1)
+        - reorder columns in tabular sections to match reconstruction order
+        - ensure a trailing newline
+    - directly compare the raw text of the normalized known-good omnibus file to the output omnibus csv file
 
 ## Project Structure
 

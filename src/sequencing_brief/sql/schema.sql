@@ -100,8 +100,8 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
     VALUES ('standard_metag', 101);
 
 INSERT INTO legacy_samplesheet_view VALUES
-    (2, 'Header',         1, 'omnibus_standard_metag_v101_header',         'header_kv'),
-    (2, 'Reads',          2, 'omnibus_standard_metag_v101_reads',          'values_only'),
+    (2, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
+    (2, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
     (2, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
     (2, 'Data',           4, 'omnibus_standard_metag_v101_data',           'tabular'),
     (2, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
@@ -160,6 +160,30 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
     (5, 'Data', 'replicates',
      'orig_name,destination_well_384',
      'contains_replicates', 'Well_description');
+
+-- Format: standard_metag v90
+INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
+    VALUES ('standard_metag', 90);
+
+INSERT INTO legacy_samplesheet_view VALUES
+    (6, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
+    (6, 'Reads',          2, 'omnibus_illumina_reads',                    'values_only'),
+    (6, 'Settings',       3, 'omnibus_standard_metag_v90_settings',       'header_kv'),
+    (6, 'Data',           4, 'omnibus_standard_metag_v90_data',           'tabular'),
+    (6, 'Bioinformatics', 5, 'omnibus_standard_metag_v90_bioinformatics', 'tabular'),
+    (6, 'Contact',        6, 'omnibus_contact',                           'tabular');
+
+-- Format: standard_metag v0
+INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
+    VALUES ('standard_metag', 0);
+
+INSERT INTO legacy_samplesheet_view VALUES
+    (7, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
+    (7, 'Reads',          2, 'omnibus_illumina_reads',                    'values_only'),
+    (7, 'Settings',       3, 'omnibus_standard_metag_v0_settings',        'header_kv'),
+    (7, 'Data',           4, 'omnibus_standard_metag_v0_data',            'tabular'),
+    (7, 'Bioinformatics', 5, 'omnibus_standard_metag_v90_bioinformatics', 'tabular'),
+    (7, 'Contact',        6, 'omnibus_contact',                           'tabular');
 
 -- ============================================================
 -- Core Domain Tables
@@ -320,12 +344,18 @@ CREATE VIEW replicated_samples AS
 -- ============================================================
 
 CREATE VIEW omnibus_contact AS
-    SELECT p.project_name AS "Sample_Project",
+    SELECT cs.run_id AS run_id,
+           p.project_name AS "Sample_Project",
            p.contact_email AS "Email"
-    FROM project p;
+    FROM project p
+    JOIN input_sample ins ON ins.project_id = p.project_id
+    JOIN compression_sample cs ON cs.input_sample_id = ins.input_sample_id
+    GROUP BY cs.run_id, p.project_id
+    ORDER BY p.project_id;
 
 CREATE VIEW omnibus_sample_context AS
-    SELECT COALESCE(cs.sample_name, ins.sample_name) AS "sample_name",
+    SELECT cs.run_id AS run_id,
+        COALESCE(cs.sample_name, ins.sample_name) AS "sample_name",
         CASE st.name
             WHEN 'extraction_blank' THEN 'control blank'
             WHEN 'katharoseq_cells_positive_control' THEN 'control katharoseq'
@@ -344,7 +374,7 @@ CREATE VIEW omnibus_sample_context AS
     LEFT JOIN input_plate_projects ipp ON ins.input_plate_id = ipp.input_plate_id
     LEFT JOIN project op ON ipp.project_id = op.project_id
     WHERE ins.project_id IS NULL
-    GROUP BY cs.compression_sample_id,
+    GROUP BY cs.run_id, cs.compression_sample_id,
              COALESCE(cs.sample_name, ins.sample_name),
              st.name, pp.qiita_id;
 
@@ -481,10 +511,11 @@ CREATE VIEW omnibus_pacbio_metag_v11_data AS
     JOIN pacbio_sample ps ON v10."Sample_ID" = ps.compression_sample_id;
 
 -- ============================================================
--- Omnibus Reconstruction Views — Standard Metag v101
+-- Omnibus Reconstruction Views — Illumina Shared
 -- ============================================================
 
-CREATE VIEW omnibus_standard_metag_v101_header AS
+-- Header shared by all Illumina formats.
+CREATE VIEW omnibus_illumina_header AS
     SELECT sr.run_id,
         4 AS "IEMFileVersion",
         lf.legacy_sheet_type AS "SheetType",
@@ -501,27 +532,33 @@ CREATE VIEW omnibus_standard_metag_v101_header AS
     JOIN assay_type at ON sr.assay_type_id = at.assay_type_id
     JOIN legacy_samplesheet_format lf ON sr.legacy_format_id = lf.legacy_format_id;
 
-CREATE VIEW omnibus_standard_metag_v101_reads AS
+-- Reads shared by all Illumina formats.
+CREATE VIEW omnibus_illumina_reads AS
     SELECT sr.run_id,
         ir.read1_length AS "read1_length",
         ir.read2_length AS "read2_length"
     FROM sequencing_run sr
     JOIN illumina_run ir ON sr.run_id = ir.run_id;
 
-CREATE VIEW omnibus_standard_metag_v101_settings AS
+-- ============================================================
+-- Omnibus Reconstruction Views — Standard Metag v90
+-- ============================================================
+
+-- Settings: ReverseComplement only.
+CREATE VIEW omnibus_standard_metag_v90_settings AS
     SELECT sr.run_id,
-        ir.reverse_complement AS "ReverseComplement",
-        ir.mask_short_reads AS "MaskShortReads",
-        ir.override_cycles AS "OverrideCycles"
+        ir.reverse_complement AS "ReverseComplement"
     FROM sequencing_run sr
     JOIN illumina_run ir ON sr.run_id = ir.run_id;
 
-CREATE VIEW omnibus_standard_metag_v101_data AS
+-- Base Illumina Data view. Uses Sample_Well (v90 column name).
+-- v0 and v101 layer on top of this view.
+CREATE VIEW omnibus_standard_metag_v90_data AS
     SELECT cs.run_id,
         cs.compression_sample_id AS "Sample_ID",
         COALESCE(cs.sample_name, ins.sample_name) AS "Sample_Name",
         ip.plate_name AS "Sample_Plate",
-        ins.well AS "well_id_384",
+        ins.well AS "Sample_Well",
         ils.i7_index_id AS "I7_Index_ID",
         ils.i7_sequence AS "index",
         ils.i5_index_id AS "I5_Index_ID",
@@ -531,8 +568,6 @@ CREATE VIEW omnibus_standard_metag_v101_data AS
              WHERE p2.project_id = ip.primary_project_id)
         ) AS "Sample_Project",
         cs.well_description AS "Well_description",
-        ins.sample_name AS "orig_name",
-        cs.compression_well AS "destination_well_384",
         1 AS "Lane"
     FROM compression_sample cs
     JOIN input_sample ins ON cs.input_sample_id = ins.input_sample_id
@@ -541,7 +576,9 @@ CREATE VIEW omnibus_standard_metag_v101_data AS
     JOIN illumina_sample ils
         ON cs.compression_sample_id = ils.compression_sample_id;
 
-CREATE VIEW omnibus_standard_metag_v101_bioinformatics AS
+-- Base Illumina Bioinformatics view (no contains_replicates).
+-- v101 layers on top to add contains_replicates.
+CREATE VIEW omnibus_standard_metag_v90_bioinformatics AS
     SELECT DISTINCT cs.run_id,
         p.project_name AS "Sample_Project",
         p.qiita_id AS "QiitaID",
@@ -550,9 +587,7 @@ CREATE VIEW omnibus_standard_metag_v101_bioinformatics AS
         ir.reverse_adapter AS "ReverseAdapter",
         p.human_filtering AS "HumanFiltering",
         p.library_construction_protocol AS "library_construction_protocol",
-        p.experiment_design_description AS "experiment_design_description",
-        EXISTS (SELECT 1 FROM replicated_samples rs
-                WHERE rs.run_id = cs.run_id) AS "contains_replicates"
+        p.experiment_design_description AS "experiment_design_description"
     FROM compression_sample cs
     JOIN input_sample ins ON cs.input_sample_id = ins.input_sample_id
     JOIN project p ON ins.project_id = p.project_id
@@ -562,3 +597,71 @@ CREATE VIEW omnibus_standard_metag_v101_bioinformatics AS
              ir.barcodes_are_rc, ir.forward_adapter, ir.reverse_adapter,
              p.human_filtering, p.library_construction_protocol,
              p.experiment_design_description;
+
+-- ============================================================
+-- Omnibus Reconstruction Views — Standard Metag v0
+-- ============================================================
+
+-- Settings: ReverseComplement + MaskShortReads.
+CREATE VIEW omnibus_standard_metag_v0_settings AS
+    SELECT sr.run_id,
+        ir.reverse_complement AS "ReverseComplement",
+        ir.mask_short_reads AS "MaskShortReads"
+    FROM sequencing_run sr
+    JOIN illumina_run ir ON sr.run_id = ir.run_id;
+
+-- Renames Sample_Well → well_id_384 from the v90 base.
+CREATE VIEW omnibus_standard_metag_v0_data AS
+    SELECT v90.run_id,
+        v90."Sample_ID",
+        v90."Sample_Name",
+        v90."Sample_Plate",
+        v90."Sample_Well" AS "well_id_384",
+        v90."I7_Index_ID",
+        v90."index",
+        v90."I5_Index_ID",
+        v90."index2",
+        v90."Sample_Project",
+        v90."Well_description",
+        v90."Lane"
+    FROM omnibus_standard_metag_v90_data v90;
+
+-- ============================================================
+-- Omnibus Reconstruction Views — Standard Metag v101
+-- ============================================================
+
+-- Settings: ReverseComplement + MaskShortReads + OverrideCycles.
+CREATE VIEW omnibus_standard_metag_v101_settings AS
+    SELECT sr.run_id,
+        ir.reverse_complement AS "ReverseComplement",
+        ir.mask_short_reads AS "MaskShortReads",
+        ir.override_cycles AS "OverrideCycles"
+    FROM sequencing_run sr
+    JOIN illumina_run ir ON sr.run_id = ir.run_id;
+
+-- Adds orig_name and destination_well_384 to the v0 base.
+CREATE VIEW omnibus_standard_metag_v101_data AS
+    SELECT v0.run_id,
+        v0."Sample_ID",
+        v0."Sample_Name",
+        v0."Sample_Plate",
+        v0."well_id_384",
+        v0."I7_Index_ID",
+        v0."index",
+        v0."I5_Index_ID",
+        v0."index2",
+        v0."Sample_Project",
+        v0."Well_description",
+        ins.sample_name AS "orig_name",
+        cs.compression_well AS "destination_well_384",
+        v0."Lane"
+    FROM omnibus_standard_metag_v0_data v0
+    JOIN compression_sample cs ON v0."Sample_ID" = cs.compression_sample_id
+    JOIN input_sample ins ON cs.input_sample_id = ins.input_sample_id;
+
+-- Adds contains_replicates to the v90 base Bioinformatics.
+CREATE VIEW omnibus_standard_metag_v101_bioinformatics AS
+    SELECT v90.*,
+        EXISTS (SELECT 1 FROM replicated_samples rs
+                WHERE rs.run_id = v90.run_id) AS "contains_replicates"
+    FROM omnibus_standard_metag_v90_bioinformatics v90;
