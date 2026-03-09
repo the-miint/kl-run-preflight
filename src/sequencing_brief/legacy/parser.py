@@ -22,7 +22,7 @@ from __future__ import annotations
 import csv
 import io
 
-from .constants import (
+from ..constants import (
     FORMAT_HEADER_KV,
     FORMAT_TABULAR,
     FORMAT_VALUES_ONLY,

@@ -11,6 +11,8 @@ from pathlib import Path
 
 from .constants import (
     COL_BARCODE_ID,
+    COL_CONTAINS_REPLICATES,
+    COL_LANE,
     COL_RUN_ID,
     COL_BARCODES_ARE_RC,
     COL_DESTINATION_WELL_384,
@@ -36,6 +38,7 @@ from .constants import (
     COL_SC_SAMPLE_TYPE,
     COL_SYNDNA_IS_TWISTED,
     COL_SYNDNA_POOL_NUMBER,
+    COL_TOTAL_RNA_CONC,
     COL_TWIST_ADAPTOR_ID,
     COL_VOL_EXTRACTED_ELUTION,
     COL_WELL_DESCRIPTION,
@@ -219,6 +222,41 @@ def _lookup_id(cur, table: str, col: str, value) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Pre-population checks
+# ---------------------------------------------------------------------------
+
+
+def _reject_unsupported_replicates(
+    sheet_version: int,
+    data_rows: list[dict],
+    bio_rows: list[dict],
+) -> None:
+    """Raise ValueError if a pre-v101 file contains replicates.
+
+    Replicate well semantics changed at v101. Earlier versions that
+    contain replicate signals use well_id_384 in a way that cannot be
+    round-tripped correctly.
+    """
+    if sheet_version >= 101:
+        return
+
+    # Check for any replicate signal
+    data_cols = set(data_rows[0].keys()) if data_rows else set()
+    has_replicate_cols = bool({COL_ORIG_NAME, COL_DESTINATION_WELL_384} & data_cols)
+    has_replicate_flag = any(
+        row.get(COL_CONTAINS_REPLICATES) is not None
+        and _parse_bool_str(row.get(COL_CONTAINS_REPLICATES))
+        for row in bio_rows
+    )
+
+    if has_replicate_cols or has_replicate_flag:
+        raise ValueError(
+            f"Replicates in legacy version {sheet_version} are not "
+            f"supported; replicate well semantics require v101 or later."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main populate entry-point
 # ---------------------------------------------------------------------------
 
@@ -246,6 +284,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     # -- Determine platform from SheetType ----------------------------------
     sheet_type = header.get(FIELD_SHEET_TYPE, "")
     is_pacbio = "pacbio" in sheet_type.lower()
+    is_tellseq = "tellseq" in sheet_type.lower()
     platform_name = PLATFORM_PACBIO if is_pacbio else PLATFORM_ILLUMINA
     sequencer = SEQUENCER_PACBIO_REVIO if is_pacbio else SEQUENCER_UNKNOWN
 
@@ -273,6 +312,9 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     )
     fmt_row = cur.fetchone()
     legacy_format_id = fmt_row[0] if fmt_row else None
+
+    # Reject pre-v101 files with replicates (unsupported well semantics)
+    _reject_unsupported_replicates(sheet_version, data_rows, bio_rows)
 
     # -- Insert projects (one per Bioinformatics row) -----------------------
     # Build a quick email lookup from the Contact section.
@@ -355,10 +397,14 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     well_col = COL_WELL_ID_384 if COL_WELL_ID_384 in data_rows[0] else COL_SAMPLE_WELL
     has_replicates = COL_ORIG_NAME in data_rows[0]
 
-    # Cache input_samples by (plate, orig_name, well) so that replicated
-    # samples (same orig_name on the same plate/well) share one input_sample
-    # and get multiple compression_sample rows.
+    # Determine extra Data columns not recognized by the format's view
+    extra_cols = _get_extra_columns(cur, legacy_format_id, data_rows)
+
+    # Cache input_samples and placements by (plate, orig_name) so that
+    # replicated samples share one input_sample and one placement, each
+    # getting a separate compression_sample row.
     input_sample_cache: dict[tuple, int] = {}
+    placement_cache: dict[tuple, int] = {}
 
     for row in data_rows:
         sample_name = row[COL_SAMPLE_NAME]
@@ -375,10 +421,10 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         is_control = sample_name in control_names or orig_name in control_names
         control_key = sample_name if sample_name in control_names else orig_name
 
-        # Create or reuse input_sample.
-        cache_key = (plate_name, orig_name, well)
+        # Create or reuse input_sample and placement.
+        cache_key = (plate_name, orig_name)
         if cache_key in input_sample_cache:
-            input_sample_id = input_sample_cache[cache_key]
+            placement_id = placement_cache[cache_key]
         else:
             # Controls have NULL project_id; they inherit via input_plate.
             if is_control:
@@ -390,12 +436,11 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 
             cur.execute(
                 """INSERT INTO input_sample
-                   (sample_name, input_plate_id, well, project_id, sample_type_id)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (sample_name, input_plate_id, project_id, sample_type_id)
+                   VALUES (?, ?, ?, ?)""",
                 (
                     orig_name,
                     plate_ids[plate_name],
-                    well,
                     sample_project_id,
                     type_ids[st_name],
                 ),
@@ -404,15 +449,26 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             input_sample_id = cur.lastrowid
             input_sample_cache[cache_key] = input_sample_id
 
+            # Create placement (one per input_sample per run)
+            cur.execute(
+                """INSERT INTO compression_placement
+                   (run_id, input_sample_id, placement_well)
+                   VALUES (?, ?, ?)""",
+                (run_id, input_sample_id, well),
+            )
+            assert cur.lastrowid is not None
+            placement_id = cur.lastrowid
+            placement_cache[cache_key] = placement_id
+
         # -- compression_sample --
         well_desc = row.get(COL_WELL_DESCRIPTION) or None
         comp_sample_name = sample_name if has_replicates else None
         cur.execute(
             """INSERT INTO compression_sample
-               (run_id, input_sample_id, compression_well,
+               (placement_id, compression_well,
                 sample_name, well_description)
-               VALUES (?, ?, ?, ?, ?)""",
-            (run_id, input_sample_id, dest_well, comp_sample_name, well_desc),
+               VALUES (?, ?, ?, ?)""",
+            (placement_id, dest_well, comp_sample_name, well_desc),
         )
         assert cur.lastrowid is not None
         cs_id = cur.lastrowid
@@ -421,10 +477,19 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         if is_pacbio:
             _populate_pacbio_sample(cur, cs_id, row)
         else:
-            _populate_illumina_sample(cur, cs_id, row)
+            # TellSeq is a library prep protocol on Illumina; it uses
+            # tellseq_sample instead of illumina_sample for per-sample data.
+            if is_tellseq:
+                _populate_tellseq_sample(cur, cs_id, row)
+            else:
+                _populate_illumina_sample(cur, cs_id, row)
 
         # -- Workflow-specific sample tables (platform-independent) --
         _populate_absquant_sample(cur, cs_id, row)
+        _populate_metatranscriptomic_sample(cur, cs_id, row)
+
+        # -- Extra columns (not recognized by the format's view) --
+        _populate_extra_columns(cur, cs_id, row, extra_cols)
 
     conn.commit()
 
@@ -514,6 +579,30 @@ def _populate_absquant_sample(cur, cs_id: int, row: dict):
     )
 
 
+def _populate_metatranscriptomic_sample(cur, cs_id: int, row: dict):
+    """Insert a metatranscriptomic_sample row if metat columns are present.
+
+    The total_rna_concentration_ng_ul column identifies a metatranscriptomic
+    sample.  This helper is called after the platform-specific sample insert.
+
+    Args:
+        cur: An open SQLite cursor.
+        cs_id: The compression_sample_id for this sample.
+        row: A single Data-section row dict.
+    """
+    if COL_TOTAL_RNA_CONC not in row:
+        return
+
+    conc = float(row[COL_TOTAL_RNA_CONC]) if row.get(COL_TOTAL_RNA_CONC) else None
+
+    cur.execute(
+        "INSERT INTO metatranscriptomic_sample "
+        "(compression_sample_id, total_rna_concentration_ng_ul) "
+        "VALUES (?, ?)",
+        (cs_id, conc),
+    )
+
+
 def _populate_pacbio_sample(cur, cs_id: int, row: dict):
     """Insert a pacbio_sample row for a PacBio sample.
 
@@ -539,6 +628,27 @@ def _populate_pacbio_sample(cur, cs_id: int, row: dict):
     )
 
 
+def _populate_tellseq_sample(cur, cs_id: int, row: dict):
+    """Insert a tellseq_sample row with barcode and lane information.
+
+    Args:
+        cur: An open SQLite cursor.
+        cs_id: The compression_sample_id for this sample.
+        row: A single Data-section row dict containing TellSeq-specific
+            columns (barcode_id, and optionally Lane).
+    """
+    # Parse lane as integer if present
+    lane_val = row.get(COL_LANE)
+    lane = int(lane_val) if lane_val else None
+
+    cur.execute(
+        "INSERT INTO tellseq_sample "
+        "(compression_sample_id, barcode_id, lane) "
+        "VALUES (?, ?, ?)",
+        (cs_id, row.get(COL_BARCODE_ID, ""), lane),
+    )
+
+
 def _populate_illumina_sample(cur, cs_id: int, row: dict):
     """Insert an illumina_sample row with i5/i7 index information.
 
@@ -548,15 +658,73 @@ def _populate_illumina_sample(cur, cs_id: int, row: dict):
         row: A single Data-section row dict containing Illumina index
             columns (I7_Index_ID, index, I5_Index_ID, index2).
     """
+    # Parse lane as integer if present
+    lane_val = row.get(COL_LANE)
+    lane = int(lane_val) if lane_val else None
+
     cur.execute(
         "INSERT INTO illumina_sample "
-        "(compression_sample_id, i7_index_id, i7_sequence, i5_index_id, i5_sequence) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "(compression_sample_id, i7_index_id, i7_sequence, "
+        " i5_index_id, i5_sequence, lane) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (
             cs_id,
             row.get(COL_I7_INDEX_ID, ""),
             row.get(COL_INDEX, ""),
             row.get(COL_I5_INDEX_ID, ""),
             row.get(COL_INDEX2, ""),
+            lane,
         ),
     )
+
+
+def _get_extra_columns(
+    cur, legacy_format_id: int | None, data_rows: list[dict]
+) -> list[str]:
+    """Return sorted list of Data columns not recognized by the format's view.
+
+    Args:
+        cur: An open SQLite cursor.
+        legacy_format_id: The legacy format id for this run, or None.
+        data_rows: The parsed Data-section row dicts.
+
+    Returns:
+        list[str]: Alphabetically sorted extra column names, or empty list.
+    """
+    if legacy_format_id is None or not data_rows:
+        return []
+
+    # Look up the Data view for this format
+    cur.execute(
+        "SELECT view_name FROM legacy_samplesheet_view "
+        "WHERE legacy_format_id = ? AND section_name = 'Data'",
+        (legacy_format_id,),
+    )
+    view_row = cur.fetchone()
+    if view_row is None:
+        return []
+
+    # Get the known column set from the view (includes optional columns)
+    known_cols = set(get_view_columns(cur, view_row[0]))
+
+    # Identify extra columns from the parsed data
+    parsed_cols = set(data_rows[0].keys())
+    return sorted(parsed_cols - known_cols)
+
+
+def _populate_extra_columns(cur, cs_id: int, row: dict, extra_cols: list[str]):
+    """Insert legacy_extra_column rows for a single sample.
+
+    Args:
+        cur: An open SQLite cursor.
+        cs_id: The compression_sample_id for this sample.
+        row: A single Data-section row dict.
+        extra_cols: Column names to store as extra columns.
+    """
+    for col_name in extra_cols:
+        cur.execute(
+            "INSERT INTO legacy_extra_column "
+            "(compression_sample_id, column_name, column_value) "
+            "VALUES (?, ?, ?)",
+            (cs_id, col_name, row.get(col_name)),
+        )

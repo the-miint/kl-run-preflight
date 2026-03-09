@@ -17,9 +17,9 @@ import sys
 from pathlib import Path
 
 from .db import create_db, get_section_formats, populate_db
-from .parser import parse_omnibus
-from .reconstruct import reconstruct_omnibus
-from .validate import validate_omnibus
+from .legacy.parser import parse_omnibus
+from .legacy.reconstruct import reconstruct_omnibus
+from .legacy.validate import validate_omnibus
 
 # Default paths — work for the typical dev/test environment.
 DEFAULT_INPUT = "/mnt/user-data/uploads/good_pacbio_absquantv11.csv"

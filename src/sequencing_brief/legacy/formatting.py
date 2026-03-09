@@ -6,7 +6,7 @@ string representations expected in omnibus CSV files.
 
 import re
 
-from .constants import (
+from ..constants import (
     COL_BARCODES_ARE_RC,
     COL_CONTAINS_REPLICATES,
     COL_HUMAN_FILTERING,

@@ -9,10 +9,12 @@ appropriate CSV output for each section format:
   - tabular:      [SectionName] followed by a header row + data rows
 """
 
+from __future__ import annotations
+
 import csv
 import io
 
-from .constants import (
+from ..constants import (
     CHECK_CONTAINS_KATHAROSEQ,
     CHECK_CONTAINS_REPLICATES,
     COL_SAMPLE_ID,
@@ -20,8 +22,9 @@ from .constants import (
     FORMAT_HEADER_KV,
     FORMAT_TABULAR,
     FORMAT_VALUES_ONLY,
+    SECTION_DATA,
 )
-from .db import introspect_view
+from ..db import introspect_view
 from .formatting import bcl_scrub_name, format_value
 
 
@@ -263,6 +266,74 @@ def _get_active_columns(
 
 
 # ---------------------------------------------------------------------------
+# Extra column merging
+# ---------------------------------------------------------------------------
+
+
+def _merge_extra_columns(
+    cur, run_id: int, active_cols: list[str], rows: list[tuple]
+) -> tuple[list[str], list[tuple]]:
+    """Append extra columns from legacy_extra_column to the Data section.
+
+    Queries legacy_extra_column for all samples in the run, determines the
+    distinct extra column names, appends them alphabetically after the
+    known columns, and merges the extra values into each row.
+
+    Args:
+        cur: An open SQLite cursor.
+        run_id: The sequencing_run.run_id to query extra columns for.
+        active_cols: The current list of active column names.
+        rows: The current list of data tuples matching active_cols.
+
+    Returns:
+        tuple[list[str], list[tuple]]: Updated (columns, rows) with extra
+        columns appended.
+    """
+    # Find distinct extra column names for this run
+    cur.execute(
+        "SELECT DISTINCT lec.column_name "
+        "FROM legacy_extra_column lec "
+        "JOIN compression_sample cs "
+        "ON lec.compression_sample_id = cs.compression_sample_id "
+        "JOIN compression_placement cp ON cs.placement_id = cp.placement_id "
+        "WHERE cp.run_id = ? "
+        "ORDER BY lec.column_name",
+        (run_id,),
+    )
+    extra_col_names = [r[0] for r in cur.fetchall()]
+    if not extra_col_names:
+        return active_cols, rows
+
+    # Build a lookup: (compression_sample_id, column_name) → value
+    cur.execute(
+        "SELECT lec.compression_sample_id, lec.column_name, lec.column_value "
+        "FROM legacy_extra_column lec "
+        "JOIN compression_sample cs "
+        "ON lec.compression_sample_id = cs.compression_sample_id "
+        "JOIN compression_placement cp ON cs.placement_id = cp.placement_id "
+        "WHERE cp.run_id = ?",
+        (run_id,),
+    )
+    extra_values: dict[tuple[int, str], str | None] = {}
+    for cs_id, col_name, col_value in cur.fetchall():
+        extra_values[(cs_id, col_name)] = col_value
+
+    # Sample_ID is the compression_sample_id; find its index in active_cols
+    sample_id_idx = active_cols.index(COL_SAMPLE_ID)
+
+    # Append extra column values to each row
+    merged_rows = []
+    for row in rows:
+        cs_id = row[sample_id_idx]
+        extra_vals = tuple(
+            extra_values.get((cs_id, col), "") for col in extra_col_names
+        )
+        merged_rows.append(row + extra_vals)
+
+    return active_cols + extra_col_names, merged_rows
+
+
+# ---------------------------------------------------------------------------
 # Top-level reconstruction
 # ---------------------------------------------------------------------------
 
@@ -326,6 +397,11 @@ def reconstruct_omnibus(conn, run_id: int) -> str:
                 cur, legacy_format_id, section_name, all_cols, run_id
             )
             rows = _query_view(cur, view_name, active_cols, has_run_id, run_id)
+
+            # Merge extra columns for the Data section
+            if section_name == SECTION_DATA:
+                active_cols, rows = _merge_extra_columns(cur, run_id, active_cols, rows)
+
             _write_tabular(writer, section_name, active_cols, rows)
         else:
             # Single-row sections (header_kv, values_only)

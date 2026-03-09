@@ -196,8 +196,8 @@
   <div class="legend-item"><div class="legend-dot" style="background:var(--legacy-table)"></div> Legacy Registry</div>
   <div class="legend-item"><div class="legend-dot" style="background:var(--view-color)"></div> Views</div>
   <div class="sep"></div>
-  <div class="legend-item"><span style="color:var(--pk)">■</span> PK</div>
-  <div class="legend-item"><span style="color:var(--fk)">■</span> FK</div>
+  <div class="legend-item"><span style="color:var(--pk)">&#9632;</span> PK</div>
+  <div class="legend-item"><span style="color:var(--fk)">&#9632;</span> FK</div>
   <div class="sep"></div>
   <button onclick="resetView()">Reset View</button>
   <button onclick="autoLayout()">Auto Layout</button>
@@ -207,160 +207,660 @@
 <div id="tooltip"></div>
 
 <script>
-const SCHEMA = {
-  tables: [
-    // Reference
-    { id: 'assay_type', category: 'ref', columns: [
-      { name: 'assay_type_id', type: 'INTEGER', pk: true },
-      { name: 'name', type: 'TEXT', note: 'Metagenomic, Metatranscriptomic, Amplicon' }
-    ]},
-    { id: 'sequencing_platform', category: 'ref', columns: [
-      { name: 'platform_id', type: 'INTEGER', pk: true },
-      { name: 'name', type: 'TEXT', note: 'Illumina, PacBio' }
-    ]},
-    { id: 'sample_type', category: 'ref', columns: [
-      { name: 'sample_type_id', type: 'INTEGER', pk: true },
-      { name: 'name', type: 'TEXT', note: 'standard, extraction_blank, katharoseq_cells_positive_control' }
-    ]},
-
-    // Core
-    { id: 'project', category: 'core', columns: [
-      { name: 'project_id', type: 'INTEGER', pk: true },
-      { name: 'project_name', type: 'TEXT' },
-      { name: 'qiita_id', type: 'TEXT' },
-      { name: 'contact_email', type: 'TEXT' },
-      { name: 'human_filtering', type: 'BOOLEAN' },
-      { name: 'library_construction_protocol', type: 'TEXT' },
-      { name: 'experiment_design_description', type: 'TEXT' }
-    ]},
-    { id: 'input_plate', category: 'core', columns: [
-      { name: 'input_plate_id', type: 'INTEGER', pk: true },
-      { name: 'plate_name', type: 'TEXT' },
-      { name: 'primary_project_id', type: 'INTEGER', fk: 'project' },
-      { name: 'elution_vol', type: 'REAL' }
-    ]},
-    { id: 'input_sample', category: 'core', columns: [
-      { name: 'input_sample_id', type: 'INTEGER', pk: true },
-      { name: 'sample_name', type: 'TEXT' },
-      { name: 'input_plate_id', type: 'INTEGER', fk: 'input_plate' },
-      { name: 'well', type: 'TEXT' },
-      { name: 'project_id', type: 'INTEGER', fk: 'project', note: 'NULL for controls' },
-      { name: 'sample_type_id', type: 'INTEGER', fk: 'sample_type' }
-    ]},
-    { id: 'sequencing_run', category: 'core', columns: [
-      { name: 'run_id', type: 'INTEGER', pk: true },
-      { name: 'experiment_name', type: 'TEXT' },
-      { name: 'run_date', type: 'TEXT' },
-      { name: 'sequencer', type: 'TEXT' },
-      { name: 'assay_type_id', type: 'INTEGER', fk: 'assay_type' },
-      { name: 'platform_id', type: 'INTEGER', fk: 'sequencing_platform' },
-      { name: 'compression_plate_name', type: 'TEXT' },
-      { name: 'description', type: 'TEXT' },
-      { name: 'legacy_format_id', type: 'INTEGER', fk: 'legacy_samplesheet_format', note: 'NULL for native runs' }
-    ]},
-    { id: 'compression_sample', category: 'core', columns: [
-      { name: 'compression_sample_id', type: 'INTEGER', pk: true },
-      { name: 'run_id', type: 'INTEGER', fk: 'sequencing_run' },
-      { name: 'input_sample_id', type: 'INTEGER', fk: 'input_sample' },
-      { name: 'compression_well', type: 'TEXT' },
-      { name: 'sample_name', type: 'TEXT', note: 'NULL unless renamed/replicate' },
-      { name: 'well_description', type: 'TEXT' }
-    ]},
-
-    // Platform - Run
-    { id: 'illumina_run', category: 'platform', columns: [
-      { name: 'run_id', type: 'INTEGER', pk: true, fk: 'sequencing_run' },
-      { name: 'read1_length', type: 'INTEGER' },
-      { name: 'read2_length', type: 'INTEGER' },
-      { name: 'reverse_complement', type: 'BOOLEAN' },
-      { name: 'mask_short_reads', type: 'TEXT' },
-      { name: 'override_cycles', type: 'TEXT' },
-      { name: 'forward_adapter', type: 'TEXT' },
-      { name: 'reverse_adapter', type: 'TEXT' },
-      { name: 'barcodes_are_rc', type: 'BOOLEAN' }
-    ]},
-
-    // Platform - Sample
-    { id: 'illumina_sample', category: 'platform', columns: [
-      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
-      { name: 'i7_index_id', type: 'TEXT' },
-      { name: 'i7_sequence', type: 'TEXT' },
-      { name: 'i5_index_id', type: 'TEXT' },
-      { name: 'i5_sequence', type: 'TEXT' }
-    ]},
-    { id: 'tellseq_sample', category: 'platform', columns: [
-      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
-      { name: 'barcode_id', type: 'TEXT' }
-    ]},
-    { id: 'pacbio_sample', category: 'platform', columns: [
-      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
-      { name: 'barcode_id', type: 'TEXT' },
-      { name: 'twist_adaptor_id', type: 'TEXT' },
-      { name: 'syndna_is_twisted', type: 'BOOLEAN' }
-    ]},
-
-    // Workflow
-    { id: 'metagenomic_absquant_sample', category: 'workflow', columns: [
-      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
-      { name: 'syndna_pool_mass_ng', type: 'REAL' },
-      { name: 'extracted_gdna_concentration', type: 'REAL' },
-      { name: 'syndna_pool_number', type: 'TEXT' }
-    ]},
-    { id: 'metatranscriptomic_sample', category: 'workflow', columns: [
-      { name: 'compression_sample_id', type: 'INTEGER', pk: true, fk: 'compression_sample' },
-      { name: 'total_rna_concentration_ng_ul', type: 'REAL' }
-    ]},
-    { id: 'katharoseq_sample', category: 'workflow', columns: [
-      { name: 'input_sample_id', type: 'INTEGER', pk: true, fk: 'input_sample' },
-      { name: 'rack_id', type: 'TEXT' },
-      { name: 'tube_code', type: 'TEXT' },
-      { name: 'number_of_cells', type: 'INTEGER' }
-    ]},
-
-    // Legacy Registry
-    { id: 'legacy_section_format', category: 'legacy', columns: [
-      { name: 'format_name', type: 'TEXT', pk: true, note: 'header_kv, tabular, values_only' }
-    ]},
-    { id: 'legacy_samplesheet_format', category: 'legacy', columns: [
-      { name: 'legacy_format_id', type: 'INTEGER', pk: true },
-      { name: 'legacy_sheet_type', type: 'TEXT' },
-      { name: 'legacy_version', type: 'INTEGER' }
-    ]},
-    { id: 'legacy_samplesheet_view', category: 'legacy', columns: [
-      { name: 'legacy_format_id', type: 'INTEGER', pk: true, fk: 'legacy_samplesheet_format' },
-      { name: 'section_name', type: 'TEXT', pk: true },
-      { name: 'section_order', type: 'INTEGER' },
-      { name: 'view_name', type: 'TEXT' },
-      { name: 'section_format', type: 'TEXT', fk: 'legacy_section_format' }
-    ]},
-    { id: 'legacy_samplesheet_optional_columns', category: 'legacy', columns: [
-      { name: 'legacy_format_id', type: 'INTEGER', pk: true, fk: 'legacy_samplesheet_format' },
-      { name: 'section_name', type: 'TEXT', pk: true },
-      { name: 'group_name', type: 'TEXT', pk: true },
-      { name: 'column_names', type: 'TEXT' },
-      { name: 'check_function', type: 'TEXT' },
-      { name: 'insert_after', type: 'TEXT' }
-    ]}
+var SCHEMA = {
+  "tables": [
+    {
+      "id": "assay_type",
+      "category": "ref",
+      "columns": [
+        {
+          "name": "assay_type_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "sequencing_platform",
+      "category": "ref",
+      "columns": [
+        {
+          "name": "platform_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "sample_type",
+      "category": "ref",
+      "columns": [
+        {
+          "name": "sample_type_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "project",
+      "category": "core",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "project_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "qiita_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "contact_email",
+          "type": "TEXT"
+        },
+        {
+          "name": "human_filtering",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "library_construction_protocol",
+          "type": "TEXT"
+        },
+        {
+          "name": "experiment_design_description",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "input_plate",
+      "category": "core",
+      "columns": [
+        {
+          "name": "input_plate_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "plate_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "primary_project_id",
+          "type": "INTEGER",
+          "fk": "project"
+        },
+        {
+          "name": "elution_vol",
+          "type": "REAL"
+        }
+      ]
+    },
+    {
+      "id": "input_sample",
+      "category": "core",
+      "columns": [
+        {
+          "name": "input_sample_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "sample_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "input_plate_id",
+          "type": "INTEGER",
+          "fk": "input_plate"
+        },
+        {
+          "name": "well",
+          "type": "TEXT"
+        },
+        {
+          "name": "project_id",
+          "type": "INTEGER",
+          "fk": "project",
+          "note": "NULL for controls; controls inherit project via input_plate"
+        },
+        {
+          "name": "sample_type_id",
+          "type": "INTEGER",
+          "fk": "sample_type"
+        }
+      ]
+    },
+    {
+      "id": "sequencing_run",
+      "category": "core",
+      "columns": [
+        {
+          "name": "run_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "experiment_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "run_date",
+          "type": "TEXT"
+        },
+        {
+          "name": "investigator_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "sequencer",
+          "type": "TEXT"
+        },
+        {
+          "name": "assay_type_id",
+          "type": "INTEGER",
+          "fk": "assay_type"
+        },
+        {
+          "name": "platform_id",
+          "type": "INTEGER",
+          "fk": "sequencing_platform"
+        },
+        {
+          "name": "compression_plate_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "description",
+          "type": "TEXT"
+        },
+        {
+          "name": "legacy_format_id",
+          "type": "INTEGER",
+          "fk": "legacy_samplesheet_format"
+        }
+      ]
+    },
+    {
+      "id": "compression_placement",
+      "category": "core",
+      "columns": [
+        {
+          "name": "placement_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "run_id",
+          "type": "INTEGER",
+          "fk": "sequencing_run"
+        },
+        {
+          "name": "input_sample_id",
+          "type": "INTEGER",
+          "fk": "input_sample"
+        },
+        {
+          "name": "placement_well",
+          "type": "TEXT",
+          "note": "Position on the compression plate (well_id_384 / Sample_Well)"
+        }
+      ]
+    },
+    {
+      "id": "compression_sample",
+      "category": "core",
+      "columns": [
+        {
+          "name": "compression_sample_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "placement_id",
+          "type": "INTEGER",
+          "fk": "compression_placement"
+        },
+        {
+          "name": "compression_well",
+          "type": "TEXT",
+          "note": "Final well position; equals placement_well for non-replicates, destination_well_384 for replicates"
+        },
+        {
+          "name": "sample_name",
+          "type": "TEXT",
+          "note": "NULL when same as input_sample.sample_name; populated for replicates (e.g. \"orig_name.dest_well\")"
+        },
+        {
+          "name": "well_description",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "illumina_run",
+      "category": "platform",
+      "columns": [
+        {
+          "name": "run_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "sequencing_run"
+        },
+        {
+          "name": "read1_length",
+          "type": "INTEGER"
+        },
+        {
+          "name": "read2_length",
+          "type": "INTEGER"
+        },
+        {
+          "name": "reverse_complement",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "mask_short_reads",
+          "type": "TEXT"
+        },
+        {
+          "name": "override_cycles",
+          "type": "TEXT"
+        },
+        {
+          "name": "forward_adapter",
+          "type": "TEXT"
+        },
+        {
+          "name": "reverse_adapter",
+          "type": "TEXT"
+        },
+        {
+          "name": "barcodes_are_rc",
+          "type": "BOOLEAN"
+        }
+      ]
+    },
+    {
+      "id": "illumina_sample",
+      "category": "platform",
+      "columns": [
+        {
+          "name": "compression_sample_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "compression_sample"
+        },
+        {
+          "name": "i7_index_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "i7_sequence",
+          "type": "TEXT"
+        },
+        {
+          "name": "i5_index_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "i5_sequence",
+          "type": "TEXT"
+        },
+        {
+          "name": "lane",
+          "type": "INTEGER"
+        }
+      ]
+    },
+    {
+      "id": "tellseq_sample",
+      "category": "platform",
+      "columns": [
+        {
+          "name": "compression_sample_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "compression_sample"
+        },
+        {
+          "name": "barcode_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "lane",
+          "type": "INTEGER"
+        }
+      ]
+    },
+    {
+      "id": "pacbio_sample",
+      "category": "platform",
+      "columns": [
+        {
+          "name": "compression_sample_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "compression_sample"
+        },
+        {
+          "name": "barcode_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "twist_adaptor_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "syndna_is_twisted",
+          "type": "BOOLEAN"
+        }
+      ]
+    },
+    {
+      "id": "metagenomic_absquant_sample",
+      "category": "workflow",
+      "columns": [
+        {
+          "name": "compression_sample_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "compression_sample"
+        },
+        {
+          "name": "syndna_pool_mass_ng",
+          "type": "REAL"
+        },
+        {
+          "name": "extracted_gdna_concentration",
+          "type": "REAL"
+        },
+        {
+          "name": "syndna_pool_number",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "metatranscriptomic_sample",
+      "category": "workflow",
+      "columns": [
+        {
+          "name": "compression_sample_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "compression_sample"
+        },
+        {
+          "name": "total_rna_concentration_ng_ul",
+          "type": "REAL"
+        }
+      ]
+    },
+    {
+      "id": "katharoseq_sample",
+      "category": "workflow",
+      "columns": [
+        {
+          "name": "input_sample_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "input_sample"
+        },
+        {
+          "name": "rack_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "tube_code",
+          "type": "TEXT"
+        },
+        {
+          "name": "number_of_cells",
+          "type": "INTEGER"
+        }
+      ]
+    },
+    {
+      "id": "legacy_section_format",
+      "category": "legacy",
+      "columns": [
+        {
+          "name": "format_name",
+          "type": "TEXT",
+          "pk": true
+        }
+      ]
+    },
+    {
+      "id": "legacy_samplesheet_format",
+      "category": "legacy",
+      "columns": [
+        {
+          "name": "legacy_format_id",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "legacy_sheet_type",
+          "type": "TEXT"
+        },
+        {
+          "name": "legacy_version",
+          "type": "INTEGER"
+        }
+      ]
+    },
+    {
+      "id": "legacy_samplesheet_view",
+      "category": "legacy",
+      "columns": [
+        {
+          "name": "legacy_format_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "legacy_samplesheet_format"
+        },
+        {
+          "name": "section_name",
+          "type": "TEXT",
+          "pk": true
+        },
+        {
+          "name": "section_order",
+          "type": "INTEGER"
+        },
+        {
+          "name": "view_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "section_format",
+          "type": "TEXT",
+          "fk": "legacy_section_format"
+        }
+      ]
+    },
+    {
+      "id": "legacy_samplesheet_optional_columns",
+      "category": "legacy",
+      "columns": [
+        {
+          "name": "legacy_format_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "legacy_samplesheet_format"
+        },
+        {
+          "name": "section_name",
+          "type": "TEXT",
+          "pk": true
+        },
+        {
+          "name": "group_name",
+          "type": "TEXT",
+          "pk": true
+        },
+        {
+          "name": "column_names",
+          "type": "TEXT",
+          "note": "comma-separated column names"
+        },
+        {
+          "name": "check_function",
+          "type": "TEXT"
+        },
+        {
+          "name": "insert_after",
+          "type": "TEXT",
+          "note": "column after which to insert (NULL = append)"
+        }
+      ]
+    },
+    {
+      "id": "legacy_extra_column",
+      "category": "legacy",
+      "columns": [
+        {
+          "name": "compression_sample_id",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "compression_sample"
+        },
+        {
+          "name": "column_name",
+          "type": "TEXT",
+          "pk": true
+        },
+        {
+          "name": "column_value",
+          "type": "TEXT"
+        }
+      ]
+    }
   ],
-
-  views: [
-    { id: 'input_plate_projects', note: 'All projects on a plate (primary + sample-level)' },
-    { id: 'control_project_associations', note: 'Maps controls → every project on their plate' },
-    { id: 'replicated_samples', note: 'Detects samples with multiple compression wells' },
-    { id: 'omnibus_contact', note: 'Shared: project contact emails' },
-    { id: 'omnibus_sample_context', note: 'Shared: control sample metadata' },
-    { id: 'omnibus_pacbio_absquant_v11_header', note: 'PacBio Header section' },
-    { id: 'omnibus_pacbio_absquant_v11_data', note: 'PacBio Data section (per-sample)' },
-    { id: 'omnibus_pacbio_absquant_v11_bioinformatics', note: 'PacBio Bioinformatics (per-project)' },
-    { id: 'omnibus_standard_metag_v101_header', note: 'Illumina Header section' },
-    { id: 'omnibus_standard_metag_v101_reads', note: 'Illumina Reads section' },
-    { id: 'omnibus_standard_metag_v101_settings', note: 'Illumina Settings section' },
-    { id: 'omnibus_standard_metag_v101_data', note: 'Illumina Data section (per-sample)' },
-    { id: 'omnibus_standard_metag_v101_bioinformatics', note: 'Illumina Bioinformatics (per-project)' }
+  "views": [
+    {
+      "id": "control_project_associations",
+      "note": "Maps each control sample to every project on its plate"
+    },
+    {
+      "id": "input_plate_projects",
+      "note": "All projects associated with a plate (includes primary + sample-level)"
+    },
+    {
+      "id": "omnibus_abs_quant_metag_v10_data",
+      "note": "Adds AbsQuant columns to the v101 Illumina Data base."
+    },
+    {
+      "id": "omnibus_contact",
+      "note": ""
+    },
+    {
+      "id": "omnibus_illumina_header",
+      "note": "Header shared by all Illumina formats."
+    },
+    {
+      "id": "omnibus_illumina_reads",
+      "note": "Reads shared by all Illumina formats."
+    },
+    {
+      "id": "omnibus_pacbio_absquant_v10_data",
+      "note": "Base PacBio absquant data view (no twist_adaptor_id or syndna_is_twisted). v11 builds on this by adding those columns."
+    },
+    {
+      "id": "omnibus_pacbio_absquant_v11_bioinformatics",
+      "note": ""
+    },
+    {
+      "id": "omnibus_pacbio_absquant_v11_data",
+      "note": "Adds twist_adaptor_id and syndna_is_twisted to the v10 base view."
+    },
+    {
+      "id": "omnibus_pacbio_absquant_v11_header",
+      "note": ""
+    },
+    {
+      "id": "omnibus_pacbio_metag_v10_data",
+      "note": "Base PacBio metag data view (no twist_adaptor_id). v11 builds on this by adding twist_adaptor_id."
+    },
+    {
+      "id": "omnibus_pacbio_metag_v11_data",
+      "note": "Adds twist_adaptor_id to the v10 base view."
+    },
+    {
+      "id": "omnibus_sample_context",
+      "note": ""
+    },
+    {
+      "id": "omnibus_standard_metag_v0_data",
+      "note": "Sources well_id_384 from placement_well (original compression position). Sample_Well (compression_well) and well_id_384 (placement_well) are equal for non-replicates but differ for replicates."
+    },
+    {
+      "id": "omnibus_standard_metag_v0_settings",
+      "note": "Settings: ReverseComplement + MaskShortReads."
+    },
+    {
+      "id": "omnibus_standard_metag_v101_bioinformatics",
+      "note": "Adds contains_replicates to the v90 base Bioinformatics."
+    },
+    {
+      "id": "omnibus_standard_metag_v101_data",
+      "note": "Adds orig_name and destination_well_384 to the v0 base."
+    },
+    {
+      "id": "omnibus_standard_metag_v101_settings",
+      "note": "Settings: ReverseComplement + MaskShortReads + OverrideCycles."
+    },
+    {
+      "id": "omnibus_standard_metag_v90_bioinformatics",
+      "note": "Base Illumina Bioinformatics view (no contains_replicates). v101 layers on top to add contains_replicates."
+    },
+    {
+      "id": "omnibus_standard_metag_v90_data",
+      "note": "Base Illumina Data view. Uses Sample_Well (v90 column name). v0 and v101 layer on top of this view."
+    },
+    {
+      "id": "omnibus_standard_metag_v90_settings",
+      "note": "Settings: ReverseComplement only."
+    },
+    {
+      "id": "omnibus_standard_metat_v10_data",
+      "note": "Adds metatranscriptomic columns to the v0 Illumina Data base."
+    },
+    {
+      "id": "omnibus_tellseq_absquant_v10_data",
+      "note": "Adds AbsQuant columns to the TellSeq metag base."
+    },
+    {
+      "id": "omnibus_tellseq_metag_v10_data",
+      "note": "TellSeq Data view: uses well_id_384 from placement_well and barcode_id from tellseq_sample instead of Illumina i5/i7 index columns."
+    },
+    {
+      "id": "replicated_samples",
+      "note": "Detects replicated samples (a placement with multiple compression wells)"
+    }
   ]
 };
 
-const CATEGORY_COLORS = {
+var CATEGORY_COLORS = {
   ref: 'var(--ref-table)',
   core: 'var(--core-table)',
   platform: 'var(--platform-table)',
@@ -368,57 +868,69 @@ const CATEGORY_COLORS = {
   legacy: 'var(--legacy-table)'
 };
 
-const COL_W = 260, ROW_H = 18, HEADER_H = 26, PAD = 8;
+var COL_W = 260, ROW_H = 18, HEADER_H = 26, PAD = 8;
 
 function tableHeight(t) { return HEADER_H + t.columns.length * ROW_H + PAD; }
 
-// Initial positions - manually laid out for clarity
-const POSITIONS = {
-  // Reference tables - top
-  assay_type:             { x: 40,   y: 60 },
-  sequencing_platform:    { x: 340,  y: 60 },
-  sample_type:            { x: 640,  y: 60 },
-
-  // Core - middle
-  project:                { x: 40,   y: 180 },
-  input_plate:            { x: 380,  y: 180 },
-  input_sample:           { x: 380,  y: 320 },
-  sequencing_run:         { x: 40,   y: 380 },
-  compression_sample:     { x: 380,  y: 510 },
-
-  // Platform - right
-  illumina_run:           { x: 720,  y: 180 },
-  illumina_sample:        { x: 720,  y: 400 },
-  tellseq_sample:         { x: 720,  y: 530 },
-  pacbio_sample:          { x: 720,  y: 620 },
-
-  // Workflow - far right
-  metagenomic_absquant_sample: { x: 1020, y: 400 },
-  metatranscriptomic_sample:   { x: 1020, y: 530 },
-  katharoseq_sample:           { x: 1020, y: 300 },
-
-  // Legacy - bottom left
-  legacy_section_format:              { x: 40,  y: 600 },
-  legacy_samplesheet_format:          { x: 40,  y: 680 },
-  legacy_samplesheet_view:            { x: 340, y: 680 },
-  legacy_samplesheet_optional_columns:{ x: 340, y: 810 },
+var POSITIONS = {
+  'assay_type': { x: 40, y: 60 },
+  'sequencing_platform': { x: 40, y: 146 },
+  'sample_type': { x: 40, y: 232 },
+  'project': { x: 380, y: 60 },
+  'input_plate': { x: 380, y: 236 },
+  'input_sample': { x: 380, y: 358 },
+  'sequencing_run': { x: 380, y: 516 },
+  'compression_placement': { x: 380, y: 746 },
+  'compression_sample': { x: 380, y: 868 },
+  'illumina_run': { x: 720, y: 60 },
+  'illumina_sample': { x: 720, y: 272 },
+  'tellseq_sample': { x: 720, y: 430 },
+  'pacbio_sample': { x: 720, y: 534 },
+  'metagenomic_absquant_sample': { x: 1020, y: 60 },
+  'metatranscriptomic_sample': { x: 1020, y: 182 },
+  'katharoseq_sample': { x: 1020, y: 268 },
+  'legacy_section_format': { x: 40, y: 318 },
+  'legacy_samplesheet_format': { x: 40, y: 386 },
+  'legacy_samplesheet_view': { x: 40, y: 490 },
+  'legacy_samplesheet_optional_columns': { x: 40, y: 630 },
+  'legacy_extra_column': { x: 40, y: 788 }
 };
 
-// View positions - bottom
-const VIEW_POSITIONS = {};
-SCHEMA.views.forEach((v, i) => {
-  const col = i % 5;
-  const row = Math.floor(i / 5);
-  VIEW_POSITIONS[v.id] = { x: 40 + col * 280, y: 960 + row * 36 };
-});
+var VIEW_POSITIONS = {
+  'control_project_associations': { x: 40, y: 1052 },
+  'input_plate_projects': { x: 320, y: 1052 },
+  'omnibus_abs_quant_metag_v10_data': { x: 600, y: 1052 },
+  'omnibus_contact': { x: 880, y: 1052 },
+  'omnibus_illumina_header': { x: 1160, y: 1052 },
+  'omnibus_illumina_reads': { x: 40, y: 1088 },
+  'omnibus_pacbio_absquant_v10_data': { x: 320, y: 1088 },
+  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 600, y: 1088 },
+  'omnibus_pacbio_absquant_v11_data': { x: 880, y: 1088 },
+  'omnibus_pacbio_absquant_v11_header': { x: 1160, y: 1088 },
+  'omnibus_pacbio_metag_v10_data': { x: 40, y: 1124 },
+  'omnibus_pacbio_metag_v11_data': { x: 320, y: 1124 },
+  'omnibus_sample_context': { x: 600, y: 1124 },
+  'omnibus_standard_metag_v0_data': { x: 880, y: 1124 },
+  'omnibus_standard_metag_v0_settings': { x: 1160, y: 1124 },
+  'omnibus_standard_metag_v101_bioinformatics': { x: 40, y: 1160 },
+  'omnibus_standard_metag_v101_data': { x: 320, y: 1160 },
+  'omnibus_standard_metag_v101_settings': { x: 600, y: 1160 },
+  'omnibus_standard_metag_v90_bioinformatics': { x: 880, y: 1160 },
+  'omnibus_standard_metag_v90_data': { x: 1160, y: 1160 },
+  'omnibus_standard_metag_v90_settings': { x: 40, y: 1196 },
+  'omnibus_standard_metat_v10_data': { x: 320, y: 1196 },
+  'omnibus_tellseq_absquant_v10_data': { x: 600, y: 1196 },
+  'omnibus_tellseq_metag_v10_data': { x: 880, y: 1196 },
+  'replicated_samples': { x: 1160, y: 1196 }
+};
 
-const svg = document.getElementById('canvas');
-const tooltip = document.getElementById('tooltip');
-let transform = { x: 20, y: 20, k: 1 };
+var svg = document.getElementById('canvas');
+var tooltip = document.getElementById('tooltip');
+var transform = { x: 20, y: 20, k: 1 };
 
 function applyTransform() {
-  const g = document.getElementById('main-group');
-  g.setAttribute('transform', `translate(${transform.x},${transform.y}) scale(${transform.k})`);
+  var g = document.getElementById('main-group');
+  g.setAttribute('transform', 'translate(' + transform.x + ',' + transform.y + ') scale(' + transform.k + ')');
 }
 
 function resetView() {
@@ -426,204 +938,205 @@ function resetView() {
   applyTransform();
 }
 
-// SVG creation helpers
 function svgEl(tag, attrs) {
-  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (var k in attrs) {
+    if (attrs.hasOwnProperty(k)) el.setAttribute(k, attrs[k]);
+  }
   return el;
 }
 
+function clearElement(el) {
+  while (el.firstChild) {
+    el.removeChild(el.firstChild);
+  }
+}
+
 function render() {
-  svg.innerHTML = '';
-  const mainG = svgEl('g', { id: 'main-group' });
+  clearElement(svg);
+  var mainG = svgEl('g', { id: 'main-group' });
   svg.appendChild(mainG);
 
-  // Draw FK lines first (below tables)
-  const linkG = svgEl('g', { id: 'links' });
+  var linkG = svgEl('g', { id: 'links' });
   mainG.appendChild(linkG);
 
-  const fkLinks = [];
-  for (const t of SCHEMA.tables) {
-    const pos = POSITIONS[t.id];
-    for (let ci = 0; ci < t.columns.length; ci++) {
-      const col = t.columns[ci];
+  var fkLinks = [];
+  for (var ti = 0; ti < SCHEMA.tables.length; ti++) {
+    var t = SCHEMA.tables[ti];
+    var pos = POSITIONS[t.id];
+    for (var ci = 0; ci < t.columns.length; ci++) {
+      var col = t.columns[ci];
       if (col.fk) {
-        const targetPos = POSITIONS[col.fk];
+        var targetPos = POSITIONS[col.fk];
         if (!targetPos) continue;
-        const fromX = pos.x;
-        const fromY = pos.y + HEADER_H + ci * ROW_H + ROW_H / 2;
-        const toX = targetPos.x + COL_W;
-        const toY = targetPos.y + HEADER_H / 2;
-        fkLinks.push({ from: { x: fromX, y: fromY }, to: { x: toX, y: toY }, src: t.id, tgt: col.fk });
+        var fromX = pos.x;
+        var fromY = pos.y + HEADER_H + ci * ROW_H + ROW_H / 2;
+        var toX = targetPos.x + COL_W;
+        var toY = targetPos.y + HEADER_H / 2;
+        fkLinks.push({ from: { x: fromX, y: fromY }, to: { x: toX, y: toY } });
       }
     }
   }
 
-  for (const link of fkLinks) {
-    const dx = link.to.x - link.from.x;
-    const dy = link.to.y - link.from.y;
-    const cx1 = link.from.x + dx * 0.3;
-    const cx2 = link.to.x - dx * 0.3;
-    const path = svgEl('path', {
+  for (var li = 0; li < fkLinks.length; li++) {
+    var link = fkLinks[li];
+    var dx = link.to.x - link.from.x;
+    var dy = link.to.y - link.from.y;
+    var cx1 = link.from.x + dx * 0.3;
+    var cx2 = link.to.x - dx * 0.3;
+    var path = svgEl('path', {
       class: 'link-line',
-      d: `M${link.from.x},${link.from.y} C${cx1},${link.from.y} ${cx2},${link.to.y} ${link.to.x},${link.to.y}`
+      d: 'M' + link.from.x + ',' + link.from.y + ' C' + cx1 + ',' + link.from.y + ' ' + cx2 + ',' + link.to.y + ' ' + link.to.x + ',' + link.to.y
     });
     linkG.appendChild(path);
   }
 
-  // Draw tables
-  for (const t of SCHEMA.tables) {
-    const pos = POSITIONS[t.id];
-    const h = tableHeight(t);
-    const color = CATEGORY_COLORS[t.category];
-    const g = svgEl('g', { class: 'table-group', 'data-id': t.id });
-    g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+  for (var ti2 = 0; ti2 < SCHEMA.tables.length; ti2++) {
+    (function(t) {
+      var pos = POSITIONS[t.id];
+      var h = tableHeight(t);
+      var color = CATEGORY_COLORS[t.category];
+      var g = svgEl('g', { class: 'table-group', 'data-id': t.id });
+      g.setAttribute('transform', 'translate(' + pos.x + ',' + pos.y + ')');
 
-    // Background
-    g.appendChild(svgEl('rect', { class: 'table-bg', width: COL_W, height: h }));
+      g.appendChild(svgEl('rect', { class: 'table-bg', width: COL_W, height: h }));
 
-    // Header
-    g.appendChild(svgEl('rect', {
-      class: 'table-header-bg', width: COL_W, height: HEADER_H,
-      fill: color, opacity: 0.9
-    }));
-    const headerText = svgEl('text', {
-      class: 'table-header-text', x: 10, y: HEADER_H - 8
-    });
-    headerText.textContent = t.id;
-    g.appendChild(headerText);
+      g.appendChild(svgEl('rect', {
+        class: 'table-header-bg', width: COL_W, height: HEADER_H,
+        fill: color, opacity: 0.9
+      }));
+      var headerText = svgEl('text', {
+        class: 'table-header-text', x: 10, y: HEADER_H - 8
+      });
+      headerText.textContent = t.id;
+      g.appendChild(headerText);
 
-    // Columns
-    t.columns.forEach((col, i) => {
-      const y = HEADER_H + i * ROW_H + ROW_H - 4;
-      const cls = col.pk ? 'column-text pk' : col.fk ? 'column-text fk' : 'column-text';
+      t.columns.forEach(function(col, i) {
+        var y = HEADER_H + i * ROW_H + ROW_H - 4;
+        var cls = col.pk ? 'column-text pk' : col.fk ? 'column-text fk' : 'column-text';
 
-      const nameText = svgEl('text', { class: cls, x: 10, y });
-      nameText.textContent = (col.pk ? '⚿ ' : '') + col.name;
-      g.appendChild(nameText);
+        var nameText = svgEl('text', { class: cls, x: 10, y: y });
+        nameText.textContent = (col.pk ? '\u26BF ' : '') + col.name;
+        g.appendChild(nameText);
 
-      const typeText = svgEl('text', { class: 'type-text', x: COL_W - 10, y, 'text-anchor': 'end' });
-      typeText.textContent = col.type;
-      g.appendChild(typeText);
+        var typeText = svgEl('text', { class: 'type-text', x: COL_W - 10, y: y, 'text-anchor': 'end' });
+        typeText.textContent = col.type;
+        g.appendChild(typeText);
 
-      if (col.fk) {
-        const badge = svgEl('text', {
-          class: 'badge', x: COL_W - 10, y: y - 10, 'text-anchor': 'end',
-          fill: 'var(--fk)', opacity: 0.5
-        });
-        badge.textContent = '→ ' + col.fk;
-        g.appendChild(badge);
-      }
+        if (col.fk) {
+          var badge = svgEl('text', {
+            class: 'badge', x: COL_W - 10, y: y - 10, 'text-anchor': 'end',
+            fill: 'var(--fk)', opacity: 0.5
+          });
+          badge.textContent = '\u2192 ' + col.fk;
+          g.appendChild(badge);
+        }
 
-      if (col.note) {
-        // Invisible hover rect for tooltip
-        const hoverRect = svgEl('rect', {
-          x: 0, y: HEADER_H + i * ROW_H, width: COL_W, height: ROW_H,
-          fill: 'transparent', cursor: 'help'
-        });
-        hoverRect.addEventListener('mouseenter', (e) => {
-          tooltip.style.display = 'block';
-          tooltip.textContent = col.note;
-          tooltip.style.left = (e.clientX + 12) + 'px';
-          tooltip.style.top = (e.clientY - 8) + 'px';
-        });
-        hoverRect.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
-        hoverRect.addEventListener('mousemove', (e) => {
-          tooltip.style.left = (e.clientX + 12) + 'px';
-          tooltip.style.top = (e.clientY - 8) + 'px';
-        });
-        g.appendChild(hoverRect);
-      }
-    });
+        if (col.note) {
+          var hoverRect = svgEl('rect', {
+            x: 0, y: HEADER_H + i * ROW_H, width: COL_W, height: ROW_H,
+            fill: 'transparent', cursor: 'help'
+          });
+          hoverRect.addEventListener('mouseenter', function(e) {
+            tooltip.style.display = 'block';
+            tooltip.textContent = col.note;
+            tooltip.style.left = (e.clientX + 12) + 'px';
+            tooltip.style.top = (e.clientY - 8) + 'px';
+          });
+          hoverRect.addEventListener('mouseleave', function() { tooltip.style.display = 'none'; });
+          hoverRect.addEventListener('mousemove', function(e) {
+            tooltip.style.left = (e.clientX + 12) + 'px';
+            tooltip.style.top = (e.clientY - 8) + 'px';
+          });
+          g.appendChild(hoverRect);
+        }
+      });
 
-    // Drag behavior
-    let dragStart = null;
-    g.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      dragStart = { mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
-    });
-    window.addEventListener('mousemove', (e) => {
-      if (!dragStart) return;
-      pos.x = dragStart.ox + (e.clientX - dragStart.mx) / transform.k;
-      pos.y = dragStart.oy + (e.clientY - dragStart.my) / transform.k;
-      render();
-    });
-    window.addEventListener('mouseup', () => { dragStart = null; });
+      var dragStart = null;
+      g.addEventListener('mousedown', function(e) {
+        e.stopPropagation();
+        dragStart = { mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
+      });
+      window.addEventListener('mousemove', function(e) {
+        if (!dragStart) return;
+        pos.x = dragStart.ox + (e.clientX - dragStart.mx) / transform.k;
+        pos.y = dragStart.oy + (e.clientY - dragStart.my) / transform.k;
+        render();
+      });
+      window.addEventListener('mouseup', function() { dragStart = null; });
 
-    mainG.appendChild(g);
+      mainG.appendChild(g);
+    })(SCHEMA.tables[ti2]);
   }
 
-  // Draw views
-  for (const v of SCHEMA.views) {
-    const pos = VIEW_POSITIONS[v.id];
-    const g = svgEl('g', { class: 'view-group' });
-    g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+  for (var vi = 0; vi < SCHEMA.views.length; vi++) {
+    (function(v) {
+      var pos = VIEW_POSITIONS[v.id];
+      var g = svgEl('g', { class: 'view-group' });
+      g.setAttribute('transform', 'translate(' + pos.x + ',' + pos.y + ')');
 
-    const w = Math.max(v.id.length * 7.2 + 20, 160);
-    g.appendChild(svgEl('rect', { class: 'view-bg', width: w, height: 28 }));
-    g.appendChild(svgEl('rect', { class: 'view-header-bg', width: w, height: 28 }));
-    const vText = svgEl('text', { class: 'view-header-text', x: 8, y: 18 });
-    vText.textContent = v.id;
-    g.appendChild(vText);
+      var w = Math.max(v.id.length * 7.2 + 20, 160);
+      g.appendChild(svgEl('rect', { class: 'view-bg', width: w, height: 28 }));
+      g.appendChild(svgEl('rect', { class: 'view-header-bg', width: w, height: 28 }));
+      var vText = svgEl('text', { class: 'view-header-text', x: 8, y: 18 });
+      vText.textContent = v.id;
+      g.appendChild(vText);
 
-    // Tooltip
-    const hoverRect = svgEl('rect', { x: 0, y: 0, width: w, height: 28, fill: 'transparent', cursor: 'help' });
-    hoverRect.addEventListener('mouseenter', (e) => {
-      tooltip.style.display = 'block';
-      tooltip.textContent = v.note;
-      tooltip.style.left = (e.clientX + 12) + 'px';
-      tooltip.style.top = (e.clientY - 8) + 'px';
-    });
-    hoverRect.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
-    hoverRect.addEventListener('mousemove', (e) => {
-      tooltip.style.left = (e.clientX + 12) + 'px';
-      tooltip.style.top = (e.clientY - 8) + 'px';
-    });
-    g.appendChild(hoverRect);
+      var hoverRect = svgEl('rect', { x: 0, y: 0, width: w, height: 28, fill: 'transparent', cursor: 'help' });
+      hoverRect.addEventListener('mouseenter', function(e) {
+        tooltip.style.display = 'block';
+        tooltip.textContent = v.note;
+        tooltip.style.left = (e.clientX + 12) + 'px';
+        tooltip.style.top = (e.clientY - 8) + 'px';
+      });
+      hoverRect.addEventListener('mouseleave', function() { tooltip.style.display = 'none'; });
+      hoverRect.addEventListener('mousemove', function(e) {
+        tooltip.style.left = (e.clientX + 12) + 'px';
+        tooltip.style.top = (e.clientY - 8) + 'px';
+      });
+      g.appendChild(hoverRect);
 
-    // View drag
-    let vDrag = null;
-    g.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      vDrag = { mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
-    });
-    window.addEventListener('mousemove', (e) => {
-      if (!vDrag) return;
-      pos.x = vDrag.ox + (e.clientX - vDrag.mx) / transform.k;
-      pos.y = vDrag.oy + (e.clientY - vDrag.my) / transform.k;
-      render();
-    });
-    window.addEventListener('mouseup', () => { vDrag = null; });
+      var vDrag = null;
+      g.addEventListener('mousedown', function(e) {
+        e.stopPropagation();
+        vDrag = { mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
+      });
+      window.addEventListener('mousemove', function(e) {
+        if (!vDrag) return;
+        pos.x = vDrag.ox + (e.clientX - vDrag.mx) / transform.k;
+        pos.y = vDrag.oy + (e.clientY - vDrag.my) / transform.k;
+        render();
+      });
+      window.addEventListener('mouseup', function() { vDrag = null; });
 
-    mainG.appendChild(g);
+      mainG.appendChild(g);
+    })(SCHEMA.views[vi]);
   }
 
   applyTransform();
 }
 
-// Pan
-let panStart = null;
-svg.addEventListener('mousedown', (e) => {
+var panStart = null;
+svg.addEventListener('mousedown', function(e) {
   if (e.target === svg || e.target.id === 'main-group') {
     panStart = { mx: e.clientX, my: e.clientY, ox: transform.x, oy: transform.y };
   }
 });
-window.addEventListener('mousemove', (e) => {
+window.addEventListener('mousemove', function(e) {
   if (!panStart) return;
   transform.x = panStart.ox + (e.clientX - panStart.mx);
   transform.y = panStart.oy + (e.clientY - panStart.my);
   applyTransform();
 });
-window.addEventListener('mouseup', () => { panStart = null; });
+window.addEventListener('mouseup', function() { panStart = null; });
 
-// Zoom
-svg.addEventListener('wheel', (e) => {
+svg.addEventListener('wheel', function(e) {
   e.preventDefault();
-  const scaleFactor = e.deltaY < 0 ? 1.08 : 0.92;
-  const newK = Math.max(0.3, Math.min(2.5, transform.k * scaleFactor));
-  const rect = svg.getBoundingClientRect();
-  const cx = e.clientX - rect.left;
-  const cy = e.clientY - rect.top;
+  var scaleFactor = e.deltaY < 0 ? 1.08 : 0.92;
+  var newK = Math.max(0.3, Math.min(2.5, transform.k * scaleFactor));
+  var rect = svg.getBoundingClientRect();
+  var cx = e.clientX - rect.left;
+  var cy = e.clientY - rect.top;
   transform.x = cx - (cx - transform.x) * (newK / transform.k);
   transform.y = cy - (cy - transform.y) * (newK / transform.k);
   transform.k = newK;
@@ -631,18 +1144,17 @@ svg.addEventListener('wheel', (e) => {
 });
 
 function autoLayout() {
-  // Simple force-directed nudge
-  const tables = SCHEMA.tables;
-  for (let iter = 0; iter < 50; iter++) {
-    for (let i = 0; i < tables.length; i++) {
-      for (let j = i + 1; j < tables.length; j++) {
-        const pi = POSITIONS[tables[i].id], pj = POSITIONS[tables[j].id];
-        const dx = pj.x - pi.x, dy = pj.y - pi.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const minDist = 300;
+  var tables = SCHEMA.tables;
+  for (var iter = 0; iter < 50; iter++) {
+    for (var i = 0; i < tables.length; i++) {
+      for (var j = i + 1; j < tables.length; j++) {
+        var pi = POSITIONS[tables[i].id], pj = POSITIONS[tables[j].id];
+        var dx = pj.x - pi.x, dy = pj.y - pi.y;
+        var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        var minDist = 300;
         if (dist < minDist) {
-          const force = (minDist - dist) * 0.05;
-          const fx = (dx / dist) * force, fy = (dy / dist) * force;
+          var force = (minDist - dist) * 0.05;
+          var fx = (dx / dist) * force, fy = (dy / dist) * force;
           pi.x -= fx; pi.y -= fy;
           pj.x += fx; pj.y += fy;
         }

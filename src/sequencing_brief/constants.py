@@ -75,6 +75,7 @@ COL_CONTAINS_REPLICATES = "contains_replicates"
 
 COL_WELL_ID_384 = "well_id_384"
 COL_WELL_DESCRIPTION = "Well_description"
+COL_TOTAL_RNA_CONC = "total_rna_concentration_ng_ul"
 COL_VOL_EXTRACTED_ELUTION = "vol_extracted_elution_ul"
 COL_ORIG_NAME = "orig_name"
 COL_DESTINATION_WELL_384 = "destination_well_384"
@@ -86,10 +87,12 @@ COL_INDEX = "index"
 COL_I5_INDEX_ID = "I5_Index_ID"
 COL_INDEX2 = "index2"
 
-# PacBio-specific data columns
+# PacBio / TellSeq shared data column
 COL_BARCODE_ID = "barcode_id"
+# PacBio data columns
 COL_TWIST_ADAPTOR_ID = "twist_adaptor_id"
 COL_SYNDNA_IS_TWISTED = "syndna_is_twisted"
+# absquant columns
 COL_MASS_SYNDNA_INPUT = "mass_syndna_input_ng"
 COL_EXTRACTED_GDNA_CONC = "extracted_gdna_concentration_ng_ul"
 COL_SYNDNA_POOL_NUMBER = "syndna_pool_number"

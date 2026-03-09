@@ -10,7 +10,7 @@ allowed to be absent -- the validation only requires the *base* columns.
 
 from __future__ import annotations
 
-from .constants import (
+from ..constants import (
     FIELD_SHEET_TYPE,
     FIELD_SHEET_VERSION,
     FORMAT_HEADER_KV,
@@ -18,7 +18,7 @@ from .constants import (
     FORMAT_VALUES_ONLY,
     SECTION_HEADER,
 )
-from .db import get_view_columns
+from ..db import get_view_columns
 
 
 def validate_omnibus(conn, sections: dict) -> list[str]:
