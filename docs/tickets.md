@@ -20,6 +20,52 @@
 
 ## Schema Evolution
 
+### 020: Add `rebuild_table` helper for SQLite 12-step table rebuilds
+
+**Goal:** Provide a reusable helper in `migrate.py` that executes the SQLite
+12-step table rebuild process, so `.py` migration patches can perform
+structural table changes (rename columns, change types, add/remove constraints)
+that `ALTER TABLE` cannot handle.
+
+**Design rationale:** SQLite's `ALTER TABLE` only supports renaming tables,
+renaming columns, and adding columns. Any other structural change (dropping
+columns, changing types, modifying constraints) requires the official 12-step
+rebuild pattern documented at https://www.sqlite.org/lang_altertable.html.
+
+**Scope:**
+
+- `src/sequencing_brief/migrate.py`: add `rebuild_table(conn, table, new_ddl,
+  column_mapping)` function (~40 lines) implementing:
+  1. `PRAGMA foreign_keys = OFF`
+  2. `SAVEPOINT rebuild`
+  3. `CREATE TABLE` with new DDL (temp name)
+  4. Copy data with column mapping
+  5. `DROP TABLE` old
+  6. `ALTER TABLE` rename new to old name
+  7. Recreate indexes from `sqlite_schema`
+  8. Recreate triggers from `sqlite_schema`
+  9. Recreate views from `sqlite_schema`
+  10. `PRAGMA foreign_key_check`
+  11. `RELEASE rebuild`
+  12. `PRAGMA foreign_keys = ON`
+- `tests/test_migrate.py`: add `TestRebuildTable` class with tests for schema
+  preservation (indexes, views), column mapping, and foreign key integrity
+
+**Exclusions:**
+
+- No actual schema-change patches using `rebuild_table` (those belong to the
+  tickets that introduce the schema changes)
+
+**Acceptance criteria:**
+
+- `rebuild_table` preserves dependent indexes, triggers, and views
+- `rebuild_table` correctly maps columns from old to new schema
+- `rebuild_table` passes `PRAGMA foreign_key_check` after rebuild
+- All existing tests pass unchanged
+
+**Estimated net line change:** ~80 lines across `migrate.py` and
+`test_migrate.py`
+
 ### 016: Add total-sample-input metrics with run-level enforcement
 
 **Goal:** Add three total-sample-input metric columns to
@@ -89,3 +135,4 @@ _Tickets for the stable API that domain consumers will migrate to will be added 
 | 015 | Round-trip abs_quant_metag v11; make Lane required for Illumina | Format registry rows reusing existing views + `omnibus_sample_context`; removed `contains_lane` optional column rows from all Illumina formats; removed `CHECK_CONTAINS_LANE`; round-trip test passes |
 | 017 | Round-trip standard_metat v10 | Format registry + `omnibus_standard_metat_v10_data` view layering on v0 base; `_populate_metatranscriptomic_sample` in `db.py`; `COL_TOTAL_RNA_CONC` constant; round-trip test passes |
 | 018 | Round-trip tellseq_metag v10 and tellseq_absquant v10 | `lane INTEGER` on `tellseq_sample`; `omnibus_tellseq_metag_v10_data` and `omnibus_tellseq_absquant_v10_data` views; `_populate_tellseq_sample` in `db.py`; `is_tellseq` sub-dispatch within Illumina branch; two round-trip tests pass |
+| 019 | Add database migration infrastructure | `migrate.py` with version tracking, patch discovery, SQL/Python dispatch, `open_db`; `PRAGMA user_version` stamping in `create_db`; `roundtrip.py` uses `open_db`; `sql/patches/` directory; 16 migration tests pass |

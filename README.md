@@ -22,22 +22,15 @@ formats.
 
 **Supported formats:**
 
-- `pacbio_absquant` v11
-- `pacbio_metag` v11
-- `standard_metag` v101
+- `pacbio_absquant` v10, v11
+- `pacbio_metag` v10, v11
+- `standard_metag` v90, v100, v101
+- `standard_metag` v0 (which is really the first metaT)
+- `abs_quant_metag` v10, v11
+- `standard_metat` v10
+- `tellseq_metag` v10
+- `tellseq_absquant` v10
 
 ## Project structure
 
-```
-src/sequencing_brief/     # Installable Python package
-    sql/schema.sql          # SQLite schema (DDL + seed data + reconstruction views)
-    parser.py               # CSV samplesheet to sections dict parsing
-    validate.py             # Validation of parsed sections against DB view registry
-    db.py                   # Creation/population of SQLite database
-    reconstruct.py          # SQLite db → CSV samplesheet
-    formatting.py           # Shared CSV formatting utilities
-    constants.py            # String-literal constants
-    cli.py                  # CLI entry point for round-trip testing
-tests/                      # Round-trip tests with example CSV samplesheets
-docs/                       # Project documentation and tickets
 ```

@@ -1,6 +1,5 @@
 -- ============================================================
 -- Sequencing Sample Sheet Schema v3
--- Validated against: pacbio_absquant v11, standard_metag v101
 -- ============================================================
 
 PRAGMA foreign_keys = ON;

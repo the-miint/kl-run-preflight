@@ -11,12 +11,12 @@ import csv
 import io
 import os
 import re
-import sqlite3
 import tempfile
 from pathlib import Path
 
 from ..constants import FORMAT_TABULAR
 from ..db import create_db, get_section_formats, populate_db
+from ..migrate import open_db
 from .parser import (
     extract_section_name,
     is_section_header,
@@ -188,8 +188,7 @@ def roundtrip(csv_path: str, test_name: str) -> tuple[str, str]:
         conn.close()
 
         # Reopen from file to reconstruct (mirrors real usage)
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA foreign_keys = ON")
+        conn = open_db(db_path)
         section_formats = get_section_formats(conn)
         reconstructed = reconstruct_omnibus(conn, 1)
         conn.close()

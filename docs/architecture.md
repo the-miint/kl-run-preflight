@@ -127,6 +127,33 @@ latest schema needs to be supported in code. The metrics and their enforcement
 must be added to the schema so that new DBs cannot be populated with incomplete
 data, while legacy loading remains possible.
 
+#### Why custom migration code instead of an existing tool
+
+The forward-migration pattern (versioned patches applied in sequence) is
+industry-standard and supported by tools such as Alembic, Django migrations,
+Flyway, and yoyo-migrations. This project implements the pattern from scratch
+because:
+
+- Most migration tools target long-running server databases and assume an
+  external CLI step to apply migrations. This project uses SQLite as a
+  **file format** — migration must happen transparently inside the
+  application at file-open time, not as a separate invocation.
+- The project's "schema as source of truth" principle means the SQL schema
+  drives behavior. Tools that want to own migration state (tracking tables,
+  config files, ORM model diffing) add machinery that conflicts with this
+  principle.
+- The total implementation is ~80 lines of Python: scan a directory of
+  numbered SQL files, compare against `PRAGMA user_version`, execute in
+  order. The logic is simple enough that an external dependency costs more
+  in coupling and maintenance than it saves.
+- yoyo-migrations is the closest fit (raw SQL, no ORM), but still carries
+  connection-management and rollback-tracking infrastructure designed for
+  server databases, not embedded file formats.
+- If future patches require complex data transformations beyond what SQL
+  can express, adopting yoyo-migrations at that point would be
+  straightforward since the file-based patch numbering convention is
+  compatible.
+
 ### Chosen design — flat columns with run-level declaration and gated trigger
 
 - Store the three metrics as **nullable columns directly on

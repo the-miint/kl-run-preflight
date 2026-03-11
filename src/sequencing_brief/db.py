@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from .migrate import get_latest_version
 from .constants import (
     COL_BARCODE_ID,
     COL_CONTAINS_REPLICATES,
@@ -99,6 +100,8 @@ def create_db(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_load_schema_sql())
+    # Stamp the database with the current schema version
+    conn.execute(f"PRAGMA user_version = {get_latest_version()}")
     return conn
 
 
@@ -233,9 +236,11 @@ def _reject_unsupported_replicates(
 ) -> None:
     """Raise ValueError if a pre-v101 file contains replicates.
 
-    Replicate well semantics changed at v101. Earlier versions that
-    contain replicate signals use well_id_384 in a way that cannot be
-    round-tripped correctly.
+    Replicate well semantics changed at v101. Earlier standard_metag
+    versions that contain replicate signals use well_id_384 in a way
+    that cannot be round-tripped correctly. This check applies only to
+    standard_metag files; other format families do not carry replicate
+    columns in pre-v101 versions.
     """
     if sheet_version >= 101:
         return
@@ -265,8 +270,9 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     """Insert all parsed omnibus data into *conn*.
 
     Resolves reference-table IDs, inserts projects, input plates, the
-    sequencing run, and all sample rows (with platform-specific child
-    tables) in a single transaction committed at the end.
+    sequencing run, and all sample rows (with platform- and protocol-
+    specific child tables, including TellSeq, absquant, and metatranscriptomic
+    extensions) in a single transaction committed at the end.
 
     Args:
         conn: An open SQLite connection (with schema already created).

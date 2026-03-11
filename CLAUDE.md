@@ -32,9 +32,9 @@ The SQLite schema (`src/sequencing_brief/sql/schema.sql`) is the permanent, long
 project. It defines the normalized domain model: runs, plates, samples,
 platform-specific extensions, and reference data.
 
-The parser (`parser.py`), reconstructor (`reconstruct.py`), and
-formatter (`formatting.py`) are transitional bridging code that exists to
-support the legacy omnibus CSV format during the migration period.  
+The parser (`legacy/parser.py`), reconstructor (`legacy/reconstruct.py`), and
+formatter (`legacy/formatting.py`) are transitional bridging code that exists to
+support the legacy omnibus CSV format during the migration period.
 
 ### Schema as source of truth
 
@@ -100,12 +100,12 @@ Tests are in `tests/`. SQL schema is in `src/sequencing_brief/sql/`.
 |------|------|
 | `src/sequencing_brief/sql/schema.sql` | Provides full DDL: reference tables, legacy format registry, core domain tables, platform-specific tables, reconstruction views |
 | `src/sequencing_brief/constants.py` | Holds all string-literal constants (section names, column names, platform strings) |
-| `src/sequencing_brief/parser.py` | Parses omnibus CSV into dict of sections (header_kv, values_only, tabular) |
-| `src/sequencing_brief/validate.py` | Validates parsed sections against the view registry |
 | `src/sequencing_brief/db.py` | Creates SQLite DB from schema.sql, populates tables from parsed data |
-| `src/sequencing_brief/reconstruct.py` | Rebuilds omnibus CSV from SQL views via the legacy format registry |
-| `src/sequencing_brief/formatting.py` | Defines shared formatting (boolean columns, bcl_scrub_name) |
-| `src/sequencing_brief/cli.py` | Specifies CLI entry point for round-trip testing |
+| `src/sequencing_brief/legacy/parser.py` | Parses omnibus CSV into dict of sections (header_kv, values_only, tabular) |
+| `src/sequencing_brief/legacy/validate.py` | Validates parsed sections against the view registry |
+| `src/sequencing_brief/legacy/reconstruct.py` | Rebuilds omnibus CSV from SQL views via the legacy format registry |
+| `src/sequencing_brief/legacy/formatting.py` | Defines shared formatting (boolean columns, bcl_scrub_name) |
+| `src/sequencing_brief/legacy/roundtrip.py` | Orchestrates full round-trip: parse → SQLite → reconstruct → normalize → compare |
 
 ## Ticket Tracking
 
@@ -118,7 +118,7 @@ table in `docs/tickets.md` before considering the work done.
 - Run tests: `pytest`
 - Tests are round-trip: parse real CSV → DB → reconstruct → compare to original
 - Test data: real sample sheet CSVs in `tests/data/`
-- `DEBUG_OUTPUT_DIR` in test_roundtrip.py writes DB + CSV to disk when set
+- `DEBUG_OUTPUT_DIR` in `legacy/roundtrip.py` writes DB + CSV to disk when set
 
 ## Imports
 

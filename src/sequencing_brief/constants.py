@@ -1,4 +1,4 @@
-"""Shared string-literal constants for the samplesheet_db package.
+"""Shared string-literal constants for the package.
 
 Centralises section names, column/field names, section format types,
 platform strings, and other repeated literals so that each value is
