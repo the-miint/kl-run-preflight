@@ -595,6 +595,22 @@ var SCHEMA = {
         {
           "name": "syndna_pool_number",
           "type": "TEXT"
+        },
+        {
+          "name": "sequenced_sample_gdna_mass_ng",
+          "type": "REAL"
+        },
+        {
+          "name": "extracted_sample_mass_g",
+          "type": "REAL"
+        },
+        {
+          "name": "extracted_sample_volume_ul",
+          "type": "REAL"
+        },
+        {
+          "name": "extracted_sample_surface_area_cm2",
+          "type": "REAL"
         }
       ]
     },
@@ -798,6 +814,10 @@ var SCHEMA = {
       "note": ""
     },
     {
+      "id": "omnibus_pacbio_absquant_v12_data",
+      "note": "Adds absquant metric columns to the v11 base view. Column aliases use the legacy CSV names (which differ from the DB column names); the reverse mapping for population lives in constants.py LEGACY_COLUMN_ALIASES."
+    },
+    {
       "id": "omnibus_pacbio_metag_v10_data",
       "note": "Base PacBio metag data view (no twist_adaptor_id). v11 builds on this by adding twist_adaptor_id."
     },
@@ -856,6 +876,26 @@ var SCHEMA = {
     {
       "id": "replicated_samples",
       "note": "Detects replicated samples (a placement with multiple compression wells)"
+    },
+    {
+      "id": "run_capability",
+      "note": "Union view: \"what can this run do?\""
+    },
+    {
+      "id": "run_capability_absquant_mass",
+      "note": ""
+    },
+    {
+      "id": "run_capability_absquant_surface_area",
+      "note": ""
+    },
+    {
+      "id": "run_capability_absquant_volume",
+      "note": ""
+    },
+    {
+      "id": "run_derived_capability",
+      "note": ""
     }
   ]
 };
@@ -887,8 +927,8 @@ var POSITIONS = {
   'tellseq_sample': { x: 720, y: 430 },
   'pacbio_sample': { x: 720, y: 534 },
   'metagenomic_absquant_sample': { x: 1020, y: 60 },
-  'metatranscriptomic_sample': { x: 1020, y: 182 },
-  'katharoseq_sample': { x: 1020, y: 268 },
+  'metatranscriptomic_sample': { x: 1020, y: 254 },
+  'katharoseq_sample': { x: 1020, y: 340 },
   'legacy_section_format': { x: 40, y: 318 },
   'legacy_samplesheet_format': { x: 40, y: 386 },
   'legacy_samplesheet_view': { x: 40, y: 490 },
@@ -907,21 +947,27 @@ var VIEW_POSITIONS = {
   'omnibus_pacbio_absquant_v11_bioinformatics': { x: 600, y: 1088 },
   'omnibus_pacbio_absquant_v11_data': { x: 880, y: 1088 },
   'omnibus_pacbio_absquant_v11_header': { x: 1160, y: 1088 },
-  'omnibus_pacbio_metag_v10_data': { x: 40, y: 1124 },
-  'omnibus_pacbio_metag_v11_data': { x: 320, y: 1124 },
-  'omnibus_sample_context': { x: 600, y: 1124 },
-  'omnibus_standard_metag_v0_data': { x: 880, y: 1124 },
-  'omnibus_standard_metag_v0_settings': { x: 1160, y: 1124 },
-  'omnibus_standard_metag_v101_bioinformatics': { x: 40, y: 1160 },
-  'omnibus_standard_metag_v101_data': { x: 320, y: 1160 },
-  'omnibus_standard_metag_v101_settings': { x: 600, y: 1160 },
-  'omnibus_standard_metag_v90_bioinformatics': { x: 880, y: 1160 },
-  'omnibus_standard_metag_v90_data': { x: 1160, y: 1160 },
-  'omnibus_standard_metag_v90_settings': { x: 40, y: 1196 },
-  'omnibus_standard_metat_v10_data': { x: 320, y: 1196 },
-  'omnibus_tellseq_absquant_v10_data': { x: 600, y: 1196 },
-  'omnibus_tellseq_metag_v10_data': { x: 880, y: 1196 },
-  'replicated_samples': { x: 1160, y: 1196 }
+  'omnibus_pacbio_absquant_v12_data': { x: 40, y: 1124 },
+  'omnibus_pacbio_metag_v10_data': { x: 320, y: 1124 },
+  'omnibus_pacbio_metag_v11_data': { x: 600, y: 1124 },
+  'omnibus_sample_context': { x: 880, y: 1124 },
+  'omnibus_standard_metag_v0_data': { x: 1160, y: 1124 },
+  'omnibus_standard_metag_v0_settings': { x: 40, y: 1160 },
+  'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1160 },
+  'omnibus_standard_metag_v101_data': { x: 600, y: 1160 },
+  'omnibus_standard_metag_v101_settings': { x: 880, y: 1160 },
+  'omnibus_standard_metag_v90_bioinformatics': { x: 1160, y: 1160 },
+  'omnibus_standard_metag_v90_data': { x: 40, y: 1196 },
+  'omnibus_standard_metag_v90_settings': { x: 320, y: 1196 },
+  'omnibus_standard_metat_v10_data': { x: 600, y: 1196 },
+  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1196 },
+  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1196 },
+  'replicated_samples': { x: 40, y: 1232 },
+  'run_capability': { x: 320, y: 1232 },
+  'run_capability_absquant_mass': { x: 600, y: 1232 },
+  'run_capability_absquant_surface_area': { x: 880, y: 1232 },
+  'run_capability_absquant_volume': { x: 1160, y: 1232 },
+  'run_derived_capability': { x: 40, y: 1268 }
 };
 
 var svg = document.getElementById('canvas');

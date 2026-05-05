@@ -61,7 +61,7 @@ the run-level configuration is Illumina.
 
 - Controls have NULL `project_id` on `input_sample`; they inherit project
   association via `input_plate`
-- `compression_sample.sample_name` is NULL when identical to
+- `prepped_sample.sample_name` is NULL when identical to
   `input_sample.sample_name`; populated only for replicates
 - `run_id` column in reconstruction views is a filter column excluded from
   CSV output
@@ -69,6 +69,7 @@ the run-level configuration is Illumina.
 ### Transitional workflows
 
 1) Read a legacy omnibus file into SQLite format:
+
     - run `db.create_db` to create a new SQLite database
     - run `db.get_section_formats` to read section format definitions from the database
     - run `parser.parse_omnibus` with section formats to parse the input file into sections
@@ -76,12 +77,14 @@ the run-level configuration is Illumina.
     - only if the existing data validates, run `db.populate_db` to write it to the database
 
 2) Write a legacy omnibus file from SQLite format:
+
     - load a SQLite db file
     - read the run_id available in the db; if there is more than one, error
     - run `reconstruct.reconstruct_omnibus` to generate the omnibus csv content
     - write the omnibus csv content to a csv file
 
 3) Round-trip a legacy omnibus file through SQLite format (used only for testing)
+
     - run workflow 1
     - run workflow 2
     - normalize the input csv file (AFTER workflow 1 usage) to produce a known-good:

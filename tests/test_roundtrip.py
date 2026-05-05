@@ -129,6 +129,13 @@ class TestRoundTrip(unittest.TestCase):
                 "standard_metag_v100_w_replicates_rejected",
             )
 
+    def test_good_multilane_synthetic(self):
+        original, reconstructed = roundtrip(
+            str(DATA_DIR / "good_multilane_synthetic.csv"),
+            "good_multilane_synthetic",
+        )
+        self.assertEqual(original, reconstructed)
+
 
 if __name__ == "__main__":
     unittest.main()

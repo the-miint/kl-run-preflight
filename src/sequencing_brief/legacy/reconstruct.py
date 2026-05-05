@@ -293,10 +293,10 @@ def _merge_extra_columns(
     cur.execute(
         "SELECT DISTINCT lec.column_name "
         "FROM legacy_extra_column lec "
-        "JOIN compression_sample cs "
-        "ON lec.compression_sample_id = cs.compression_sample_id "
-        "JOIN compression_placement cp ON cs.placement_id = cp.placement_id "
-        "WHERE cp.run_id = ? "
+        "JOIN prepped_sample prs "
+        "ON lec.prepped_sample_id = prs.prepped_sample_id "
+        "JOIN compression_sample cs ON prs.compression_sample_id = cs.compression_sample_id "
+        "WHERE cs.run_id = ? "
         "ORDER BY lec.column_name",
         (run_id,),
     )
@@ -304,29 +304,29 @@ def _merge_extra_columns(
     if not extra_col_names:
         return active_cols, rows
 
-    # Build a lookup: (compression_sample_id, column_name) → value
+    # Build a lookup: (prepped_sample_id, column_name) → value
     cur.execute(
-        "SELECT lec.compression_sample_id, lec.column_name, lec.column_value "
+        "SELECT lec.prepped_sample_id, lec.column_name, lec.column_value "
         "FROM legacy_extra_column lec "
-        "JOIN compression_sample cs "
-        "ON lec.compression_sample_id = cs.compression_sample_id "
-        "JOIN compression_placement cp ON cs.placement_id = cp.placement_id "
-        "WHERE cp.run_id = ?",
+        "JOIN prepped_sample prs "
+        "ON lec.prepped_sample_id = prs.prepped_sample_id "
+        "JOIN compression_sample cs ON prs.compression_sample_id = cs.compression_sample_id "
+        "WHERE cs.run_id = ?",
         (run_id,),
     )
     extra_values: dict[tuple[int, str], str | None] = {}
-    for cs_id, col_name, col_value in cur.fetchall():
-        extra_values[(cs_id, col_name)] = col_value
+    for prs_id, col_name, col_value in cur.fetchall():
+        extra_values[(prs_id, col_name)] = col_value
 
-    # Sample_ID is the compression_sample_id; find its index in active_cols
+    # Sample_ID is the prepped_sample_id; find its index in active_cols
     sample_id_idx = active_cols.index(COL_SAMPLE_ID)
 
     # Append extra column values to each row
     merged_rows = []
     for row in rows:
-        cs_id = row[sample_id_idx]
+        prs_id = row[sample_id_idx]
         extra_vals = tuple(
-            extra_values.get((cs_id, col), "") for col in extra_col_names
+            extra_values.get((prs_id, col), "") for col in extra_col_names
         )
         merged_rows.append(row + extra_vals)
 

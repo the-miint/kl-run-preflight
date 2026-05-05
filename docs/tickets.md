@@ -66,49 +66,6 @@ rebuild pattern documented at https://www.sqlite.org/lang_altertable.html.
 **Estimated net line change:** ~80 lines across `migrate.py` and
 `test_migrate.py`
 
-### 016: Add total-sample-input metrics with run-level enforcement
-
-**Goal:** Add three total-sample-input metric columns to
-`metagenomic_absquant_sample` with an absquant-specific run-level declaration
-table and a gated BEFORE INSERT trigger, so that new DBs reject incomplete
-absquant data while legacy loading bypasses the constraint.
-
-**Design rationale:** See "Total-sample-input metrics enforcement" section in
-`docs/architecture.md`.
-
-**Blocked on:** The names and data types of the three total-sample-input
-metric columns have not yet been provided. Implementation cannot begin until
-these are known.
-
-**Scope:**
-
-- `schema.sql`: add `db_metadata` table (seeded `enforce_strict = '1'`), add
-  `absquant_run_required_metric` table, add three metric columns to
-  `metagenomic_absquant_sample`, add gated BEFORE INSERT trigger
-- `db.py`: wrap `populate_db` inserts with `enforce_strict` toggle
-  (`'0'` before, `'1'` after)
-- `constants.py`: add column-name constants for the three metrics
-- Tests: verify trigger blocks NULL when strict, allows NULL when permissive,
-  round-trip tests still pass
-
-**Exclusions:**
-
-- Reconstruction views for the new columns (no legacy format outputs them)
-- Migration patches for old DBs (separate future ticket)
-
-**Acceptance criteria:**
-
-- `db_metadata` table exists with `enforce_strict` defaulting to `'1'`
-- Inserting an absquant sample with a NULL declared-required metric fails when
-  `enforce_strict = '1'`
-- Inserting an absquant sample with a NULL declared-required metric succeeds
-  when `enforce_strict = '0'`
-- All existing round-trip tests pass unchanged
-- `populate_db` restores `enforce_strict` to `'1'` after legacy loading
-
-**Estimated net line change:** ~60 lines across `schema.sql`, `db.py`,
-`constants.py`, and tests
-
 ## Consumer API
 
 _Tickets for the stable API that domain consumers will migrate to will be added here once the infrastructure and format coverage are in place._
@@ -131,8 +88,11 @@ _Tickets for the stable API that domain consumers will migrate to will be added 
 | 011 | Move `_get_view_columns` to a shared module | Moved `introspect_view` and `get_view_columns` (public names) to `db.py`; updated imports in `reconstruct.py` and `validate.py` |
 | 012 | Add `run_id` to shared views and remove substring dispatch | `omnibus_contact` and `omnibus_sample_context` now include `run_id`; `_query_view` uses uniform `WHERE run_id = ?` filtering for all views |
 | 013 | Round-trip standard_metag v0 and v90 | Layered SQL views (v90 base → v0 renames → v101 adds columns); shared Illumina header/reads views; `parse_omnibus` accepts `section_formats` from DB; `get_section_formats` in `db.py`; column reordering normalization in round-trip tests; two new round-trip tests pass |
-| 014 | Support arbitrary extra columns in legacy Data sections | `legacy_extra_column` table; extra column detection/storage in `populate_db`; alphabetical extra column reconstruction; `compression_placement` table normalizing well semantics; pre-v101 replicate rejection; round-trip tests for v100 with/without replicates |
+| 014 | Support arbitrary extra columns in legacy Data sections | `legacy_extra_column` table; extra column detection/storage in `populate_db`; alphabetical extra column reconstruction; `compression_sample` table normalizing well semantics; pre-v101 replicate rejection; round-trip tests for v100 with/without replicates |
 | 015 | Round-trip abs_quant_metag v11; make Lane required for Illumina | Format registry rows reusing existing views + `omnibus_sample_context`; removed `contains_lane` optional column rows from all Illumina formats; removed `CHECK_CONTAINS_LANE`; round-trip test passes |
 | 017 | Round-trip standard_metat v10 | Format registry + `omnibus_standard_metat_v10_data` view layering on v0 base; `_populate_metatranscriptomic_sample` in `db.py`; `COL_TOTAL_RNA_CONC` constant; round-trip test passes |
 | 018 | Round-trip tellseq_metag v10 and tellseq_absquant v10 | `lane INTEGER` on `tellseq_sample`; `omnibus_tellseq_metag_v10_data` and `omnibus_tellseq_absquant_v10_data` views; `_populate_tellseq_sample` in `db.py`; `is_tellseq` sub-dispatch within Illumina branch; two round-trip tests pass |
 | 019 | Add database migration infrastructure | `migrate.py` with version tracking, patch discovery, SQL/Python dispatch, `open_db`; `PRAGMA user_version` stamping in `create_db`; `roundtrip.py` uses `open_db`; `sql/patches/` directory; 16 migration tests pass |
+| 016 | Add capability flag infrastructure and per-capability triggers | `capability` reference table, `run_capability` junction table, `run_derived_capability` view, three BEFORE INSERT triggers, `_populate_run_capabilities` in `db.py`, `CAP_ABSQUANT_*` constants; superseded by ticket 021 |
+| 021 | Replace stored `run_capability` table with derived per-capability views | Removed `capability` table, `run_capability` table, 3 triggers, `_populate_run_capabilities`, `CAP_ABSQUANT_*` constants, `CAPABILITY_COLUMN_MAP`; added `run_capability_absquant_mass/volume/surface_area` leaf views, `run_capability` union view; `run_derived_capability` unchanged; tests rewritten to verify derivation from sample data; architecture.md updated |
+| 023 | Multi-lane support via platform-table surrogate PKs | Added `illumina_sample_id` / `tellseq_sample_id` / `pacbio_sample_id` surrogate PKs; demoted `prepped_sample_id` to non-unique FK on illumina/tellseq with `UNIQUE(prepped_sample_id, COALESCE(lane,-1))` indexes; added 5 BEFORE INSERT triggers (i5/i7 invariance, barcode invariance, illumina/tellseq lane uniformity, one-run-per-DB); added `_check_per_tube_consistency` and `(plate, orig_name, dest_well)` cache layer in `populate_db`; new `tests/test_multilane.py` (12 tests); new `good_multilane_synthetic.csv` round-trip fixture; deleted tickets 022a/b in favor of this design; `docs/architecture.md` rewritten with "Path not taken: prepped_library normalization" |

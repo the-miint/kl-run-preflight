@@ -7,10 +7,9 @@ from pathlib import Path
 
 from sequencing_brief.legacy.roundtrip import roundtrip
 
-SHEET_DIR = Path(
-    # TODO: put in path to directory with lots of CSV sample sheets
-    ""
-)
+# TODO: put in path to directory with lots of CSV sample sheets
+SHEET_DIR_STR = "/Users/amandabirmingham/Work/Repositories/fork-kl-metapool/notebooks/test_output/SampleSheets"
+_SHEET_DIR = Path(SHEET_DIR_STR)
 
 
 def roundtrip_csv(csv_path: Path) -> tuple[str, str | None]:
@@ -44,10 +43,16 @@ def roundtrip_csv(csv_path: Path) -> tuple[str, str | None]:
 
 
 def main():
+    # Validate that SHEET_DIR_STR has been set to a real path
+    if not str(SHEET_DIR_STR):
+        raise ValueError(
+            "SHEET_DIR is empty; set it to a directory of CSV sample sheets"
+        )
+
     # Collect eligible CSV files
     csvs = sorted(
         p
-        for p in SHEET_DIR.glob("*.csv")
+        for p in _SHEET_DIR.glob("*.csv")
         if "invalid" not in p.name.lower() and "instrument" not in p.name.lower()
     )
 

@@ -29,15 +29,15 @@ order and normalize the input CSV to match.
 **Column NAME differences handled by view layering:** v90 uses `Sample_Well`
 where v0/v101 use `well_id_384`. These are NOT aliases for the same data:
 
-- `Sample_Well` = ALWAYS `cs.compression_well` (per-row final position)
-- `destination_well_384` = ALWAYS `cs.compression_well` (same, different name)
-- `well_id_384` = ALWAYS `cp.placement_well` (original placement position)
+- `Sample_Well` = ALWAYS `prs.prepped_well` (per-row final position)
+- `destination_well_384` = ALWAYS `prs.prepped_well` (same, different name)
+- `well_id_384` = ALWAYS `cs.compression_well` (original placement position)
 
 For non-replicates all three are equal. For replicates, `well_id_384`
-(placement) is shared across replicates while `Sample_Well` /
-`destination_well_384` (compression_well) varies per replicate. The v0 view
+(compression_well) is shared across replicates while `Sample_Well` /
+`destination_well_384` (prepped_well) varies per replicate. The v0 view
 therefore cannot simply rename `Sample_Well` → `well_id_384`; it must source
-`well_id_384` from `compression_placement.placement_well` via a join.
+`well_id_384` from `compression_sample.compression_well` via a join.
 
 **Well columns in CSV files represent compression plate positions.** Input
 plates are 96-well plates; multiple input plates are consolidated onto one
@@ -52,29 +52,29 @@ plate position (same across all replicates of a sample), while
 `destination_well_384` is the per-replicate final position on the compression
 plate.
 
-**Proposed schema change — `compression_placement` table:**
-Insert a new `compression_placement` entity between `input_sample` and
-`compression_sample`. This table represents "this input sample was placed at
+**Proposed schema change — `compression_sample` table:**
+Insert a new `compression_sample` entity between `input_sample` and
+`prepped_sample`. This table represents "this input sample was placed at
 position X on the compression plate for this run":
 
 ```sql
-CREATE TABLE compression_placement (
-    placement_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE compression_sample (
+    compression_sample_id    INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id          INTEGER NOT NULL REFERENCES sequencing_run(run_id),
     input_sample_id INTEGER NOT NULL REFERENCES input_sample(input_sample_id),
     well            TEXT NOT NULL   -- well_id_384 / Sample_Well
 );
 ```
 
-`compression_sample` would then reference `placement_id` instead of
+`prepped_sample` would then reference `compression_sample_id` instead of
 `run_id` + `input_sample_id` directly:
 
 ```sql
-CREATE TABLE compression_sample (
-    compression_sample_id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    placement_id            INTEGER NOT NULL
-        REFERENCES compression_placement(placement_id),
-    compression_well        TEXT NOT NULL,  -- destination_well_384
+CREATE TABLE prepped_sample (
+    prepped_sample_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    compression_sample_id            INTEGER NOT NULL
+        REFERENCES compression_sample(compression_sample_id),
+    prepped_well        TEXT NOT NULL,  -- destination_well_384
     sample_name             TEXT,
     well_description        TEXT
 );
@@ -83,20 +83,103 @@ CREATE TABLE compression_sample (
 Benefits:
 
 - `well_id_384` is stored once per input sample per run (normalized)
-- Replicate detection becomes structural: a placement with multiple
-  compression_samples is a replicate — no heuristics needed
+- Replicate detection becomes structural: a compression_sample with multiple
+  prepped_samples is a replicate — no heuristics needed
 - The existing `replicated_samples` view logic (COUNT > 1 per group)
-  transfers directly, just grouping by `placement_id` instead of
+  transfers directly, just grouping by `compression_sample_id` instead of
   `input_sample_id`
-- For non-replicates: one placement → one compression_sample,
-  `placement.placement_well` = `compression_sample.compression_well`
-- For replicates: one placement → multiple compression_samples,
-  `placement.placement_well` is shared, each `compression_well` differs
+- For non-replicates: one compression_sample → one prepped_sample,
+  `compression_sample.compression_well` = `prepped_sample.prepped_well`
+- For replicates: one compression_sample → multiple prepped_samples,
+  `compression_sample.compression_well` is shared, each `prepped_well` differs
 
-This change is implemented. The `compression_placement` table exists in
+This change is implemented. The `compression_sample` table exists in
 `schema.sql`, all views join through it, and `db.py` populates it during
 legacy parsing. Pre-v101 files with replicates are rejected because their
 well semantics cannot be round-tripped correctly.
+
+## Multi-lane model
+
+### Schema structure
+
+A sequencing_brief SQLite file represents one sequencing run.  A trigger
+on `sequencing_run` enforces this; the rest of the multi-lane model
+relies on it.  Within that one run, lane splits are modeled as:
+
+- One `prepped_sample` per `(plate, orig_name, dest_well)` triple
+  (the physical well on the compression plate).
+- N rows in the platform-specific table (`illumina_sample` or
+  `tellseq_sample`) — one per (prepped_sample × lane).  Each row
+  carries its own surrogate primary key
+  (`illumina_sample_id` / `tellseq_sample_id`) which serves as the
+  stable, reproducible identifier for that row in the legacy
+  sample-sheet Data section.
+- `pacbio_sample` is unique by `prepped_sample_id` because PacBio
+  has no lane concept today.
+
+### Lane splits vs replicates
+
+- **Lane split**: same `(plate, orig_name, dest_well)` across CSV rows;
+  only `Lane` differs.  Produces one `prepped_sample` and N
+  `illumina_sample` (or `tellseq_sample`) rows.
+- **Replicate**: same `(plate, orig_name)` but different `dest_well`
+  per row.  Produces N separate `prepped_sample` rows, each with
+  its own per-tube data (per-replicate variation in absquant /
+  metatranscriptomic / extra columns is preserved).  Detected
+  structurally by the `replicated_samples` view.
+
+### Per-sample invariants
+
+The i7/i5 index pair is per-`prepped_sample`: lane splits of one
+sample reuse the same indexes across all loadings.  The
+`illumina_sample_index_invariance` BEFORE INSERT trigger enforces that
+all `illumina_sample` rows sharing a `prepped_sample_id` carry
+identical `i7_index_id`, `i7_sequence`, `i5_index_id`, and
+`i5_sequence` values.  TellSeq has the analogous
+`tellseq_sample_barcode_invariance` trigger on `barcode_id`.
+
+Lane uniformity within a database is enforced by
+`illumina_sample_lane_uniformity` and `tellseq_sample_lane_uniformity`:
+all rows must have `lane` uniformly NULL (CSV with no Lane column) or
+uniformly non-NULL (CSV with Lane on every row).  The triggers fire on
+INSERT only; UPDATE bulk-transitions (e.g. setting NULL lanes to a
+known value once it is known) are not blocked.
+
+The triggers and invariants are intentionally minimal because the
+project is migrating away from Illumina; further normalization would
+add complication for technology that is on the way out.
+
+### Path not taken: prepped_library normalization
+
+A more denormalized model — separate `prepped_library` and
+`prepped_library_run` entities, with lane moved to a per-(pool × run)
+table such as `illumina_prepped_library_run` — was considered and
+rejected.  Two reasons:
+
+1. The added complication did not justify itself for technology the
+   project is moving away from.  Illumina-specific normalization
+   machinery would have to be designed, populated, queried, and tested
+   only to be removed when the legacy Illumina path is sunset.
+2. It did not satisfy the requirement that every row in a sample
+   sheet's data table have a stable, reproducible identifier.
+   Collapsing N lane-split CSV rows into one `prepped_sample` plus
+   N junction rows means the per-row identifier would have to come
+   from the junction table, fragmenting the row-ID concept across
+   platform-specific child tables.  The chosen design instead keeps
+   one row per CSV row in the platform-specific table and uses that
+   table's surrogate PK as the per-row identifier.
+
+### Legacy population rules
+
+- One `prepped_sample` per `(plate, orig_name, dest_well)` triple.
+  CSV rows identical except for `Lane` collapse to one
+  `prepped_sample` with N platform-table rows.
+- Lane-split rows must agree on every column except `Lane`.  Disagreement
+  on any other column (per-tube absquant values, extra columns, indexes)
+  is rejected at populate time with `ValueError`.
+- Replicates (same `(plate, orig_name)`, different `dest_well`) keep
+  separate `prepped_sample` and per-tube rows; per-replicate
+  variation in per-tube columns is preserved.
 
 **View layering pattern (same as PacBio v10→v11):** v90 is the base Data view;
 v0 can share it (same columns); v101 layers on top adding `orig_name`,
@@ -111,23 +194,77 @@ layers on top adding `contains_replicates`.
 - Whole-number float normalization (already exists)
 - Keep normalization format-agnostic — do NOT branch on format type
 
-## Total-sample-input metrics enforcement (ticket 016)
+## Data completeness enforcement — per-capability triggers
 
 ### Problem
 
-Going forward, every absquant sample needs at least one "total sample input"
-metric, but there are three different metric types. All absquant samples in a
-run use the same metric type(s) — a run requires at least one type but may
-require two or all three. Legacy omnibus files do not contain any of these
-metrics, and the values cannot be inferred.
+New columns will be added to the schema over time that represent genuinely
+new information not present in older briefs. Each such column is required
+for a specific downstream capability (e.g. absquant qualification) but must
+remain nullable so that legacy briefs — which never collected the data — can
+still be loaded.
 
-The long-term goal is that the SQLite DB (not the omnibus CSV) becomes the
-canonical format. Old DBs will be migrated forward via patches, so only the
-latest schema needs to be supported in code. The metrics and their enforcement
-must be added to the schema so that new DBs cannot be populated with incomplete
-data, while legacy loading remains possible.
+A single global `enforce_strict` flag does not scale: a version-one brief
+loaded into a version-two schema should be held to version-one constraints
+but exempted from version-two constraints. A global toggle cannot express
+"enforce A and B but not C."
 
-#### Why custom migration code instead of an existing tool
+### Why enforcement must live in the database
+
+The SQLite brief file is the artifact that travels — it may be emailed,
+stored in an external database, or processed by tools other than the Python
+code in this project. Any enforcement that exists only in Python is invisible
+to those external consumers and can be bypassed by any code path that writes
+to the database directly. Constraints must be intrinsic to the file so that
+invalid data is rejected regardless of which tool performs the write.
+
+### Chosen design — per-capability derived views
+
+Capabilities are derived from actual sample data rather than declared up
+front.  Each capability has its own leaf view that checks whether any
+sample in the run has a non-null value for the corresponding metric
+column.  A union view (`run_capability`) aggregates all leaf views so
+consumers can ask "what can this run do?" with a single query.
+
+Example structure:
+
+```sql
+-- Leaf view: "can this run do absquant_mass?"
+CREATE VIEW run_capability_absquant_mass AS
+SELECT DISTINCT cs.run_id
+FROM metagenomic_absquant_sample ma
+JOIN prepped_sample prs ON ma.prepped_sample_id = prs.prepped_sample_id
+JOIN compression_sample cs ON prs.compression_sample_id = cs.compression_sample_id
+WHERE ma.extracted_sample_mass_g IS NOT NULL;
+
+-- Union view: "what can this run do?"
+CREATE VIEW run_capability AS
+SELECT run_id, 'absquant_mass' AS capability_name
+    FROM run_capability_absquant_mass
+UNION ALL
+SELECT run_id, 'absquant_volume'
+    FROM run_capability_absquant_volume
+UNION ALL
+SELECT run_id, 'absquant_surface_area'
+    FROM run_capability_absquant_surface_area;
+```
+
+Key properties:
+
+- **Derived, not stored:** No `run_capability` table or `capability`
+  reference table exists.  Capabilities are computed at query time from
+  the sample data, so they can never be out of sync.
+- **Sparse-data tolerant:** Controls (blanks with no DNA) and failed
+  samples naturally have NULL metric values.  The view only requires at
+  least one non-null value per run, so sparse data is handled correctly.
+- **Additive:** Adding a new capability means adding one leaf view and
+  one UNION ALL clause to the union view.
+- **No enforcement triggers:** Insert-time enforcement via BEFORE INSERT
+  triggers was removed because metric columns are legitimately NULL for
+  controls and failed samples, making per-row non-null constraints too
+  strict.
+
+### Why custom migration code instead of an existing tool
 
 The forward-migration pattern (versioned patches applied in sequence) is
 industry-standard and supported by tools such as Alembic, Django migrations,
@@ -154,60 +291,32 @@ because:
   straightforward since the file-based patch numbering convention is
   compatible.
 
-### Chosen design — flat columns with run-level declaration and gated trigger
-
-- Store the three metrics as **nullable columns directly on
-  `metagenomic_absquant_sample`** rather than in a normalized child table.
-  Flat columns keep consumer queries simple (no joins or pivots to read
-  metric values).
-- Add an **`absquant_run_required_metric`** table (or similar) declaring which
-  metric types a given absquant run requires — rows are
-  `(run_id, metric_name)`. At least one row must exist for absquant runs.
-  This table is absquant-specific rather than generic; if other run types
-  later need a similar mechanism, a separate table is easy to add.
-- Add a **`db_metadata`** key-value table with an `enforce_strict` flag,
-  seeded to `'1'` (strict by default). This flag gates enforcement so that
-  the DB starts strict and `populate_db` can temporarily relax it during
-  legacy loading without altering the schema (no DROP/CREATE TRIGGER).
-- Add a **gated BEFORE INSERT trigger** on `metagenomic_absquant_sample`.
-  For each of the three metric columns, the trigger joins from
-  `NEW.compression_sample_id` back through `compression_sample` →
-  `compression_placement` to the run, checks `run_required_metric` to see
-  if that metric is declared as required by `absquant_run_required_metric`,
-  and raises an error if the value is NULL — but only when
-  `enforce_strict = '1'`.
-- **`populate_db`** sets `enforce_strict` to `'0'` before legacy loading and
-  back to `'1'` afterward. This way `populate_db` remains a pure data writer
-  that never modifies the schema structure. The DB is strict for its entire
-  life except during the brief legacy-loading window.
-
 ### Alternatives considered and rejected
 
+**Global `enforce_strict` flag with a single gated trigger:** A `db_metadata`
+table with an `enforce_strict` boolean, checked by a single trigger containing
+all constraint checks. Does not scale: cannot enforce version-one constraints
+while exempting version-two constraints. The flag is either on or off for
+everything.
+
+**Application-only validation (post-load Python check):** Placing constraints
+in Python (e.g., a validation pass at the end of `populate_db`) means the
+database itself permits invalid data. Any tool that writes to the SQLite file
+without going through `populate_db` bypasses enforcement entirely. Since the
+brief file travels independently of the Python code, this leaves it
+unprotected.
+
 **Normalized child table (`sample_total_input_metric`):** A table with
-`(compression_sample_id, metric_type_id, value)` rows is cleaner from a
+`(prepped_sample_id, metric_type_id, value)` rows is cleaner from a
 normalization standpoint, but "every sample has a row for each declared
 metric" is a cross-row completeness constraint that cannot be enforced by
-a per-row INSERT trigger. Enforcement would require either a deferred
-"finalize" step or application-level validation, both of which weaken the
-"schema as source of truth" guarantee.
+a per-row INSERT trigger.
 
-**Finalize flag on `sequencing_run`:** A `is_finalized` column with a
+**Finalize flag on `sequencing_run`:** An `is_finalized` column with a
 trigger on UPDATE could check completeness at a single checkpoint. However,
 this allows invalid data to sit in the DB until finalization, requires every
 population path to remember to finalize, and forces consumers to filter on
 the flag to avoid reading incomplete runs.
-
-**Application-only validation:** Placing the constraint in Python (e.g., a
-check at the end of `populate_db`) means the DB itself permits incomplete
-data. Any code path that writes directly to the DB — manual SQL, a future
-API, a migration script — could bypass the check. This violates the
-project's "schema as source of truth" principle.
-
-**DROP/CREATE TRIGGER toggle in `populate_db`:** Instead of a metadata flag,
-`populate_db` could drop the trigger before loading and recreate it after.
-This works but means `populate_db` reaches into the schema structure rather
-than just writing data. The metadata flag approach keeps `populate_db` as a
-pure data writer.
 
 ## Already supported (have round-trip tests)
 
@@ -340,7 +449,94 @@ by `_add_data_to_sheet()` which iterates over a `lanes` list. This means any
 format's files may or may not contain a `Lane` column depending on how the file
 was generated.
 
-Currently, v100 and abs_quant_metag v10 treat Lane as a required column (present
-in both test files). This should be demoted to an optional column as part of
-ticket 014 (extra column support), since real-world files exist without Lane
-(e.g. `sheet_wo_replicates.csv`, `good_standard_metagv100_w_replicates.csv`).
+After ticket 015, Lane is a required column for all Illumina formats. The
+`contains_lane` optional-column rows were removed from every Illumina entry in
+the format registry, and the `CHECK_CONTAINS_LANE` check function was removed
+from the parser.
+
+## Schema version vs data completeness
+
+### The distinction
+
+Schema version and data completeness are two independent axes. Migrating an
+old database forward to the latest schema (adding columns, tables, and views)
+is always safe and mechanical — new columns receive NULL values. The database
+then has a place for the data, but the data itself does not exist. Schema
+migration makes old databases **structurally identical** to new ones but does
+not make them **informationally equivalent**, because the new fields were never
+collected.
+
+Concretely:
+
+- **Schema version** determines which tables, columns, views, and constraints
+  exist. Controlled by `PRAGMA user_version` and the patch sequence in
+  `sql/patches/`. The goal of "one schema version in the codebase" is feasible
+  and eliminates branching in access patterns.
+- **Data completeness** determines which analyses a given brief can support.
+  A brief migrated from an older format may have NULLs in columns that a
+  current consumer requires. No amount of schema migration can fill in
+  information that was never recorded.
+
+### Design decision — two-tier derived capability model
+
+Capabilities are split into two tiers, both derived from sample data:
+
+- **Column-level capabilities** (per-capability views + `run_capability`
+  union view): One view per metric (e.g. `run_capability_absquant_mass`),
+  each returning `(run_id)` for runs that have at least one sample with a
+  non-null value in the corresponding column.  The union view
+  `run_capability` aggregates all leaf views into
+  `(run_id, capability_name)` rows.
+- **Consumer-level capabilities** (derived via `run_derived_capability`
+  view): Higher-level flags that downstream analysis code checks before
+  proceeding (e.g. `absquant_v1`).  Defined as SQL expressions over the
+  `run_capability` union view.  Not stored as rows — computed at query
+  time.
+
+Key properties:
+
+- **Fully derived:** No stored capability rows exist.  Both tiers are
+  views over the actual sample data, so capabilities can never be out of
+  sync with the data.
+- **Sparse-data tolerant:** Controls and failed samples have NULL metric
+  values.  The views require only one non-null value per run to detect a
+  capability, so sparse data is handled correctly.
+- **Consumer-driven:** The set of consumer-level capabilities is driven by
+  what downstream analysis requires, not by the brief's original format
+  version.  A consumer asks "does this brief have capability X?" rather
+  than "is this brief new enough?"
+- **Additive:** Adding a new column-level capability means adding one leaf
+  view and one UNION ALL clause.  Adding a new consumer-level capability
+  means adding a UNION clause to `run_derived_capability`.
+- **Schema as source of truth:** The definition of each capability lives
+  in SQL, not in Python.
+
+The `run_derived_capability` view uses a `(capability_family, version)`
+structure rather than a flat capability name.  This supports queries like
+"what is the highest version of absquant that this brief supports?" without
+string parsing:
+
+```sql
+SELECT MAX(version) FROM run_derived_capability
+WHERE run_id = ? AND capability_family = 'absquant'
+```
+
+Each version within a family is a separate UNION clause.  A brief that
+satisfies version N also has rows for all versions below N, because higher
+versions are defined as supersets of lower versions' requirements.  This
+means `MAX(version)` always gives the highest supported version.
+
+Consumer queries:
+
+- "Can this run do absquant mass?"
+
+  `SELECT 1 FROM run_capability_absquant_mass WHERE run_id = ?`
+- "What can this run do?"
+
+  `SELECT capability_name FROM run_capability WHERE run_id = ?`
+- "Does this brief support absquant v1 or higher?"
+
+  `SELECT 1 FROM run_derived_capability WHERE run_id = ? AND capability_family = 'absquant' AND version >= 1`
+- "What is the highest absquant version?"
+
+  `SELECT MAX(version) FROM run_derived_capability WHERE run_id = ? AND capability_family = 'absquant'`

@@ -13,6 +13,11 @@ from .migrate import get_latest_version
 from .constants import (
     COL_BARCODE_ID,
     COL_CONTAINS_REPLICATES,
+    COL_EXTRACTED_SAMPLE_MASS,
+    COL_EXTRACTED_SAMPLE_SURFACE_AREA,
+    COL_EXTRACTED_SAMPLE_VOLUME,
+    COL_SEQUENCED_SAMPLE_GDNA_MASS,
+    LEGACY_COLUMN_ALIASES,
     COL_LANE,
     COL_RUN_ID,
     COL_BARCODES_ARE_RC,
@@ -68,6 +73,42 @@ from .constants import (
     SEQUENCER_PACBIO_REVIO,
     SEQUENCER_UNKNOWN,
 )
+
+# ---------------------------------------------------------------------------
+# Column-name normalization
+# ---------------------------------------------------------------------------
+
+
+def _normalize_column_aliases(data_rows: list[dict]) -> list[dict]:
+    """Rename legacy CSV column names to their canonical DB equivalents.
+
+    Rewrites row dicts in place and returns the same list for convenience.
+    Only keys present in LEGACY_COLUMN_ALIASES are affected.
+
+    Args:
+        data_rows: The parsed Data-section row dicts.
+
+    Returns:
+        list[dict]: The same *data_rows* list, with aliased keys renamed.
+    """
+    # Build the subset of aliases that actually appear in the data
+    if not data_rows:
+        return data_rows
+    active_aliases = {
+        csv_name: db_name
+        for csv_name, db_name in LEGACY_COLUMN_ALIASES.items()
+        if csv_name in data_rows[0]
+    }
+    if not active_aliases:
+        return data_rows
+
+    # Rename matching keys in every row
+    for row in data_rows:
+        for csv_name, db_name in active_aliases.items():
+            if csv_name in row:
+                row[db_name] = row.pop(csv_name)
+    return data_rows
+
 
 # ---------------------------------------------------------------------------
 # Schema loading
@@ -179,6 +220,48 @@ def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Lane is the only CSV column whose value is allowed to differ across
+# rows that share a (plate, orig_name, dest_well) triple — by definition
+# a lane split is "same loading event, different lane."  Every other
+# column (including derived ones like Sample_ID) must agree across the
+# group; mismatches are surfaced by _check_per_tube_consistency.
+_PER_LOADING_COLUMNS = frozenset({COL_LANE})
+
+
+def _check_per_tube_consistency(
+    first_row: dict, current_row: dict, cache_key: tuple
+) -> None:
+    """Verify a lane-split row agrees with the first row in its group.
+
+    Lane-split CSV rows share a `(plate, orig_name, dest_well)` triple
+    and produce one `prepped_sample` with N platform-table rows.
+    Any column whose value differs between the first row in the group
+    and *current_row* (other than per-loading columns) signals either a
+    CSV authoring error or data we cannot losslessly represent under
+    the lane-split model.
+
+    Args:
+        first_row: The row dict that originally created the group.
+        current_row: A subsequent row dict that hashes to the same key.
+        cache_key: The `(plate, orig_name, dest_well)` triple, used to
+            identify the offending group in the error message.
+
+    Raises:
+        ValueError: If any non-per-loading column disagrees between the
+            two rows.
+    """
+    for col in set(first_row) | set(current_row):
+        if col in _PER_LOADING_COLUMNS:
+            continue
+        first_val = first_row.get(col)
+        current_val = current_row.get(col)
+        if first_val != current_val:
+            raise ValueError(
+                f"Lane-split rows for {cache_key!r} disagree on column "
+                f"{col!r}: first row has {first_val!r}, this row has "
+                f"{current_val!r}"
+            )
+
 
 def _parse_bool_str(value: str | None, *, nullable: bool = False) -> int | None:
     """Convert a boolean-ish string to an integer 0 or 1.
@@ -282,7 +365,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     """
     cur = conn.cursor()
     header = sections[SECTION_HEADER]
-    data_rows = sections[SECTION_DATA]
+    data_rows = _normalize_column_aliases(sections[SECTION_DATA])
     bio_rows = sections[SECTION_BIOINFORMATICS]
     contact_rows = sections[SECTION_CONTACT]
     context_rows = sections.get(SECTION_SAMPLE_CONTEXT, [])
@@ -406,11 +489,14 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     # Determine extra Data columns not recognized by the format's view
     extra_cols = _get_extra_columns(cur, legacy_format_id, data_rows)
 
-    # Cache input_samples and placements by (plate, orig_name) so that
-    # replicated samples share one input_sample and one placement, each
-    # getting a separate compression_sample row.
+    # Three-layer dedup ladder.  Replicates share input_sample + compression_sample
+    # but get distinct prepped_samples (different dest_well).  Lane
+    # splits share input_sample + compression_sample + prepped_sample (same
+    # dest_well, different Lane only) and produce N platform-table rows.
     input_sample_cache: dict[tuple, int] = {}
-    placement_cache: dict[tuple, int] = {}
+    compression_cache: dict[tuple, int] = {}
+    prs_cache: dict[tuple, int] = {}
+    prs_first_row: dict[int, dict] = {}
 
     for row in data_rows:
         sample_name = row[COL_SAMPLE_NAME]
@@ -427,10 +513,10 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         is_control = sample_name in control_names or orig_name in control_names
         control_key = sample_name if sample_name in control_names else orig_name
 
-        # Create or reuse input_sample and placement.
+        # Create or reuse input_sample and compression_sample.
         cache_key = (plate_name, orig_name)
         if cache_key in input_sample_cache:
-            placement_id = placement_cache[cache_key]
+            cs_id = compression_cache[cache_key]
         else:
             # Controls have NULL project_id; they inherit via input_plate.
             if is_control:
@@ -455,47 +541,55 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             input_sample_id = cur.lastrowid
             input_sample_cache[cache_key] = input_sample_id
 
-            # Create placement (one per input_sample per run)
+            # Create compression_sample (one per input_sample per run)
             cur.execute(
-                """INSERT INTO compression_placement
-                   (run_id, input_sample_id, placement_well)
+                """INSERT INTO compression_sample
+                   (run_id, input_sample_id, compression_well)
                    VALUES (?, ?, ?)""",
                 (run_id, input_sample_id, well),
             )
             assert cur.lastrowid is not None
-            placement_id = cur.lastrowid
-            placement_cache[cache_key] = placement_id
+            cs_id = cur.lastrowid
+            compression_cache[cache_key] = cs_id
 
-        # -- compression_sample --
-        well_desc = row.get(COL_WELL_DESCRIPTION) or None
-        comp_sample_name = sample_name if has_replicates else None
-        cur.execute(
-            """INSERT INTO compression_sample
-               (placement_id, compression_well,
-                sample_name, well_description)
-               VALUES (?, ?, ?, ?)""",
-            (placement_id, dest_well, comp_sample_name, well_desc),
-        )
-        assert cur.lastrowid is not None
-        cs_id = cur.lastrowid
-
-        # -- Platform-specific sample tables --
-        if is_pacbio:
-            _populate_pacbio_sample(cur, cs_id, row)
+        # Reuse prepped_sample for lane splits; create a new one
+        # otherwise.  On reuse, every column except Lane must match.
+        prs_cache_key = (plate_name, orig_name, dest_well)
+        if prs_cache_key in prs_cache:
+            prs_id = prs_cache[prs_cache_key]
+            _check_per_tube_consistency(prs_first_row[prs_id], row, prs_cache_key)
         else:
+            # -- prepped_sample --
+            well_desc = row.get(COL_WELL_DESCRIPTION) or None
+            prepped_sample_name = sample_name if has_replicates else None
+            cur.execute(
+                """INSERT INTO prepped_sample
+                   (compression_sample_id, prepped_well,
+                    sample_name, well_description)
+                   VALUES (?, ?, ?, ?)""",
+                (cs_id, dest_well, prepped_sample_name, well_desc),
+            )
+            assert cur.lastrowid is not None
+            prs_id = cur.lastrowid
+            prs_cache[prs_cache_key] = prs_id
+            prs_first_row[prs_id] = row
+
+            # Per-tube tables: written once per prepped_sample, using
+            # the first row's values.  Lane-split rows are guaranteed to
+            # agree on these columns by _check_per_tube_consistency above.
+            _populate_absquant_sample(cur, prs_id, row)
+            _populate_metatranscriptomic_sample(cur, prs_id, row)
+            _populate_extra_columns(cur, prs_id, row, extra_cols)
+
+        # Per-loading platform-specific row: one per CSV row, always.
+        if is_pacbio:
+            _populate_pacbio_sample(cur, prs_id, row)
+        elif is_tellseq:
             # TellSeq is a library prep protocol on Illumina; it uses
             # tellseq_sample instead of illumina_sample for per-sample data.
-            if is_tellseq:
-                _populate_tellseq_sample(cur, cs_id, row)
-            else:
-                _populate_illumina_sample(cur, cs_id, row)
-
-        # -- Workflow-specific sample tables (platform-independent) --
-        _populate_absquant_sample(cur, cs_id, row)
-        _populate_metatranscriptomic_sample(cur, cs_id, row)
-
-        # -- Extra columns (not recognized by the format's view) --
-        _populate_extra_columns(cur, cs_id, row, extra_cols)
+            _populate_tellseq_sample(cur, prs_id, row)
+        else:
+            _populate_illumina_sample(cur, prs_id, row)
 
     conn.commit()
 
@@ -553,7 +647,7 @@ def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
     )
 
 
-def _populate_absquant_sample(cur, cs_id: int, row: dict):
+def _populate_absquant_sample(cur, prs_id: int, row: dict):
     """Insert a metagenomic_absquant_sample row if absquant columns are present.
 
     AbsQuant columns (mass_syndna_input_ng, etc.) appear in both PacBio and
@@ -562,7 +656,7 @@ def _populate_absquant_sample(cur, cs_id: int, row: dict):
 
     Args:
         cur: An open SQLite cursor.
-        cs_id: The compression_sample_id for this sample.
+        prs_id: The prepped_sample_id for this sample.
         row: A single Data-section row dict.
     """
     # AbsQuant columns are only present in absquant sheet types.
@@ -576,16 +670,52 @@ def _populate_absquant_sample(cur, cs_id: int, row: dict):
         else None
     )
 
+    # Parse sequenced sample gDNA mass (shared across all absquant capabilities)
+    gdna_mass = (
+        float(row[COL_SEQUENCED_SAMPLE_GDNA_MASS])
+        if row.get(COL_SEQUENCED_SAMPLE_GDNA_MASS)
+        else None
+    )
+
+    # Parse optional total-sample-input metric columns
+    sample_mass = (
+        float(row[COL_EXTRACTED_SAMPLE_MASS])
+        if row.get(COL_EXTRACTED_SAMPLE_MASS)
+        else None
+    )
+    sample_vol = (
+        float(row[COL_EXTRACTED_SAMPLE_VOLUME])
+        if row.get(COL_EXTRACTED_SAMPLE_VOLUME)
+        else None
+    )
+    sample_sa = (
+        float(row[COL_EXTRACTED_SAMPLE_SURFACE_AREA])
+        if row.get(COL_EXTRACTED_SAMPLE_SURFACE_AREA)
+        else None
+    )
+
     cur.execute(
         "INSERT INTO metagenomic_absquant_sample "
-        "(compression_sample_id, syndna_pool_mass_ng, "
-        " extracted_gdna_concentration, syndna_pool_number) "
-        "VALUES (?, ?, ?, ?)",
-        (cs_id, mass, conc, row.get(COL_SYNDNA_POOL_NUMBER) or None),
+        "(prepped_sample_id, syndna_pool_mass_ng, "
+        " extracted_gdna_concentration, syndna_pool_number, "
+        " sequenced_sample_gdna_mass_ng, "
+        " extracted_sample_mass_g, extracted_sample_volume_ul, "
+        " extracted_sample_surface_area_cm2) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            prs_id,
+            mass,
+            conc,
+            row.get(COL_SYNDNA_POOL_NUMBER) or None,
+            gdna_mass,
+            sample_mass,
+            sample_vol,
+            sample_sa,
+        ),
     )
 
 
-def _populate_metatranscriptomic_sample(cur, cs_id: int, row: dict):
+def _populate_metatranscriptomic_sample(cur, prs_id: int, row: dict):
     """Insert a metatranscriptomic_sample row if metat columns are present.
 
     The total_rna_concentration_ng_ul column identifies a metatranscriptomic
@@ -593,7 +723,7 @@ def _populate_metatranscriptomic_sample(cur, cs_id: int, row: dict):
 
     Args:
         cur: An open SQLite cursor.
-        cs_id: The compression_sample_id for this sample.
+        prs_id: The prepped_sample_id for this sample.
         row: A single Data-section row dict.
     """
     if COL_TOTAL_RNA_CONC not in row:
@@ -603,18 +733,18 @@ def _populate_metatranscriptomic_sample(cur, cs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO metatranscriptomic_sample "
-        "(compression_sample_id, total_rna_concentration_ng_ul) "
+        "(prepped_sample_id, total_rna_concentration_ng_ul) "
         "VALUES (?, ?)",
-        (cs_id, conc),
+        (prs_id, conc),
     )
 
 
-def _populate_pacbio_sample(cur, cs_id: int, row: dict):
+def _populate_pacbio_sample(cur, prs_id: int, row: dict):
     """Insert a pacbio_sample row for a PacBio sample.
 
     Args:
         cur: An open SQLite cursor.
-        cs_id: The compression_sample_id for this sample.
+        prs_id: The prepped_sample_id for this sample.
         row: A single Data-section row dict containing PacBio-specific
             columns.
     """
@@ -623,10 +753,10 @@ def _populate_pacbio_sample(cur, cs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO pacbio_sample "
-        "(compression_sample_id, barcode_id, twist_adaptor_id, syndna_is_twisted) "
+        "(prepped_sample_id, barcode_id, twist_adaptor_id, syndna_is_twisted) "
         "VALUES (?, ?, ?, ?)",
         (
-            cs_id,
+            prs_id,
             row.get(COL_BARCODE_ID, ""),
             row.get(COL_TWIST_ADAPTOR_ID) or None,
             twisted,
@@ -634,12 +764,12 @@ def _populate_pacbio_sample(cur, cs_id: int, row: dict):
     )
 
 
-def _populate_tellseq_sample(cur, cs_id: int, row: dict):
+def _populate_tellseq_sample(cur, prs_id: int, row: dict):
     """Insert a tellseq_sample row with barcode and lane information.
 
     Args:
         cur: An open SQLite cursor.
-        cs_id: The compression_sample_id for this sample.
+        prs_id: The prepped_sample_id for this sample.
         row: A single Data-section row dict containing TellSeq-specific
             columns (barcode_id, and optionally Lane).
     """
@@ -649,18 +779,18 @@ def _populate_tellseq_sample(cur, cs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO tellseq_sample "
-        "(compression_sample_id, barcode_id, lane) "
+        "(prepped_sample_id, barcode_id, lane) "
         "VALUES (?, ?, ?)",
-        (cs_id, row.get(COL_BARCODE_ID, ""), lane),
+        (prs_id, row.get(COL_BARCODE_ID, ""), lane),
     )
 
 
-def _populate_illumina_sample(cur, cs_id: int, row: dict):
+def _populate_illumina_sample(cur, prs_id: int, row: dict):
     """Insert an illumina_sample row with i5/i7 index information.
 
     Args:
         cur: An open SQLite cursor.
-        cs_id: The compression_sample_id for this sample.
+        prs_id: The prepped_sample_id for this sample.
         row: A single Data-section row dict containing Illumina index
             columns (I7_Index_ID, index, I5_Index_ID, index2).
     """
@@ -670,11 +800,11 @@ def _populate_illumina_sample(cur, cs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO illumina_sample "
-        "(compression_sample_id, i7_index_id, i7_sequence, "
+        "(prepped_sample_id, i7_index_id, i7_sequence, "
         " i5_index_id, i5_sequence, lane) "
         "VALUES (?, ?, ?, ?, ?, ?)",
         (
-            cs_id,
+            prs_id,
             row.get(COL_I7_INDEX_ID, ""),
             row.get(COL_INDEX, ""),
             row.get(COL_I5_INDEX_ID, ""),
@@ -718,19 +848,19 @@ def _get_extra_columns(
     return sorted(parsed_cols - known_cols)
 
 
-def _populate_extra_columns(cur, cs_id: int, row: dict, extra_cols: list[str]):
+def _populate_extra_columns(cur, prs_id: int, row: dict, extra_cols: list[str]):
     """Insert legacy_extra_column rows for a single sample.
 
     Args:
         cur: An open SQLite cursor.
-        cs_id: The compression_sample_id for this sample.
+        prs_id: The prepped_sample_id for this sample.
         row: A single Data-section row dict.
         extra_cols: Column names to store as extra columns.
     """
     for col_name in extra_cols:
         cur.execute(
             "INSERT INTO legacy_extra_column "
-            "(compression_sample_id, column_name, column_value) "
+            "(prepped_sample_id, column_name, column_value) "
             "VALUES (?, ?, ?)",
-            (cs_id, col_name, row.get(col_name)),
+            (prs_id, col_name, row.get(col_name)),
         )

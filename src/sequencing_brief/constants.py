@@ -96,6 +96,24 @@ COL_SYNDNA_IS_TWISTED = "syndna_is_twisted"
 COL_MASS_SYNDNA_INPUT = "mass_syndna_input_ng"
 COL_EXTRACTED_GDNA_CONC = "extracted_gdna_concentration_ng_ul"
 COL_SYNDNA_POOL_NUMBER = "syndna_pool_number"
+# absquant shared column (required for all absquant capabilities)
+COL_SEQUENCED_SAMPLE_GDNA_MASS = "sequenced_sample_gdna_mass_ng"
+# absquant total-sample-input metric columns
+COL_EXTRACTED_SAMPLE_MASS = "extracted_sample_mass_g"
+COL_EXTRACTED_SAMPLE_VOLUME = "extracted_sample_volume_ul"
+COL_EXTRACTED_SAMPLE_SURFACE_AREA = "extracted_sample_surface_area_cm2"
+
+# Legacy CSV → DB column aliases.  Some legacy formats use different column
+# names for the same underlying data.  Keys are the CSV header names; values
+# are the canonical DB constant names used throughout this codebase.
+# NOTE: the reconstruction views in schema.sql hard-code the reverse mapping
+# (DB → CSV) in their column aliases.  If you change an entry here, update the
+# corresponding view alias to match.
+LEGACY_COLUMN_ALIASES: dict[str, str] = {
+    "calc_mass_sample_aliquot_input_g": COL_EXTRACTED_SAMPLE_MASS,
+    "sample_volume_ul": COL_EXTRACTED_SAMPLE_VOLUME,
+    "sample_surface_area_cm2": COL_EXTRACTED_SAMPLE_SURFACE_AREA,
+}
 
 
 # ---------------------------------------------------------------------------
