@@ -540,3 +540,37 @@ Consumer queries:
 - "What is the highest absquant version?"
 
   `SELECT MAX(version) FROM run_derived_capability WHERE run_id = ? AND capability_family = 'absquant'`
+
+## Numeric measurement precision — deferred
+
+Numeric measurement columns (concentrations, masses, volumes, surface
+areas) are stored as SQLite REAL. REAL is a binary float, so the textual
+form written by reconstruction does not always equal the source literal:
+trailing zeros after the decimal point are lost (e.g. a source value of
+`0.110` round-trips to `0.11`).
+
+In scientific data, trailing zeros after a decimal point are significant
+figures and carry information about measurement precision. The current
+REAL storage discards that information silently.
+
+This is recorded as a known limitation to be revisited with a domain
+expert before legacy-CSV sunset. Candidate resolutions include:
+
+- storing affected columns as TEXT to preserve the source literal exactly
+- attaching a per-column precision or significant-figures attribute
+- accepting the precision loss and documenting it as a brief-format
+  limitation
+
+The right choice depends on what downstream consumers actually require
+from these values, which has not yet been determined.
+
+Affected columns (currently REAL):
+
+- `input_plate.elution_vol`
+- `metagenomic_absquant_sample.syndna_pool_mass_ng`
+- `metagenomic_absquant_sample.extracted_gdna_concentration`
+- `metagenomic_absquant_sample.sequenced_sample_gdna_mass_ng`
+- `metagenomic_absquant_sample.extracted_sample_mass_g`
+- `metagenomic_absquant_sample.extracted_sample_volume_ul`
+- `metagenomic_absquant_sample.extracted_sample_surface_area_cm2`
+- `metatranscriptomic_sample.total_rna_concentration_ng_ul`
