@@ -17,6 +17,10 @@ import io
 from ..constants import (
     CHECK_CONTAINS_KATHAROSEQ,
     CHECK_CONTAINS_REPLICATES,
+    CHECK_HAS_EXTRACTED_SAMPLE_MASS,
+    CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA,
+    CHECK_HAS_EXTRACTED_SAMPLE_VOLUME,
+    CHECK_HAS_SEQUENCED_GDNA_MASS,
     COL_SAMPLE_ID,
     COL_SAMPLE_NAME,
     FORMAT_HEADER_KV,
@@ -200,6 +204,35 @@ _CHECK_FUNCTIONS = {
         cur,
         "SELECT 1 FROM katharoseq_sample LIMIT 1",
         (),
+    ),
+    # Each absquant metric column is gated by its per-capability view:
+    # the view returns the run_id iff at least one sample has a non-null
+    # value in the corresponding metric column.
+    CHECK_HAS_SEQUENCED_GDNA_MASS: lambda cur, run_id: _db_has_rows(
+        cur,
+        "SELECT 1 FROM metagenomic_absquant_sample ma "
+        "JOIN prepped_sample prs "
+        "ON ma.prepped_sample_id = prs.prepped_sample_id "
+        "JOIN compression_sample cs "
+        "ON prs.compression_sample_id = cs.compression_sample_id "
+        "WHERE cs.run_id = ? "
+        "AND ma.sequenced_sample_gdna_mass_ng IS NOT NULL LIMIT 1",
+        (run_id,),
+    ),
+    CHECK_HAS_EXTRACTED_SAMPLE_MASS: lambda cur, run_id: _db_has_rows(
+        cur,
+        "SELECT 1 FROM run_capability_absquant_mass WHERE run_id = ? LIMIT 1",
+        (run_id,),
+    ),
+    CHECK_HAS_EXTRACTED_SAMPLE_VOLUME: lambda cur, run_id: _db_has_rows(
+        cur,
+        "SELECT 1 FROM run_capability_absquant_volume WHERE run_id = ? LIMIT 1",
+        (run_id,),
+    ),
+    CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA: lambda cur, run_id: _db_has_rows(
+        cur,
+        "SELECT 1 FROM run_capability_absquant_surface_area WHERE run_id = ? LIMIT 1",
+        (run_id,),
     ),
 }
 

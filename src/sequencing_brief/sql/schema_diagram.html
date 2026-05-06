@@ -399,11 +399,11 @@ var SCHEMA = {
       ]
     },
     {
-      "id": "compression_placement",
+      "id": "compression_sample",
       "category": "core",
       "columns": [
         {
-          "name": "placement_id",
+          "name": "compression_sample_id",
           "type": "INTEGER",
           "pk": true
         },
@@ -418,30 +418,30 @@ var SCHEMA = {
           "fk": "input_sample"
         },
         {
-          "name": "placement_well",
+          "name": "compression_well",
           "type": "TEXT",
           "note": "Position on the compression plate (well_id_384 / Sample_Well)"
         }
       ]
     },
     {
-      "id": "compression_sample",
+      "id": "prepped_sample",
       "category": "core",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "prepped_sample_id",
           "type": "INTEGER",
           "pk": true
         },
         {
-          "name": "placement_id",
+          "name": "compression_sample_id",
           "type": "INTEGER",
-          "fk": "compression_placement"
+          "fk": "compression_sample"
         },
         {
-          "name": "compression_well",
+          "name": "prepped_well",
           "type": "TEXT",
-          "note": "Final well position; equals placement_well for non-replicates, destination_well_384 for replicates"
+          "note": "Final well position; equals compression_well for non-replicates, destination_well_384 for replicates"
         },
         {
           "name": "sample_name",
@@ -503,10 +503,14 @@ var SCHEMA = {
       "category": "platform",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "illumina_sample_id",
           "type": "INTEGER",
-          "pk": true,
-          "fk": "compression_sample"
+          "pk": true
+        },
+        {
+          "name": "prepped_sample_id",
+          "type": "INTEGER",
+          "fk": "prepped_sample"
         },
         {
           "name": "i7_index_id",
@@ -535,10 +539,14 @@ var SCHEMA = {
       "category": "platform",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "tellseq_sample_id",
           "type": "INTEGER",
-          "pk": true,
-          "fk": "compression_sample"
+          "pk": true
+        },
+        {
+          "name": "prepped_sample_id",
+          "type": "INTEGER",
+          "fk": "prepped_sample"
         },
         {
           "name": "barcode_id",
@@ -555,10 +563,14 @@ var SCHEMA = {
       "category": "platform",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "pacbio_sample_id",
           "type": "INTEGER",
-          "pk": true,
-          "fk": "compression_sample"
+          "pk": true
+        },
+        {
+          "name": "prepped_sample_id",
+          "type": "INTEGER",
+          "fk": "prepped_sample"
         },
         {
           "name": "barcode_id",
@@ -579,10 +591,10 @@ var SCHEMA = {
       "category": "workflow",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "prepped_sample_id",
           "type": "INTEGER",
           "pk": true,
-          "fk": "compression_sample"
+          "fk": "prepped_sample"
         },
         {
           "name": "syndna_pool_mass_ng",
@@ -619,10 +631,10 @@ var SCHEMA = {
       "category": "workflow",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "prepped_sample_id",
           "type": "INTEGER",
           "pk": true,
-          "fk": "compression_sample"
+          "fk": "prepped_sample"
         },
         {
           "name": "total_rna_concentration_ng_ul",
@@ -755,10 +767,10 @@ var SCHEMA = {
       "category": "legacy",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "prepped_sample_id",
           "type": "INTEGER",
           "pk": true,
-          "fk": "compression_sample"
+          "fk": "prepped_sample"
         },
         {
           "name": "column_name",
@@ -831,7 +843,7 @@ var SCHEMA = {
     },
     {
       "id": "omnibus_standard_metag_v0_data",
-      "note": "Sources well_id_384 from placement_well (original compression position). Sample_Well (compression_well) and well_id_384 (placement_well) are equal for non-replicates but differ for replicates."
+      "note": "Sources well_id_384 from compression_well (original compression position). Sample_Well (prepped_well) and well_id_384 (compression_well) are equal for non-replicates but differ for replicates."
     },
     {
       "id": "omnibus_standard_metag_v0_settings",
@@ -871,11 +883,11 @@ var SCHEMA = {
     },
     {
       "id": "omnibus_tellseq_metag_v10_data",
-      "note": "TellSeq Data view: uses well_id_384 from placement_well and barcode_id from tellseq_sample instead of Illumina i5/i7 index columns."
+      "note": "TellSeq Data view: uses well_id_384 from compression_well and barcode_id from tellseq_sample instead of Illumina i5/i7 index columns."
     },
     {
       "id": "replicated_samples",
-      "note": "Detects replicated samples (a placement with multiple compression wells)"
+      "note": "Detects replicated samples (a compression_sample with multiple prepped_wells)"
     },
     {
       "id": "run_capability",
@@ -920,12 +932,12 @@ var POSITIONS = {
   'input_plate': { x: 380, y: 236 },
   'input_sample': { x: 380, y: 358 },
   'sequencing_run': { x: 380, y: 516 },
-  'compression_placement': { x: 380, y: 746 },
-  'compression_sample': { x: 380, y: 868 },
+  'compression_sample': { x: 380, y: 746 },
+  'prepped_sample': { x: 380, y: 868 },
   'illumina_run': { x: 720, y: 60 },
   'illumina_sample': { x: 720, y: 272 },
-  'tellseq_sample': { x: 720, y: 430 },
-  'pacbio_sample': { x: 720, y: 534 },
+  'tellseq_sample': { x: 720, y: 448 },
+  'pacbio_sample': { x: 720, y: 570 },
   'metagenomic_absquant_sample': { x: 1020, y: 60 },
   'metatranscriptomic_sample': { x: 1020, y: 254 },
   'katharoseq_sample': { x: 1020, y: 340 },

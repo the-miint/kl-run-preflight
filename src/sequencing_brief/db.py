@@ -840,8 +840,16 @@ def _get_extra_columns(
     if view_row is None:
         return []
 
-    # Get the known column set from the view (includes optional columns)
-    known_cols = set(get_view_columns(cur, view_row[0]))
+    # Get the known column set from the view (CSV-side names) and apply
+    # the alias map so it uses canonical DB-side names where applicable.
+    # Without this step, a column like calc_mass_sample_aliquot_input_g
+    # (CSV name) would not match the alias-normalized parsed column name
+    # extracted_sample_mass_g (DB name), causing it to be misclassified
+    # as an extra column.
+    known_cols = {
+        LEGACY_COLUMN_ALIASES.get(c, c)
+        for c in get_view_columns(cur, view_row[0])
+    }
 
     # Identify extra columns from the parsed data
     parsed_cols = set(data_rows[0].keys())

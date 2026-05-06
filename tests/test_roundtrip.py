@@ -136,6 +136,18 @@ class TestRoundTrip(unittest.TestCase):
         )
         self.assertEqual(original, reconstructed)
 
+    def test_good_pacbio_absquantv12_synthetic(self):
+        # Exercises sample_volume_ul (one of the four optional v12 metric
+        # columns) and the alias map's interaction with extra-column
+        # detection.  Real-world v12 files only carry
+        # calc_mass_sample_aliquot_input_g; this synthetic verifies that
+        # other metric columns also round-trip cleanly.
+        original, reconstructed = roundtrip(
+            str(DATA_DIR / "good_pacbio_absquantv12_synthetic.csv"),
+            "good_pacbio_absquantv12_synthetic",
+        )
+        self.assertEqual(original, reconstructed)
+
 
 if __name__ == "__main__":
     unittest.main()

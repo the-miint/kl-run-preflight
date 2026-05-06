@@ -89,7 +89,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (1, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: standard_metag v101
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -107,7 +107,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (2, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_metag v11
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -123,7 +123,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (3, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_metag v10
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -139,7 +139,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (4, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_absquant v10
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -155,7 +155,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (5, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: standard_metag v90
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -198,7 +198,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (8, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: abs_quant_metag v10
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -215,7 +215,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (9, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: abs_quant_metag v11
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -233,7 +233,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (10, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: standard_metat v10
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -263,7 +263,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (12, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: tellseq_absquant v10
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -281,7 +281,7 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (13, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_absquant v12
 INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
@@ -297,7 +297,19 @@ INSERT INTO legacy_samplesheet_view VALUES
 INSERT INTO legacy_samplesheet_optional_columns VALUES
     (14, 'Data', 'replicates',
      'orig_name,destination_well_384',
-     'contains_replicates', 'Well_description');
+     'check_contains_replicates', 'Well_description'),
+    (14, 'Data', 'sequenced_gdna_mass',
+     'sequenced_sample_gdna_mass_ng',
+     'check_has_sequenced_gdna_mass', 'syndna_pool_number'),
+    (14, 'Data', 'extracted_sample_mass',
+     'calc_mass_sample_aliquot_input_g',
+     'check_has_extracted_sample_mass', 'syndna_pool_number'),
+    (14, 'Data', 'extracted_sample_volume',
+     'sample_volume_ul',
+     'check_has_extracted_sample_volume', 'syndna_pool_number'),
+    (14, 'Data', 'extracted_sample_surface_area',
+     'sample_surface_area_cm2',
+     'check_has_extracted_sample_surface_area', 'syndna_pool_number');
 
 -- ============================================================
 -- Legacy Extra Columns

@@ -167,5 +167,12 @@ CONTEXT_TYPE_MAP = {
 # Check-function name strings (legacy_samplesheet_optional_columns)
 # ---------------------------------------------------------------------------
 
-CHECK_CONTAINS_REPLICATES = "contains_replicates"
-CHECK_CONTAINS_KATHAROSEQ = "contains_katharoseq"
+# Values must use the `check_` prefix to flag them as function-handle
+# strings rather than CSV column names — they are stored in the
+# `check_function` field of legacy_samplesheet_optional_columns rows.
+CHECK_CONTAINS_REPLICATES = "check_contains_replicates"
+CHECK_CONTAINS_KATHAROSEQ = "check_contains_katharoseq"
+CHECK_HAS_SEQUENCED_GDNA_MASS = "check_has_sequenced_gdna_mass"
+CHECK_HAS_EXTRACTED_SAMPLE_MASS = "check_has_extracted_sample_mass"
+CHECK_HAS_EXTRACTED_SAMPLE_VOLUME = "check_has_extracted_sample_volume"
+CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA = "check_has_extracted_sample_surface_area"
