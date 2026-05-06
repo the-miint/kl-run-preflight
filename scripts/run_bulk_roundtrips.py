@@ -8,7 +8,7 @@ from pathlib import Path
 from sequencing_brief.legacy.roundtrip import roundtrip
 
 # TODO: put in path to directory with lots of CSV sample sheets
-SHEET_DIR_STR = "/Users/amandabirmingham/Work/Repositories/fork-kl-metapool/notebooks/test_output/SampleSheets"
+SHEET_DIR_STR = ""
 _SHEET_DIR = Path(SHEET_DIR_STR)
 
 
