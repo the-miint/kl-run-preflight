@@ -176,3 +176,22 @@ CHECK_HAS_SEQUENCED_GDNA_MASS = "check_has_sequenced_gdna_mass"
 CHECK_HAS_EXTRACTED_SAMPLE_MASS = "check_has_extracted_sample_mass"
 CHECK_HAS_EXTRACTED_SAMPLE_VOLUME = "check_has_extracted_sample_volume"
 CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA = "check_has_extracted_sample_surface_area"
+
+
+# ---------------------------------------------------------------------------
+# Update / audit table and column names
+# ---------------------------------------------------------------------------
+
+# Tables
+TABLE_INPUT_SAMPLE = "input_sample"
+TABLE_ILLUMINA_SAMPLE = "illumina_sample"
+TABLE_TELLSEQ_SAMPLE = "tellseq_sample"
+TABLE_CHANGE_LOG = "change_log"
+
+# Columns updated by updates.py
+DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
+DB_COL_LANE = "lane"
+
+# Update-platform identifiers (caller-supplied platform string)
+UPDATE_PLATFORM_ILLUMINA = "illumina"
+UPDATE_PLATFORM_TELLSEQ = "tellseq"

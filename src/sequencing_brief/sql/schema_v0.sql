@@ -1,5 +1,14 @@
 -- ============================================================
--- Sequencing Sample Sheet Schema v3
+-- Sequencing Sample Sheet Schema v3 - FROZEN BASELINE (version 0)
+-- ============================================================
+--
+-- DO NOT EDIT.  This file is the frozen schema as it existed before any
+-- migration patch was applied.  It is consumed only by
+-- tests/test_schema_drift.py, which applies every patch in
+-- sql/patches/ to a database built from this file and then compares
+-- the result to schema.sql.  Editing this file would defeat the
+-- drift-detection check.
+--
 -- ============================================================
 
 PRAGMA foreign_keys = ON;
@@ -351,10 +360,7 @@ CREATE TABLE input_sample (
     well                TEXT,
     project_id          INTEGER REFERENCES project(project_id),
         -- NULL for controls; controls inherit project via input_plate
-    sample_type_id      INTEGER NOT NULL REFERENCES sample_type(sample_type_id),
-    biosample_accession TEXT
-        -- NCBI BioSample accession; nullable, populated post-fill
-        -- via updates.set_biosample_accession
+    sample_type_id      INTEGER NOT NULL REFERENCES sample_type(sample_type_id)
 );
 
 CREATE TABLE sequencing_run (
@@ -1138,21 +1144,3 @@ CREATE VIEW omnibus_tellseq_absquant_v10_data AS
     JOIN input_plate ip ON ins.input_plate_id = ip.input_plate_id
     LEFT JOIN metagenomic_absquant_sample ma
         ON v10."Sample_ID" = ma.prepped_sample_id;
-
--- ============================================================
--- Audit log
--- ============================================================
-
--- Lightweight per-column audit trail.  Update operations in
--- updates.py write one row here per modified domain row, capturing
--- the prior and new values plus an optional caller-supplied reason.
-CREATE TABLE change_log (
-    change_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    changed_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    table_name      TEXT NOT NULL,
-    row_id          INTEGER NOT NULL,
-    column_name     TEXT NOT NULL,
-    old_value       TEXT,
-    new_value       TEXT,
-    reason          TEXT
-);
