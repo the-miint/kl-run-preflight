@@ -7,8 +7,10 @@ read and edited independently of the Python code.
 from __future__ import annotations
 
 import sqlite3
+import warnings
 from pathlib import Path
 
+from .legacy import LegacyExtraColumnWarning
 from .migrate import get_latest_version
 from .constants import (
     COL_BARCODE_ID,
@@ -853,7 +855,20 @@ def _get_extra_columns(
 
     # Identify extra columns from the parsed data
     parsed_cols = set(data_rows[0].keys())
-    return sorted(parsed_cols - known_cols)
+    extras = sorted(parsed_cols - known_cols)
+
+    # Warn so callers can see which columns will be carried verbatim
+    # via legacy_extra_column rather than mapped to typed DB columns
+    if extras:
+        warnings.warn(
+            f"[Data] carrying {len(extras)} unrecognized column(s) "
+            f"as extras: {extras}. These will be stored in "
+            f"legacy_extra_column and round-tripped verbatim.",
+            LegacyExtraColumnWarning,
+            stacklevel=2,
+        )
+
+    return extras
 
 
 def _populate_extra_columns(cur, prs_id: int, row: dict, extra_cols: list[str]):

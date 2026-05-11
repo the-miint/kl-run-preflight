@@ -1,34 +1,29 @@
-"""Round-trip an omnibus CSV through SQLite and back.
+"""Round-trip comparison utilities for tests and dev scripts.
 
-Parses a legacy omnibus CSV into a SQLite database, writes it to disk,
-reopens from the file, reconstructs the CSV, and returns both the
-normalized original and the reconstructed text for comparison.
+Round-tripping a legacy omnibus CSV (load → write → byte-compare) is not a
+production workflow; it exists only to verify that the SQLite representation
+preserves the original. These helpers run a CSV through the public load/write
+API and normalize the original to match the reconstructor's formatting choices
+so that an exact text comparison is meaningful.
 """
 
 from __future__ import annotations
 
 import csv
 import io
-import os
 import re
-import tempfile
 from pathlib import Path
 
 from ..constants import FORMAT_TABULAR
-from ..db import create_db, get_section_formats, populate_db
+from ..db import get_section_formats
 from ..migrate import open_db
+from .api import load_legacy_csv, write_legacy_csv
 from .parser import (
     extract_section_name,
     is_section_header,
-    parse_omnibus,
     parse_omnibus_text,
     strip_entries,
 )
-from .reconstruct import reconstruct_omnibus
-
-# Set to a directory path to write out the SQLite DB and reconstructed CSV
-# for each round-trip (e.g. "/tmp/roundtrip_debug").  Leave empty to disable.
-DEBUG_OUTPUT_DIR = ""
 
 
 def _id_reorder_sections(
@@ -132,14 +127,16 @@ def _reorder_columns(text: str, reference: str, section_formats: dict[str, str])
     return output.getvalue()
 
 
-def _normalize_csv(text: str, reference: str, section_formats: dict[str, str]) -> str:
+def normalize_csv(text: str, reference: str, section_formats: dict[str, str]) -> str:
     """Normalize input CSV text to match reconstruction output.
 
-    Applies three normalizations:
+    Applies four normalizations so an original legacy CSV can be byte-compared
+    against the reconstructor's output:
 
       - Boolean case: FALSE → False, TRUE → True
       - Whole-number floats: e.g. 1.0 → 1, 110.0 → 110
       - Column reordering: tabular sections reordered to match reference
+      - Trailing newline: ensured present
     """
     # Normalize boolean case
     text = text.replace("FALSE", "False").replace("TRUE", "True")
@@ -160,46 +157,39 @@ def _normalize_csv(text: str, reference: str, section_formats: dict[str, str]) -
     return text
 
 
-def roundtrip(csv_path: str, test_name: str) -> tuple[str, str]:
-    """Run the full round-trip and return (normalized_original, reconstructed).
+def roundtrip_via_api(csv_path: Path, tmp_dir: Path) -> tuple[str, str]:
+    """Round-trip a legacy CSV through the public load/write API.
 
-    Creates the DB first to obtain section formats, then parses, populates,
-    writes to disk, reopens from the file, and reconstructs.
+    Loads *csv_path* into a fresh SQLite DB inside *tmp_dir*, writes
+    that DB back out as a CSV, and normalizes the original so it can be
+    byte-compared against the reconstructed output.
+
+    Args:
+        csv_path: The legacy CSV to round-trip.
+        tmp_dir: Scratch directory for the intermediate DB and
+            reconstructed CSV. Caller is responsible for cleanup.
+
+    Returns:
+        (normalized_original, reconstructed) — equal iff the round-trip
+        was lossless.
     """
-    if DEBUG_OUTPUT_DIR:
-        out_dir = Path(DEBUG_OUTPUT_DIR)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        db_path = str(out_dir / f"{test_name}.db")
-    else:
-        fd, db_path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
+    # Materialize the intermediate DB and reconstructed CSV inside tmp_dir
+    db_path = tmp_dir / f"{csv_path.stem}.db"
+    out_path = tmp_dir / f"{csv_path.stem}.out.csv"
 
-    Path(db_path).unlink(missing_ok=True)
+    load_legacy_csv(str(csv_path), str(db_path))
+    write_legacy_csv(str(db_path), str(out_path))
+
+    # Pull section_formats from the populated DB so the original can be
+    # normalized using the same registry the reconstructor used
+    conn = open_db(str(db_path))
     try:
-        # Create DB first to get section format definitions
-        conn = create_db(db_path)
         section_formats = get_section_formats(conn)
-
-        # Parse with section formats from DB
-        sections = parse_omnibus(csv_path, section_formats)
-
-        # Populate and close to flush to disk
-        populate_db(conn, sections)
-        conn.close()
-
-        # Reopen from file to reconstruct (mirrors real usage)
-        conn = open_db(db_path)
-        section_formats = get_section_formats(conn)
-        reconstructed = reconstruct_omnibus(conn, 1)
-        conn.close()
     finally:
-        if not DEBUG_OUTPUT_DIR:
-            Path(db_path).unlink(missing_ok=True)
+        conn.close()
 
-    if DEBUG_OUTPUT_DIR:
-        out_dir = Path(DEBUG_OUTPUT_DIR)
-        (out_dir / f"{test_name}.csv").write_text(reconstructed)
-
-    original_text = Path(csv_path).read_text()
-    normalized = _normalize_csv(original_text, reconstructed, section_formats)
+    # Normalize the original to reconstruction conventions
+    original = csv_path.read_text()
+    reconstructed = out_path.read_text()
+    normalized = normalize_csv(original, reconstructed, section_formats)
     return normalized, reconstructed

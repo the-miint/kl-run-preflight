@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import tempfile
 import traceback
 from pathlib import Path
 
-from sequencing_brief.legacy.roundtrip import roundtrip
+from sequencing_brief.legacy.roundtrip import roundtrip_via_api
 
 # TODO: put in path to directory with lots of CSV sample sheets
 SHEET_DIR_STR = ""
@@ -20,7 +21,8 @@ def roundtrip_csv(csv_path: Path) -> tuple[str, str | None]:
     traceback line for error.
     """
     try:
-        normalized, reconstructed = roundtrip(str(csv_path), csv_path.stem)
+        with tempfile.TemporaryDirectory() as tmp:
+            normalized, reconstructed = roundtrip_via_api(csv_path, Path(tmp))
 
         if normalized == reconstructed:
             return "match", None

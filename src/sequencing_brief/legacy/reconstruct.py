@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import csv
 import io
+import warnings
 
+from . import LegacyExtraColumnWarning
 from ..constants import (
     CHECK_CONTAINS_KATHAROSEQ,
     CHECK_CONTAINS_REPLICATES,
@@ -336,6 +338,15 @@ def _merge_extra_columns(
     extra_col_names = [r[0] for r in cur.fetchall()]
     if not extra_col_names:
         return active_cols, rows
+
+    # Warn so callers can see which carried-through columns are being
+    # re-emitted from legacy_extra_column rather than from typed views
+    warnings.warn(
+        f"[Data] emitting {len(extra_col_names)} carried extra "
+        f"column(s) from legacy_extra_column: {extra_col_names}.",
+        LegacyExtraColumnWarning,
+        stacklevel=2,
+    )
 
     # Build a lookup: (prepped_sample_id, column_name) → value
     cur.execute(

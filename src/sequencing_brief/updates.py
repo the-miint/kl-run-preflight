@@ -19,6 +19,8 @@ Supported operations:
 
 from __future__ import annotations
 
+import contextlib
+import os
 import sqlite3
 
 from .constants import (
@@ -31,6 +33,7 @@ from .constants import (
     UPDATE_PLATFORM_ILLUMINA,
     UPDATE_PLATFORM_TELLSEQ,
 )
+from .migrate import open_db
 
 # Map platform strings to (table_name, primary_key_column).  Used to
 # dispatch update_lane to the correct platform-specific sample table.
@@ -80,15 +83,19 @@ def _log_change(
 
 
 def set_biosample_accession(
-    conn: sqlite3.Connection,
+    db_path: str | os.PathLike,
     sample_name: str,
     accession: str | None,
     reason: str | None = None,
 ) -> None:
     """Set biosample_accession on the input_sample matching sample_name.
 
+    Opens *db_path* via ``migrate.open_db`` so any pending schema
+    patches are applied before the update runs, and closes the
+    connection afterward.
+
     Args:
-        conn: An open SQLite connection at the latest schema version.
+        db_path: Filesystem path to the SQLite sequencing-brief file.
         sample_name: The CSV-effective Sample_Name to match.  Resolved
             via ``COALESCE(prepped_sample.sample_name,
             input_sample.sample_name)`` so callers may pass either an
@@ -101,6 +108,22 @@ def set_biosample_accession(
     Raises:
         ValueError: If no input_sample matches *sample_name*, or if
             multiple distinct input_samples match (ambiguous name).
+    """
+    with contextlib.closing(open_db(str(db_path))) as conn:
+        _set_biosample_accession(conn, sample_name, accession, reason)
+
+
+def _set_biosample_accession(
+    conn: sqlite3.Connection,
+    sample_name: str,
+    accession: str | None,
+    reason: str | None,
+) -> None:
+    """Connection-scoped implementation of set_biosample_accession.
+
+    Tests use this directly against an in-memory connection to avoid
+    file I/O.  External callers should use the path-based public
+    function so that schema patches are guaranteed to be applied.
     """
     cur = conn.cursor()
 
@@ -155,13 +178,17 @@ def set_biosample_accession(
 
 
 def update_lane(
-    conn: sqlite3.Connection,
+    db_path: str | os.PathLike,
     platform: str,
     from_lane: int | None,
     to_lane: int | None,
     reason: str | None = None,
 ) -> int:
     """Bulk-reassign lane values on a platform-specific sample table.
+
+    Opens *db_path* via ``migrate.open_db`` so any pending schema
+    patches are applied before the update runs, and closes the
+    connection afterward.
 
     Every row whose current lane equals *from_lane* (NULL is treated as
     a value) is updated to *to_lane*.  The operation rejects on:
@@ -175,7 +202,7 @@ def update_lane(
       prepped_sample already has a row at *to_lane*)
 
     Args:
-        conn: An open SQLite connection at the latest schema version.
+        db_path: Filesystem path to the SQLite sequencing-brief file.
         platform: Either ``"illumina"`` or ``"tellseq"``.
         from_lane: The current lane value to match.  None matches NULL.
         to_lane: The new lane value.  None sets the column to NULL.
@@ -187,6 +214,23 @@ def update_lane(
 
     Raises:
         ValueError: For any of the rejection conditions described above.
+    """
+    with contextlib.closing(open_db(str(db_path))) as conn:
+        return _update_lane(conn, platform, from_lane, to_lane, reason)
+
+
+def _update_lane(
+    conn: sqlite3.Connection,
+    platform: str,
+    from_lane: int | None,
+    to_lane: int | None,
+    reason: str | None,
+) -> int:
+    """Connection-scoped implementation of update_lane.
+
+    Tests use this directly against an in-memory connection to avoid
+    file I/O.  External callers should use the path-based public
+    function so that schema patches are guaranteed to be applied.
     """
     if platform not in _PLATFORM_TABLES:
         supported = sorted(_PLATFORM_TABLES.keys())

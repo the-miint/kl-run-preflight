@@ -1,17 +1,15 @@
-"""sequencing_brief — round-trip omnibus CSV ↔ SQLite."""
+"""sequencing_brief — SQLite-backed sample-sheet representation."""
 
-from .legacy.parser import parse_omnibus
-from .db import create_db, get_section_formats, populate_db
+from .db import create_db
+from .legacy.api import load_legacy_csv, write_legacy_csv
 from .migrate import open_db
-from .legacy.reconstruct import reconstruct_omnibus
-from .legacy.validate import validate_omnibus
+from .updates import set_biosample_accession, update_lane
 
 __all__ = [
-    "parse_omnibus",
     "create_db",
-    "get_section_formats",
     "open_db",
-    "populate_db",
-    "reconstruct_omnibus",
-    "validate_omnibus",
+    "load_legacy_csv",
+    "write_legacy_csv",
+    "set_biosample_accession",
+    "update_lane",
 ]

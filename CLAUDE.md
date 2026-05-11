@@ -68,20 +68,24 @@ the run-level configuration is Illumina.
 
 ### Transitional workflows
 
+Consumer-facing entry points are exposed at the package root (see
+`__init__.py`); the per-step pipeline below describes the internal
+implementation.
+
 1) Read a legacy omnibus file into SQLite format:
 
-    - run `db.create_db` to create a new SQLite database
-    - run `db.get_section_formats` to read section format definitions from the database
-    - run `parser.parse_omnibus` with section formats to parse the input file into sections
-    - run `validate.validate_omnibus` to check the validity of the input file format using per-section database views
-    - only if the existing data validates, run `db.populate_db` to write it to the database
+    - **Consumer call:** `load_legacy_csv(csv_path, db_path)`
+    - Internally: `db.create_db` → `db.get_section_formats` →
+      `parser.parse_omnibus` → `validate.validate_omnibus` →
+      `db.populate_db` (raises `ValueError` and removes the partial DB
+      file if validation fails)
 
 2) Write a legacy omnibus file from SQLite format:
 
-    - load a SQLite db file
-    - read the run_id available in the db; if there is more than one, error
-    - run `reconstruct.reconstruct_omnibus` to generate the omnibus csv content
-    - write the omnibus csv content to a csv file
+    - **Consumer call:** `write_legacy_csv(db_path, csv_path)`
+    - Internally: `migrate.open_db` → look up the single `sequencing_run`
+      (raises `ValueError` if zero or multiple) →
+      `reconstruct.reconstruct_omnibus` → write text to file
 
 3) Round-trip a legacy omnibus file through SQLite format (used only for testing)
 
@@ -93,6 +97,8 @@ the run-level configuration is Illumina.
         - reorder columns in tabular sections to match reconstruction order
         - ensure a trailing newline
     - directly compare the raw text of the normalized known-good omnibus file to the output omnibus csv file
+    - the `roundtrip_via_api` helper in `legacy/roundtrip.py` packages
+      the load + write + normalize sequence for tests and dev scripts
 
 ## Project Structure
 
@@ -104,11 +110,12 @@ Tests are in `tests/`. SQL schema is in `src/sequencing_brief/sql/`.
 | `src/sequencing_brief/sql/schema.sql` | Provides full DDL: reference tables, legacy format registry, core domain tables, platform-specific tables, reconstruction views |
 | `src/sequencing_brief/constants.py` | Holds all string-literal constants (section names, column names, platform strings) |
 | `src/sequencing_brief/db.py` | Creates SQLite DB from schema.sql, populates tables from parsed data |
+| `src/sequencing_brief/legacy/api.py` | Provides consumer-facing wrappers (load_legacy_csv, write_legacy_csv) over the load and write pipelines |
 | `src/sequencing_brief/legacy/parser.py` | Parses omnibus CSV into dict of sections (header_kv, values_only, tabular) |
 | `src/sequencing_brief/legacy/validate.py` | Validates parsed sections against the view registry |
 | `src/sequencing_brief/legacy/reconstruct.py` | Rebuilds omnibus CSV from SQL views via the legacy format registry |
 | `src/sequencing_brief/legacy/formatting.py` | Defines shared formatting (boolean columns, bcl_scrub_name) |
-| `src/sequencing_brief/legacy/roundtrip.py` | Orchestrates full round-trip: parse → SQLite → reconstruct → normalize → compare |
+| `src/sequencing_brief/legacy/roundtrip.py` | Packages load + write + normalize as test/dev helpers for byte-comparing reconstructed output against the original |
 
 ## Ticket Tracking
 
@@ -119,9 +126,9 @@ table in `docs/tickets.md` before considering the work done.
 
 - Framework: **pytest**
 - Run tests: `pytest`
-- Tests are round-trip: parse real CSV → DB → reconstruct → compare to original
+- Tests are round-trip: load real CSV → DB → write CSV → compare to original
 - Test data: real sample sheet CSVs in `tests/data/`
-- `DEBUG_OUTPUT_DIR` in `legacy/roundtrip.py` writes DB + CSV to disk when set
+- The `roundtrip_via_api` helper in `legacy/roundtrip.py` runs load + write + normalize against a per-test temp dir
 
 ## Imports
 

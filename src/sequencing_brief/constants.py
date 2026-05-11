@@ -38,6 +38,22 @@ FIELD_INVESTIGATOR_NAME = "Investigator Name"
 FIELD_EXPERIMENT_NAME = "Experiment Name"
 FIELD_DATE = "Date"
 FIELD_DESCRIPTION = "Description"
+FIELD_IEM_FILE_VERSION = "IEMFileVersion"
+FIELD_WORKFLOW = "Workflow"
+FIELD_APPLICATION = "Application"
+FIELD_CHEMISTRY = "Chemistry"
+
+# Header keys that the omnibus_illumina_header view emits as hardcoded
+# literals.  The DB does not store these values, so any deviating input
+# would be silently replaced at round-trip; the validator rejects such
+# files so the user is told at load time instead of producing wrong
+# output later.
+EXPECTED_ILLUMINA_HEADER_CONSTANTS: dict[str, str] = {
+    FIELD_IEM_FILE_VERSION: "4",
+    FIELD_WORKFLOW: "GenerateFASTQ",
+    FIELD_APPLICATION: "FASTQ Only",
+    FIELD_CHEMISTRY: "Default",
+}
 
 
 # ---------------------------------------------------------------------------

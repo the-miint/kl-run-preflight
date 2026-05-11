@@ -1,140 +1,93 @@
-"""Round-trip tests: parse CSV → populate DB → reconstruct CSV → compare."""
+"""Round-trip tests: load CSV → DB → write CSV → byte-compare to original."""
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 
-from sequencing_brief.legacy.roundtrip import roundtrip
+from sequencing_brief import load_legacy_csv
+from sequencing_brief.legacy.roundtrip import roundtrip_via_api
 
 DATA_DIR = Path(__file__).parent / "data"
 
 
 class TestRoundTrip(unittest.TestCase):
-    def test_good_pacbio_absquantv11(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_pacbio_absquantv11.csv"),
-            "good_pacbio_absquantv11",
+    def setUp(self):
+        # Per-test scratch dir for the intermediate DB and reconstructed CSV
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _assert_roundtrips(self, csv_name: str):
+        normalized, reconstructed = roundtrip_via_api(
+            DATA_DIR / csv_name, self.tmp_dir
         )
-        self.assertEqual(original, reconstructed)
+        self.assertEqual(normalized, reconstructed)
+
+    def test_good_pacbio_absquantv11(self):
+        self._assert_roundtrips("good_pacbio_absquantv11.csv")
 
     def test_pacbio_v11_absquant_unpooled(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "pacbio_v11_absquant_unpooled_sample_sheet.csv"),
-            "pacbio_absquant_v11_unpooled",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("pacbio_v11_absquant_unpooled_sample_sheet.csv")
 
     def test_skin_replicates_novaseq(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "Test1_Skin_replicates_15459_novaseq.csv"),
-            "standard_metag_v101_replicates_novaseq",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("Test1_Skin_replicates_15459_novaseq.csv")
 
     def test_celeste_adaptation_novaseq(self):
-        original, reconstructed = roundtrip(
-            str(
-                DATA_DIR
-                / "YYYY_MM_DD_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"
-            ),
-            "standard_metag_v101_novaseq",
+        self._assert_roundtrips(
+            "YYYY_MM_DD_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"
         )
-        self.assertEqual(original, reconstructed)
 
     def test_good_pacbio_metagv11(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_pacbio_metagv11.csv"),
-            "pacbio_metag_v11",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_pacbio_metagv11.csv")
 
     def test_good_pacbio_metagv10(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_pacbio_metagv10.csv"),
-            "pacbio_metag_v10",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_pacbio_metagv10.csv")
 
     def test_good_pacbio_absquantv10(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_pacbio_absquantv10.csv"),
-            "pacbio_absquant_v10",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_pacbio_absquantv10.csv")
 
     def test_good_standard_metagv90(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_standard_metagv90.csv"),
-            "standard_metag_v90",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_standard_metagv90.csv")
 
     def test_good_standard_metagv0_really_metat(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_standard_metagv0_really_metat.csv"),
-            "standard_metag_v0_really_metat",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_standard_metagv0_really_metat.csv")
 
     def test_good_standard_metagv100_wo_replicates(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_standard_metagv100_wo_replicates.csv"),
-            "standard_metag_v100_wo_replicates",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_standard_metagv100_wo_replicates.csv")
 
     def test_good_abs_quant_metagv10(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_abs_quant_metagv10.csv"),
-            "abs_quant_metag_v10",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_abs_quant_metagv10.csv")
 
     def test_good_abs_quant_metagv11(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_abs_quant_metagv11.csv"),
-            "abs_quant_metag_v11",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_abs_quant_metagv11.csv")
 
     def test_good_standard_metatv10(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_standard_metatv10.csv"),
-            "standard_metat_v10",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_standard_metatv10.csv")
 
     def test_good_tellseq_metagv10(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_tellseq_metagv10.csv"),
-            "tellseq_metag_v10",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_tellseq_metagv10.csv")
 
     def test_good_tellseq_absquantv10(self):
-        original, reconstructed = roundtrip(
-            str(
-                DATA_DIR
-                / "Tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv"
-            ),
-            "tellseq_absquant_v10",
+        self._assert_roundtrips(
+            "Tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv"
         )
-        self.assertEqual(original, reconstructed)
 
     def test_standard_metagv100_w_replicates_rejected(self):
-        with self.assertRaises(ValueError, msg="v101 or later"):
-            roundtrip(
-                str(DATA_DIR / "good_standard_metagv100_w_replicates.csv"),
-                "standard_metag_v100_w_replicates_rejected",
-            )
+        # Pre-v101 files with replicates are unsupported and must be rejected
+        # at load time before any DB writes happen
+        csv_path = DATA_DIR / "good_standard_metagv100_w_replicates.csv"
+        db_path = self.tmp_dir / "rejected.db"
+        with self.assertRaisesRegex(
+            ValueError, r"Replicates in legacy version.*v101 or later"
+        ):
+            load_legacy_csv(str(csv_path), str(db_path))
 
     def test_good_multilane_synthetic(self):
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_multilane_synthetic.csv"),
-            "good_multilane_synthetic",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_multilane_synthetic.csv")
 
     def test_good_pacbio_absquantv12_synthetic(self):
         # Exercises sample_volume_ul (one of the four optional v12 metric
@@ -142,11 +95,7 @@ class TestRoundTrip(unittest.TestCase):
         # detection.  Real-world v12 files only carry
         # calc_mass_sample_aliquot_input_g; this synthetic verifies that
         # other metric columns also round-trip cleanly.
-        original, reconstructed = roundtrip(
-            str(DATA_DIR / "good_pacbio_absquantv12_synthetic.csv"),
-            "good_pacbio_absquantv12_synthetic",
-        )
-        self.assertEqual(original, reconstructed)
+        self._assert_roundtrips("good_pacbio_absquantv12_synthetic.csv")
 
 
 if __name__ == "__main__":

@@ -1,22 +1,34 @@
 """Validate a parsed omnibus file against the view registry.
 
-Checks that the file contains the expected sections, and that each section's
-columns match the corresponding view definition.  Returns a list of error
+Reports any structural problems that would prevent a clean round-trip or
+result in silent data corruption.  Returns a list of human-readable error
 strings (empty if valid).
 
-Optional column groups (defined in legacy_samplesheet_optional_columns) are
-allowed to be absent -- the validation only requires the *base* columns.
+The per-section column checks are scoped to match the de-facto round-trip
+contract:
+
+  - [Settings] keys are all treated as optional, since the reconstructor's
+    _write_header_kv skips NULL values on output.
+  - [Data] unexpected columns are accepted because they are routed through
+    the legacy_extra_column carry-through mechanism at populate time.
+  - All other tabular sections (Bioinformatics, Contact, SampleContext)
+    require an exact column-name match against the view definition.
+  - Optional column groups (legacy_samplesheet_optional_columns) are
+    allowed to be absent in any section.
 """
 
 from __future__ import annotations
 
 from ..constants import (
+    EXPECTED_ILLUMINA_HEADER_CONSTANTS,
     FIELD_SHEET_TYPE,
     FIELD_SHEET_VERSION,
     FORMAT_HEADER_KV,
     FORMAT_TABULAR,
     FORMAT_VALUES_ONLY,
+    SECTION_DATA,
     SECTION_HEADER,
+    SECTION_SETTINGS,
 )
 from ..db import get_view_columns
 
@@ -25,11 +37,28 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
     """Validate a parsed omnibus file against the view registry.
 
     Checks performed:
-      1. SheetType + SheetVersion map to a known legacy format.
-      2. All expected sections are present; no unexpected sections exist.
-      3. Column names in each section match the view definition
-         (with optional column groups allowed to be absent).
-      4. Values-only sections have the expected number of values.
+      1. SheetVersion parses as an integer.
+      2. SheetType + SheetVersion map to a known legacy format.
+      3. For non-PacBio formats, the four hardcoded Illumina header
+         constants (IEMFileVersion, Workflow, Application, Chemistry),
+         if present in the file, match the literals the reconstructor
+         emits.  Deviating values would be silently replaced on
+         round-trip and so are rejected here.
+      4. All expected sections are present; no unexpected sections
+         exist.
+      5. Per-section column checks, with section-specific contracts:
+           * [Header] (header_kv): all required view columns present;
+             unexpected keys flagged.
+           * [Settings] (header_kv): missing keys are allowed (the
+             reconstructor NULL-skips on output); unexpected keys
+             flagged.
+           * [Data] (tabular): all required view columns present;
+             unrecognized columns accepted as legacy_extra_column
+             carry-throughs.
+           * Other tabular sections (Bioinformatics, Contact,
+             SampleContext): exact match required.
+           * Values-only sections (e.g. [Reads]): value count matches
+             the view's column count.
 
     Args:
         conn: An open SQLite connection with the schema (including
@@ -65,6 +94,22 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
         return errors
     legacy_format_id = fmt[0]
 
+    # -- Reject deviations from Illumina header constants -------------------
+    # The omnibus_illumina_header view emits IEMFileVersion, Workflow,
+    # Application, and Chemistry as hardcoded literals; the DB does not
+    # store the originals. Any deviating input would be silently replaced
+    # on round-trip, so reject such files at load time instead.
+    # PacBio uses a different header view with no such literals.
+    is_pacbio = "pacbio" in sheet_type.lower()
+    if not is_pacbio:
+        for field, expected in EXPECTED_ILLUMINA_HEADER_CONSTANTS.items():
+            observed = header.get(field)
+            if observed is not None and observed != expected:
+                errors.append(
+                    f"[Header] {field}={observed!r} cannot be preserved; "
+                    f"only {expected!r} is supported for this samplesheet type"
+                )
+
     # -- Load optional column groups for this format ------------------------
     optional_cols = _load_optional_columns(cur, legacy_format_id)
 
@@ -97,11 +142,21 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
         file_section = sections[section_name]
 
         if section_format == FORMAT_HEADER_KV:
+            # Settings keys may legitimately be absent: the reconstructor's
+            # _write_header_kv drops keys whose DB value is NULL on output,
+            # so missing Settings keys round-trip cleanly. Header keys back
+            # NOT NULL DB fields and remain required.
+            allow_missing = section_name == SECTION_SETTINGS
             actual_cols = (
                 list(file_section.keys()) if isinstance(file_section, dict) else []
             )
             _check_columns(
-                errors, section_name, required_cols, actual_cols, section_optional
+                errors,
+                section_name,
+                required_cols,
+                actual_cols,
+                section_optional,
+                allow_missing=allow_missing,
             )
 
         elif section_format == FORMAT_VALUES_ONLY:
@@ -115,9 +170,20 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
 
         elif section_format == FORMAT_TABULAR:
             if file_section:
+                # Data extras are routed to legacy_extra_column at populate
+                # and re-emitted on reconstruct, so unrecognized Data
+                # columns are legal carry-throughs (a warning is raised
+                # at populate time). Other tabular sections have no
+                # extras mechanism, so unrecognized columns are errors.
+                allow_unrecognized = section_name == SECTION_DATA
                 actual_cols = list(file_section[0].keys())
                 _check_columns(
-                    errors, section_name, required_cols, actual_cols, section_optional
+                    errors,
+                    section_name,
+                    required_cols,
+                    actual_cols,
+                    section_optional,
+                    allow_unrecognized=allow_unrecognized,
                 )
 
     return errors
@@ -154,11 +220,15 @@ def _check_columns(
     required: list[str],
     actual: list[str],
     optional: set[str] | None = None,
+    *,
+    allow_unrecognized: bool = False,
+    allow_missing: bool = False,
 ) -> None:
     """Compare expected vs actual column lists and append errors.
 
-    Required columns must be present. Optional columns may appear but are
-    not required. Anything else is flagged as unexpected.
+    Required columns must be present and unknown columns are flagged as
+    unexpected, except where the section's contract opts out via one of
+    the keyword flags below.
 
     Args:
         errors: The accumulating list of error strings; new errors are
@@ -169,6 +239,14 @@ def _check_columns(
         actual: Column names that were found in the parsed file.
         optional: Column names that may appear but are not required.
             Defaults to an empty set.
+        allow_unrecognized: When True, suppress the "unexpected columns"
+            error for this section. Callers should set this only for
+            sections that support the extras carry-through pattern
+            (currently the Data section).
+        allow_missing: When True, suppress the "missing columns" error
+            for this section. Callers should set this only for sections
+            whose reconstructor tolerates absent columns (currently the
+            Settings section, where _write_header_kv NULL-skips).
     """
     optional = optional or set()
     required_set = set(required)
@@ -176,6 +254,10 @@ def _check_columns(
 
     missing = required_set - actual_set
     extra = actual_set - required_set - optional
+    if allow_unrecognized:
+        extra = set()
+    if allow_missing:
+        missing = set()
 
     if missing:
         errors.append(f"[{section_name}] missing columns: {sorted(missing)}")
