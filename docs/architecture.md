@@ -102,7 +102,7 @@ well semantics cannot be round-tripped correctly.
 
 ### Schema structure
 
-A sequencing_brief SQLite file represents one sequencing run.  A trigger
+A run-preflight SQLite file represents one sequencing run.  A trigger
 on `sequencing_run` enforces this; the rest of the multi-lane model
 relies on it.  Within that one run, lane splits are modeled as:
 
@@ -199,19 +199,19 @@ layers on top adding `contains_replicates`.
 ### Problem
 
 New columns will be added to the schema over time that represent genuinely
-new information not present in older briefs. Each such column is required
+new information not present in older run preflights. Each such column is required
 for a specific downstream capability (e.g. absquant qualification) but must
-remain nullable so that legacy briefs — which never collected the data — can
+remain nullable so that legacy run preflights — which never collected the data — can
 still be loaded.
 
-A single global `enforce_strict` flag does not scale: a version-one brief
+A single global `enforce_strict` flag does not scale: a version-one run preflight
 loaded into a version-two schema should be held to version-one constraints
 but exempted from version-two constraints. A global toggle cannot express
 "enforce A and B but not C."
 
 ### Why enforcement must live in the database
 
-The SQLite brief file is the artifact that travels — it may be emailed,
+The SQLite run-preflight file is the artifact that travels — it may be emailed,
 stored in an external database, or processed by tools other than the Python
 code in this project. Any enforcement that exists only in Python is invisible
 to those external consumers and can be bypassed by any code path that writes
@@ -303,7 +303,7 @@ everything.
 in Python (e.g., a validation pass at the end of `populate_db`) means the
 database itself permits invalid data. Any tool that writes to the SQLite file
 without going through `populate_db` bypasses enforcement entirely. Since the
-brief file travels independently of the Python code, this leaves it
+run-preflight file travels independently of the Python code, this leaves it
 unprotected.
 
 **Normalized child table (`sample_total_input_metric`):** A table with
@@ -472,8 +472,8 @@ Concretely:
   exist. Controlled by `PRAGMA user_version` and the patch sequence in
   `sql/patches/`. The goal of "one schema version in the codebase" is feasible
   and eliminates branching in access patterns.
-- **Data completeness** determines which analyses a given brief can support.
-  A brief migrated from an older format may have NULLs in columns that a
+- **Data completeness** determines which analyses a given run preflight can support.
+  A run preflight migrated from an older format may have NULLs in columns that a
   current consumer requires. No amount of schema migration can fill in
   information that was never recorded.
 
@@ -502,9 +502,9 @@ Key properties:
   values.  The views require only one non-null value per run to detect a
   capability, so sparse data is handled correctly.
 - **Consumer-driven:** The set of consumer-level capabilities is driven by
-  what downstream analysis requires, not by the brief's original format
-  version.  A consumer asks "does this brief have capability X?" rather
-  than "is this brief new enough?"
+  what downstream analysis requires, not by the run preflight's original format
+  version.  A consumer asks "does this run preflight have capability X?" rather
+  than "is this run preflight new enough?"
 - **Additive:** Adding a new column-level capability means adding one leaf
   view and one UNION ALL clause.  Adding a new consumer-level capability
   means adding a UNION clause to `run_derived_capability`.
@@ -513,7 +513,7 @@ Key properties:
 
 The `run_derived_capability` view uses a `(capability_family, version)`
 structure rather than a flat capability name.  This supports queries like
-"what is the highest version of absquant that this brief supports?" without
+"what is the highest version of absquant that this run preflight supports?" without
 string parsing:
 
 ```sql
@@ -521,7 +521,7 @@ SELECT MAX(version) FROM run_derived_capability
 WHERE run_idx = ? AND capability_family = 'absquant'
 ```
 
-Each version within a family is a separate UNION clause.  A brief that
+Each version within a family is a separate UNION clause.  A run preflight that
 satisfies version N also has rows for all versions below N, because higher
 versions are defined as supersets of lower versions' requirements.  This
 means `MAX(version)` always gives the highest supported version.
@@ -534,7 +534,7 @@ Consumer queries:
 - "What can this run do?"
 
   `SELECT capability_name FROM run_capability WHERE run_idx = ?`
-- "Does this brief support absquant v1 or higher?"
+- "Does this run preflight support absquant v1 or higher?"
 
   `SELECT 1 FROM run_derived_capability WHERE run_idx = ? AND capability_family = 'absquant' AND version >= 1`
 - "What is the highest absquant version?"
@@ -558,7 +558,7 @@ expert before legacy-CSV sunset. Candidate resolutions include:
 
 - storing affected columns as TEXT to preserve the source literal exactly
 - attaching a per-column precision or significant-figures attribute
-- accepting the precision loss and documenting it as a brief-format
+- accepting the precision loss and documenting it as a run-preflight-format
   limitation
 
 The right choice depends on what downstream consumers actually require

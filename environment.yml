@@ -1,4 +1,4 @@
-name: sequencing-brief
+name: run-preflight
 channels:
   - defaults
 dependencies:

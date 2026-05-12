@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "versioningit>=2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sequencing-brief"
+name = "run-preflight"
 dynamic = ["version"]
 description = "Normalized SQLite representation of sequencing sample sheets, with round-trip support for legacy omnibus CSV formats."
 requires-python = ">=3.9"
@@ -15,10 +15,10 @@ dev = ["pytest", "ruff"]
 [tool.versioningit]
 
 [tool.versioningit.write]
-file = "src/sequencing_brief/_version.py"
+file = "src/run_preflight/_version.py"
 
 [tool.setuptools.package-data]
-sequencing_brief = ["sql/*.sql"]
+run_preflight = ["sql/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

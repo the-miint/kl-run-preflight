@@ -1,5 +1,14 @@
 -- ============================================================
--- Sequencing Sample Sheet Schema v3
+-- Sequencing Sample Sheet Schema v3 - FROZEN BASELINE (version 0)
+-- ============================================================
+--
+-- DO NOT EDIT.  This file is the frozen schema as it existed before any
+-- migration patch was applied.  It is consumed only by
+-- tests/test_schema_drift.py, which applies every patch in
+-- sql/patches/ to a database built from this file and then compares
+-- the result to schema.sql.  Editing this file would defeat the
+-- drift-detection check.
+--
 -- ============================================================
 
 PRAGMA foreign_keys = ON;
@@ -351,10 +360,7 @@ CREATE TABLE input_sample (
     well                TEXT,
     project_idx          INTEGER REFERENCES project(project_idx),
         -- NULL for controls; controls inherit project via input_plate
-    sample_type_idx      INTEGER NOT NULL REFERENCES sample_type(sample_type_idx),
-    biosample_accession TEXT
-        -- NCBI BioSample accession; nullable, populated post-fill
-        -- via updates.set_biosample_accession
+    sample_type_idx      INTEGER NOT NULL REFERENCES sample_type(sample_type_idx)
 );
 
 CREATE TABLE sequencing_run (
@@ -368,9 +374,8 @@ CREATE TABLE sequencing_run (
     compression_plate_name TEXT,
     description         TEXT DEFAULT '',
     legacy_format_idx    INTEGER
-        REFERENCES legacy_samplesheet_format(legacy_format_idx),
+        REFERENCES legacy_samplesheet_format(legacy_format_idx)
         -- NULL for native DB-originated runs; non-NULL for ingested legacy files
-    run_name            TEXT
 );
 
 
@@ -532,7 +537,7 @@ BEGIN
     END;
 END;
 
--- One run per database: a sequencing_brief SQLite file represents one
+-- One run per database: a run-preflight SQLite file represents one
 -- run only.  Other invariants (lane uniformity, the unambiguity of
 -- platform-table surrogate PK as the per-row identifier) depend on
 -- this property holding.
@@ -542,7 +547,7 @@ BEFORE INSERT ON sequencing_run
 WHEN (SELECT COUNT(*) FROM sequencing_run) > 0
 BEGIN
     SELECT RAISE(ABORT,
-        'a sequencing_brief database may contain at most one sequencing_run');
+        'a run-preflight database may contain at most one sequencing_run');
 END;
 
 -- ============================================================
@@ -1139,21 +1144,3 @@ CREATE VIEW omnibus_tellseq_absquant_v10_data AS
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN metagenomic_absquant_sample ma
         ON v10."Sample_ID" = ma.prepped_sample_idx;
-
--- ============================================================
--- Audit log
--- ============================================================
-
--- Lightweight per-column audit trail.  Update operations in
--- updates.py write one row here per modified domain row, capturing
--- the prior and new values plus an optional caller-supplied reason.
-CREATE TABLE change_log (
-    change_idx       INTEGER PRIMARY KEY AUTOINCREMENT,
-    changed_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    table_name      TEXT NOT NULL,
-    row_idx          INTEGER NOT NULL,
-    column_name     TEXT NOT NULL,
-    old_value       TEXT,
-    new_value       TEXT,
-    reason          TEXT
-);

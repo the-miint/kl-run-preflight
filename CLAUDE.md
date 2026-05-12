@@ -1,15 +1,4 @@
-# sequencing_brief
-
-## Naming
-
-The package is named `sequencing_brief` because it represents the information
-package that crosses the boundary from the wet lab (which prepares material for
-sequencing) to the dry lab (which processes the sequencing data). It is *not*
-the vendor-specific input file submitted to the sequencing facility — that is an
-Illumina "sample sheet," a PacBio "manifest," etc. Historically this concept was
-called a "sample sheet" because it originated from the Illumina term, but that
-name is being retired to avoid conflating the internal handoff with any
-vendor-specific format.
+# run_preflight
 
 ## Project Overview
 
@@ -28,7 +17,7 @@ correctness constraints and easier data management.
 
 ### Core vs transitional
 
-The SQLite schema (`src/sequencing_brief/sql/schema.sql`) is the permanent, long-term core of the
+The SQLite schema (`src/run_preflight/sql/schema.sql`) is the permanent, long-term core of the
 project. It defines the normalized domain model: runs, plates, samples,
 platform-specific extensions, and reference data.
 
@@ -102,20 +91,20 @@ implementation.
 
 ## Project Structure
 
-Build config is in `pyproject.toml`. Source is in `src/sequencing_brief/`.
-Tests are in `tests/`. SQL schema is in `src/sequencing_brief/sql/`.
+Build config is in `pyproject.toml`. Source is in `src/run_preflight/`.
+Tests are in `tests/`. SQL schema is in `src/run_preflight/sql/`.
 
 | File | Role |
 |------|------|
-| `src/sequencing_brief/sql/schema.sql` | Provides full DDL: reference tables, legacy format registry, core domain tables, platform-specific tables, reconstruction views |
-| `src/sequencing_brief/constants.py` | Holds all string-literal constants (section names, column names, platform strings) |
-| `src/sequencing_brief/db.py` | Creates SQLite DB from schema.sql, populates tables from parsed data |
-| `src/sequencing_brief/legacy/api.py` | Provides consumer-facing wrappers (load_legacy_csv, write_legacy_csv) over the load and write pipelines |
-| `src/sequencing_brief/legacy/parser.py` | Parses omnibus CSV into dict of sections (header_kv, values_only, tabular) |
-| `src/sequencing_brief/legacy/validate.py` | Validates parsed sections against the view registry |
-| `src/sequencing_brief/legacy/reconstruct.py` | Rebuilds omnibus CSV from SQL views via the legacy format registry |
-| `src/sequencing_brief/legacy/formatting.py` | Defines shared formatting (boolean columns, bcl_scrub_name) |
-| `src/sequencing_brief/legacy/roundtrip.py` | Packages load + write + normalize as test/dev helpers for byte-comparing reconstructed output against the original |
+| `src/run_preflight/sql/schema.sql` | Provides full DDL: reference tables, legacy format registry, core domain tables, platform-specific tables, reconstruction views |
+| `src/run_preflight/constants.py` | Holds all string-literal constants (section names, column names, platform strings) |
+| `src/run_preflight/db.py` | Creates SQLite DB from schema.sql, populates tables from parsed data |
+| `src/run_preflight/legacy/api.py` | Provides consumer-facing wrappers (load_legacy_csv, write_legacy_csv) over the load and write pipelines |
+| `src/run_preflight/legacy/parser.py` | Parses omnibus CSV into dict of sections (header_kv, values_only, tabular) |
+| `src/run_preflight/legacy/validate.py` | Validates parsed sections against the view registry |
+| `src/run_preflight/legacy/reconstruct.py` | Rebuilds omnibus CSV from SQL views via the legacy format registry |
+| `src/run_preflight/legacy/formatting.py` | Defines shared formatting (boolean columns, bcl_scrub_name) |
+| `src/run_preflight/legacy/roundtrip.py` | Packages load + write + normalize as test/dev helpers for byte-comparing reconstructed output against the original |
 
 ## Ticket Tracking
 
@@ -133,8 +122,8 @@ table in `docs/tickets.md` before considering the work done.
 ## Imports
 
 Tests import from the installed package (e.g.,
-`from sequencing_brief.db import create_db`). Internal imports within
-`src/sequencing_brief/` use relative imports
+`from run_preflight.db import create_db`). Internal imports within
+`src/run_preflight/` use relative imports
 (e.g., `from .constants import ...`).
 
 ## Adding a New Legacy Format

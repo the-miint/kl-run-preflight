@@ -1,4 +1,4 @@
-"""Tests for the consumer-facing wrappers in sequencing_brief.legacy.api."""
+"""Tests for the consumer-facing wrappers in run_preflight.legacy.api."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ import unittest
 import warnings
 from pathlib import Path
 
-from sequencing_brief import (
+from run_preflight import (
     create_db,
     load_legacy_csv,
     open_db,
     write_legacy_csv,
 )
-from sequencing_brief.legacy import LegacyExtraColumnWarning
-from sequencing_brief.legacy.roundtrip import roundtrip_via_api
-from sequencing_brief.legacy.validate import validate_omnibus
+from run_preflight.legacy import LegacyExtraColumnWarning
+from run_preflight.legacy.roundtrip import roundtrip_via_api
+from run_preflight.legacy.validate import validate_omnibus
 
 DATA_DIR = Path(__file__).parent / "data"
 GOOD_CSV = DATA_DIR / "good_pacbio_metagv11.csv"

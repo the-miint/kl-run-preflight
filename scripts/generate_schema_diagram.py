@@ -87,7 +87,7 @@ CATEGORIES: dict[str, dict] = {
 _SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent
     / "src"
-    / "sequencing_brief"
+    / "run_preflight"
     / "sql"
     / "schema.sql"
 )

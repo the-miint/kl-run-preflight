@@ -10,8 +10,8 @@ import unittest
 
 import pytest
 
-from sequencing_brief.db import create_db
-from sequencing_brief.updates import set_biosample_accession, update_lane
+from run_preflight.db import create_db
+from run_preflight.updates import set_biosample_accession, update_lane
 
 
 @contextlib.contextmanager

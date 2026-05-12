@@ -1,4 +1,4 @@
-"""Post-fill update operations for filled SQLite sequencing briefs.
+"""Post-fill update operations for filled SQLite run preflights.
 
 These operations are intentionally scoped: they update specific fields
 on an already-populated database without touching unrelated state.
@@ -95,7 +95,7 @@ def set_biosample_accession(
     connection afterward.
 
     Args:
-        db_path: Filesystem path to the SQLite sequencing-brief file.
+        db_path: Filesystem path to the SQLite run-preflight file.
         sample_name: The CSV-effective Sample_Name to match.  Resolved
             via ``COALESCE(prepped_sample.sample_name,
             input_sample.sample_name)`` so callers may pass either an
@@ -202,7 +202,7 @@ def update_lane(
       prepped_sample already has a row at *to_lane*)
 
     Args:
-        db_path: Filesystem path to the SQLite sequencing-brief file.
+        db_path: Filesystem path to the SQLite run-preflight file.
         platform: Either ``"illumina"`` or ``"tellseq"``.
         from_lane: The current lane value to match.  None matches NULL.
         to_lane: The new lane value.  None sets the column to NULL.

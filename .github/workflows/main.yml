@@ -27,14 +27,14 @@ jobs:
     - name: Install conda environment
       run: |
         sed -i 's/python=3.9/python=${{ matrix.python-version }}/' environment.yml
-        conda env create -n sequencing-brief -f environment.yml
+        conda env create -n run-preflight -f environment.yml
 
     - name: Test with pytest
       run: |
-        conda activate sequencing-brief
+        conda activate run-preflight
         pytest
 
     - name: Lint with ruff
       run: |
-        conda activate sequencing-brief
+        conda activate run-preflight
         ruff check . --statistics

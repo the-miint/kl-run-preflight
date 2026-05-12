@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 import unittest
 
-from sequencing_brief.db import create_db
+from run_preflight.db import create_db
 
 
 def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:

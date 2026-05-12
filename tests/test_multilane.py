@@ -7,8 +7,8 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-from sequencing_brief.db import create_db, get_section_formats, populate_db
-from sequencing_brief.legacy.parser import parse_omnibus
+from run_preflight.db import create_db, get_section_formats, populate_db
+from run_preflight.legacy.parser import parse_omnibus
 
 DATA_DIR = Path(__file__).parent / "data"
 

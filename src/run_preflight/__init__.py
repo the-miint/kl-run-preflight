@@ -1,4 +1,4 @@
-"""sequencing_brief — SQLite-backed sample-sheet representation."""
+"""run_preflight — SQLite-backed sample-sheet representation."""
 
 from .db import create_db
 from .legacy.api import load_legacy_csv, write_legacy_csv

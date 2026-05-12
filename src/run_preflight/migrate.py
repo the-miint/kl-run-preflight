@@ -110,7 +110,7 @@ def get_pending_patches(
     if current > latest:
         raise ValueError(
             f"Database version {current} exceeds latest patch {latest}; "
-            f"update the sequencing_brief package"
+            f"update the run_preflight package"
         )
 
     # Validate no gaps in the patch sequence

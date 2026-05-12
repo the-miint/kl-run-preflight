@@ -7,8 +7,8 @@ import textwrap
 
 import pytest
 
-from sequencing_brief.db import create_db
-from sequencing_brief.migrate import (
+from run_preflight.db import create_db
+from run_preflight.migrate import (
     apply_patches,
     get_latest_version,
     get_pending_patches,

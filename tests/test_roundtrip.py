@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sequencing_brief import load_legacy_csv
-from sequencing_brief.legacy.roundtrip import roundtrip_via_api
+from run_preflight import load_legacy_csv
+from run_preflight.legacy.roundtrip import roundtrip_via_api
 
 DATA_DIR = Path(__file__).parent / "data"
 

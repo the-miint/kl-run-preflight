@@ -1,18 +1,9 @@
-# sequencing_brief
+# run_preflight
 
 Normalized SQLite representation of the information package handed off from
 the wet lab to the dry lab for sequencing data processing. Replaces the legacy
 CSV "samplesheet" format with a relational schema that enforces
 correctness constraints and simplifies data management.
-
-### Why "sequencing_brief"?
-
-This package represents the information that crosses the boundary from the wet
-lab (which prepares material for sequencing) to the dry lab (which processes the
-sequencing data). It is not the vendor-specific input file submitted to the
-sequencing facility (such as an Illumina "sample sheet," a PacBio "manifest,"
-etc.). The name distinguishes this internal handoff packet from any vendor format.
-
 
 ## Status
 
