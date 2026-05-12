@@ -14,7 +14,7 @@ DATA_DIR = Path(__file__).parent / "data"
 
 
 def _setup_run_and_prs(conn: sqlite3.Connection) -> tuple[int, int]:
-    """Insert minimal prerequisite rows and return (run_id, prs_id)."""
+    """Insert minimal prerequisite rows and return (run_idx, prs_idx)."""
     cur = conn.cursor()
 
     # Project, plate, input_sample, run, compression_sample, prepped_sample
@@ -24,49 +24,49 @@ def _setup_run_and_prs(conn: sqlite3.Connection) -> tuple[int, int]:
         " library_construction_protocol, experiment_design_description) "
         "VALUES ('proj1', '1', 1, 'proto', 'desc')"
     )
-    project_id = cur.lastrowid
+    project_idx = cur.lastrowid
 
     cur.execute(
-        "INSERT INTO input_plate (plate_name, primary_project_id) VALUES ('plate1', ?)",
-        (project_id,),
+        "INSERT INTO input_plate (plate_name, primary_project_idx) VALUES ('plate1', ?)",
+        (project_idx,),
     )
-    plate_id = cur.lastrowid
+    plate_idx = cur.lastrowid
 
     cur.execute(
         "INSERT INTO input_sample "
-        "(sample_name, input_plate_id, project_id, sample_type_id) "
+        "(sample_name, input_plate_idxx, project_idx, sample_type_idx) "
         "VALUES ('sample1', ?, ?, 1)",
-        (plate_id, project_id),
+        (plate_idx, project_idx),
     )
-    input_sample_id = cur.lastrowid
+    input_sample_idx = cur.lastrowid
 
     cur.execute(
         "INSERT INTO sequencing_run "
         "(experiment_name, run_date, sequencer, "
-        " assay_type_id, platform_id) "
+        " assay_type_idx, platform_idx) "
         "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
     )
-    run_id = cur.lastrowid
+    run_idx = cur.lastrowid
 
     cur.execute(
         "INSERT INTO compression_sample "
-        "(run_id, input_sample_id, compression_well) "
+        "(run_idx, input_sample_idx, compression_well) "
         "VALUES (?, ?, 'A1')",
-        (run_id, input_sample_id),
+        (run_idx, input_sample_idx),
     )
-    cs_id = cur.lastrowid
+    cs_idx = cur.lastrowid
 
     cur.execute(
         "INSERT INTO prepped_sample "
-        "(compression_sample_id, prepped_well) "
+        "(compression_sample_idx, prepped_well) "
         "VALUES (?, 'A1')",
-        (cs_id,),
+        (cs_idx,),
     )
-    prs_id = cur.lastrowid
+    prs_idx = cur.lastrowid
 
     conn.commit()
-    assert run_id is not None and prs_id is not None
-    return run_id, prs_id
+    assert run_idx is not None and prs_idx is not None
+    return run_idx, prs_idx
 
 
 class TestMultiLaneSchemaIntegrity(unittest.TestCase):
@@ -74,7 +74,7 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
 
     def setUp(self):
         self.conn = create_db(":memory:")
-        self.run_id, self.prs_id = _setup_run_and_prs(self.conn)
+        self.run_idx, self.prs_idx = _setup_run_and_prs(self.conn)
 
     def tearDown(self):
         self.conn.close()
@@ -83,18 +83,18 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
         # Helper that inserts one illumina_sample row with controllable lane and indexes
         self.conn.execute(
             "INSERT INTO illumina_sample "
-            "(prepped_sample_id, i7_index_id, i7_sequence, "
+            "(prepped_sample_idx, i7_index_id, i7_sequence, "
             " i5_index_id, i5_sequence, lane) "
             "VALUES (?, 'I7A', ?, 'I5A', ?, ?)",
-            (self.prs_id, i7_seq, i5_seq, lane),
+            (self.prs_idx, i7_seq, i5_seq, lane),
         )
 
     def _insert_tellseq(self, lane, *, barcode_id="C501"):
         self.conn.execute(
             "INSERT INTO tellseq_sample "
-            "(prepped_sample_id, barcode_id, lane) "
+            "(prepped_sample_idx, barcode_id, lane) "
             "VALUES (?, ?, ?)",
-            (self.prs_id, barcode_id, lane),
+            (self.prs_idx, barcode_id, lane),
         )
 
     def test_multi_lane_insert_succeeds(self):
@@ -104,9 +104,9 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
         self.conn.commit()
 
         cur = self.conn.execute(
-            "SELECT illumina_sample_id, lane FROM illumina_sample "
-            "WHERE prepped_sample_id = ? ORDER BY lane",
-            (self.prs_id,),
+            "SELECT illumina_sample_idx, lane FROM illumina_sample "
+            "WHERE prepped_sample_idx = ? ORDER BY lane",
+            (self.prs_idx,),
         )
         rows = cur.fetchall()
         # Distinct surrogate PKs, two distinct non-NULL lanes
@@ -156,18 +156,18 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self._insert_illumina(1)
 
-    def test_pacbio_unique_prepped_sample_id(self):
+    def test_pacbio_unique_prepped_sample_idx(self):
         # PacBio: only one row per prepped_sample (no lane concept)
         self.conn.execute(
             "INSERT INTO pacbio_sample "
-            "(prepped_sample_id, barcode_id) VALUES (?, 'BC1')",
-            (self.prs_id,),
+            "(prepped_sample_idx, barcode_id) VALUES (?, 'BC1')",
+            (self.prs_idx,),
         )
         with self.assertRaises(sqlite3.IntegrityError):
             self.conn.execute(
                 "INSERT INTO pacbio_sample "
-                "(prepped_sample_id, barcode_id) VALUES (?, 'BC2')",
-                (self.prs_id,),
+                "(prepped_sample_idx, barcode_id) VALUES (?, 'BC2')",
+                (self.prs_idx,),
             )
 
     def test_one_run_per_db_rejects_second_run(self):
@@ -175,7 +175,7 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
             self.conn.execute(
                 "INSERT INTO sequencing_run "
                 "(experiment_name, run_date, sequencer, "
-                " assay_type_id, platform_id) "
+                " assay_type_idx, platform_idx) "
                 "VALUES ('exp2', '2025-01-02', 'Unknown', 1, 1)"
             )
         self.assertIn("at most one sequencing_run", str(ctx.exception))
@@ -203,11 +203,11 @@ class TestMultiLanePopulate(unittest.TestCase):
         self.assertEqual(prs_count, 3)
         self.assertEqual(ils_count, 5)
 
-        # Lane-split rows share prepped_sample_id; samples 1 and 2 each
+        # Lane-split rows share prepped_sample_idx; samples 1 and 2 each
         # have two ils rows on distinct lanes
         rows = conn.execute(
-            "SELECT prepped_sample_id, lane FROM illumina_sample "
-            "ORDER BY prepped_sample_id, lane"
+            "SELECT prepped_sample_idx, lane FROM illumina_sample "
+            "ORDER BY prepped_sample_idx, lane"
         ).fetchall()
         # prs 1 → lanes 1, 2; prs 2 → lanes 1, 2; prs 3 → lane 1
         self.assertEqual(rows, [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1)])

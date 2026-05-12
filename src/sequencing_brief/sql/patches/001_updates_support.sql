@@ -11,10 +11,10 @@
 ALTER TABLE input_sample ADD COLUMN biosample_accession TEXT;
 
 CREATE TABLE change_log (
-    change_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    change_idx       INTEGER PRIMARY KEY AUTOINCREMENT,
     changed_at      TEXT NOT NULL DEFAULT (datetime('now')),
     table_name      TEXT NOT NULL,
-    row_id          INTEGER NOT NULL,
+    row_idx          INTEGER NOT NULL,
     column_name     TEXT NOT NULL,
     old_value       TEXT,
     new_value       TEXT,

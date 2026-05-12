@@ -84,7 +84,7 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
 
     # -- Resolve the legacy format ------------------------------------------
     cur.execute(
-        "SELECT legacy_format_id FROM legacy_samplesheet_format "
+        "SELECT legacy_format_idx FROM legacy_samplesheet_format "
         "WHERE legacy_sheet_type = ? AND legacy_version = ?",
         (sheet_type, sheet_version),
     )
@@ -92,7 +92,7 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
     if not fmt:
         errors.append(f"Unknown format: {sheet_type} v{sheet_version}")
         return errors
-    legacy_format_id = fmt[0]
+    legacy_format_idx = fmt[0]
 
     # -- Reject deviations from Illumina header constants -------------------
     # The omnibus_illumina_header view emits IEMFileVersion, Workflow,
@@ -111,14 +111,14 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
                 )
 
     # -- Load optional column groups for this format ------------------------
-    optional_cols = _load_optional_columns(cur, legacy_format_id)
+    optional_cols = _load_optional_columns(cur, legacy_format_idx)
 
     # -- Check section presence ---------------------------------------------
     cur.execute(
         "SELECT section_name, view_name, section_format "
         "FROM legacy_samplesheet_view "
-        "WHERE legacy_format_id = ? ORDER BY section_order",
-        (legacy_format_id,),
+        "WHERE legacy_format_idx = ? ORDER BY section_order",
+        (legacy_format_idx,),
     )
     expected_sections = cur.fetchall()
     expected_names = {name for name, _, _ in expected_sections}
@@ -189,12 +189,12 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
     return errors
 
 
-def _load_optional_columns(cur, legacy_format_id: int) -> dict[str, set[str]]:
+def _load_optional_columns(cur, legacy_format_idx: int) -> dict[str, set[str]]:
     """Load optional column groups for a legacy format from the database.
 
     Args:
         cur: An open SQLite cursor.
-        legacy_format_id: The primary key of the legacy_samplesheet_format
+        legacy_format_idx: The primary key of the legacy_samplesheet_format
             row to look up.
 
     Returns:
@@ -204,8 +204,8 @@ def _load_optional_columns(cur, legacy_format_id: int) -> dict[str, set[str]]:
     cur.execute(
         "SELECT section_name, column_names "
         "FROM legacy_samplesheet_optional_columns "
-        "WHERE legacy_format_id = ?",
-        (legacy_format_id,),
+        "WHERE legacy_format_idx = ?",
+        (legacy_format_idx,),
     )
     result: dict[str, set[str]] = {}
     for section_name, col_names_csv in cur.fetchall():

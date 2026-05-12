@@ -59,21 +59,21 @@ position X on the compression plate for this run":
 
 ```sql
 CREATE TABLE compression_sample (
-    compression_sample_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id          INTEGER NOT NULL REFERENCES sequencing_run(run_id),
-    input_sample_id INTEGER NOT NULL REFERENCES input_sample(input_sample_id),
+    compression_sample_idx    INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_idx          INTEGER NOT NULL REFERENCES sequencing_run(run_idx),
+    input_sample_idx INTEGER NOT NULL REFERENCES input_sample(input_sample_idx),
     well            TEXT NOT NULL   -- well_id_384 / Sample_Well
 );
 ```
 
-`prepped_sample` would then reference `compression_sample_id` instead of
-`run_id` + `input_sample_id` directly:
+`prepped_sample` would then reference `compression_sample_idx` instead of
+`run_idx` + `input_sample_idx` directly:
 
 ```sql
 CREATE TABLE prepped_sample (
-    prepped_sample_id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    compression_sample_id            INTEGER NOT NULL
-        REFERENCES compression_sample(compression_sample_id),
+    prepped_sample_idx   INTEGER PRIMARY KEY AUTOINCREMENT,
+    compression_sample_idx            INTEGER NOT NULL
+        REFERENCES compression_sample(compression_sample_idx),
     prepped_well        TEXT NOT NULL,  -- destination_well_384
     sample_name             TEXT,
     well_description        TEXT
@@ -86,8 +86,8 @@ Benefits:
 - Replicate detection becomes structural: a compression_sample with multiple
   prepped_samples is a replicate — no heuristics needed
 - The existing `replicated_samples` view logic (COUNT > 1 per group)
-  transfers directly, just grouping by `compression_sample_id` instead of
-  `input_sample_id`
+  transfers directly, just grouping by `compression_sample_idx` instead of
+  `input_sample_idx`
 - For non-replicates: one compression_sample → one prepped_sample,
   `compression_sample.compression_well` = `prepped_sample.prepped_well`
 - For replicates: one compression_sample → multiple prepped_samples,
@@ -111,10 +111,10 @@ relies on it.  Within that one run, lane splits are modeled as:
 - N rows in the platform-specific table (`illumina_sample` or
   `tellseq_sample`) — one per (prepped_sample × lane).  Each row
   carries its own surrogate primary key
-  (`illumina_sample_id` / `tellseq_sample_id`) which serves as the
+  (`illumina_sample_idx` / `tellseq_sample_idx`) which serves as the
   stable, reproducible identifier for that row in the legacy
   sample-sheet Data section.
-- `pacbio_sample` is unique by `prepped_sample_id` because PacBio
+- `pacbio_sample` is unique by `prepped_sample_idx` because PacBio
   has no lane concept today.
 
 ### Lane splits vs replicates
@@ -133,7 +133,7 @@ relies on it.  Within that one run, lane splits are modeled as:
 The i7/i5 index pair is per-`prepped_sample`: lane splits of one
 sample reuse the same indexes across all loadings.  The
 `illumina_sample_index_invariance` BEFORE INSERT trigger enforces that
-all `illumina_sample` rows sharing a `prepped_sample_id` carry
+all `illumina_sample` rows sharing a `prepped_sample_idx` carry
 identical `i7_index_id`, `i7_sequence`, `i5_index_id`, and
 `i5_sequence` values.  TellSeq has the analogous
 `tellseq_sample_barcode_invariance` trigger on `barcode_id`.
@@ -231,21 +231,21 @@ Example structure:
 ```sql
 -- Leaf view: "can this run do absquant_mass?"
 CREATE VIEW run_capability_absquant_mass AS
-SELECT DISTINCT cs.run_id
+SELECT DISTINCT cs.run_idx
 FROM metagenomic_absquant_sample ma
-JOIN prepped_sample prs ON ma.prepped_sample_id = prs.prepped_sample_id
-JOIN compression_sample cs ON prs.compression_sample_id = cs.compression_sample_id
+JOIN prepped_sample prs ON ma.prepped_sample_idx = prs.prepped_sample_idx
+JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
 WHERE ma.extracted_sample_mass_g IS NOT NULL;
 
 -- Union view: "what can this run do?"
 CREATE VIEW run_capability AS
-SELECT run_id, 'absquant_mass' AS capability_name
+SELECT run_idx, 'absquant_mass' AS capability_name
     FROM run_capability_absquant_mass
 UNION ALL
-SELECT run_id, 'absquant_volume'
+SELECT run_idx, 'absquant_volume'
     FROM run_capability_absquant_volume
 UNION ALL
-SELECT run_id, 'absquant_surface_area'
+SELECT run_idx, 'absquant_surface_area'
     FROM run_capability_absquant_surface_area;
 ```
 
@@ -307,7 +307,7 @@ brief file travels independently of the Python code, this leaves it
 unprotected.
 
 **Normalized child table (`sample_total_input_metric`):** A table with
-`(prepped_sample_id, metric_type_id, value)` rows is cleaner from a
+`(prepped_sample_idx, metric_type_id, value)` rows is cleaner from a
 normalization standpoint, but "every sample has a row for each declared
 metric" is a cross-row completeness constraint that cannot be enforced by
 a per-row INSERT trigger.
@@ -483,10 +483,10 @@ Capabilities are split into two tiers, both derived from sample data:
 
 - **Column-level capabilities** (per-capability views + `run_capability`
   union view): One view per metric (e.g. `run_capability_absquant_mass`),
-  each returning `(run_id)` for runs that have at least one sample with a
+  each returning `(run_idx)` for runs that have at least one sample with a
   non-null value in the corresponding column.  The union view
   `run_capability` aggregates all leaf views into
-  `(run_id, capability_name)` rows.
+  `(run_idx, capability_name)` rows.
 - **Consumer-level capabilities** (derived via `run_derived_capability`
   view): Higher-level flags that downstream analysis code checks before
   proceeding (e.g. `absquant_v1`).  Defined as SQL expressions over the
@@ -518,7 +518,7 @@ string parsing:
 
 ```sql
 SELECT MAX(version) FROM run_derived_capability
-WHERE run_id = ? AND capability_family = 'absquant'
+WHERE run_idx = ? AND capability_family = 'absquant'
 ```
 
 Each version within a family is a separate UNION clause.  A brief that
@@ -530,16 +530,16 @@ Consumer queries:
 
 - "Can this run do absquant mass?"
 
-  `SELECT 1 FROM run_capability_absquant_mass WHERE run_id = ?`
+  `SELECT 1 FROM run_capability_absquant_mass WHERE run_idx = ?`
 - "What can this run do?"
 
-  `SELECT capability_name FROM run_capability WHERE run_id = ?`
+  `SELECT capability_name FROM run_capability WHERE run_idx = ?`
 - "Does this brief support absquant v1 or higher?"
 
-  `SELECT 1 FROM run_derived_capability WHERE run_id = ? AND capability_family = 'absquant' AND version >= 1`
+  `SELECT 1 FROM run_derived_capability WHERE run_idx = ? AND capability_family = 'absquant' AND version >= 1`
 - "What is the highest absquant version?"
 
-  `SELECT MAX(version) FROM run_derived_capability WHERE run_id = ? AND capability_family = 'absquant'`
+  `SELECT MAX(version) FROM run_derived_capability WHERE run_idx = ? AND capability_family = 'absquant'`
 
 ## Numeric measurement precision — deferred
 

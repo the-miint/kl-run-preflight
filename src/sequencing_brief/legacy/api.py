@@ -73,15 +73,15 @@ def write_legacy_csv(db_path: str, csv_path: str) -> None:
     conn = open_db(db_path)
     try:
         # Confirm exactly one sequencing run before reconstructing
-        run_ids = [
-            row[0] for row in conn.execute("SELECT run_id FROM sequencing_run")
+        run_idxs = [
+            row[0] for row in conn.execute("SELECT run_idx FROM sequencing_run")
         ]
-        if len(run_ids) != 1:
+        if len(run_idxs) != 1:
             raise ValueError(
-                f"Expected exactly one sequencing run, found {len(run_ids)}"
+                f"Expected exactly one sequencing run, found {len(run_idxs)}"
             )
 
-        csv_text = reconstruct_omnibus(conn, run_ids[0])
+        csv_text = reconstruct_omnibus(conn, run_idxs[0])
     finally:
         conn.close()
 

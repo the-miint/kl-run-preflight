@@ -23,6 +23,7 @@
     --platform-table: #f778ba;
     --workflow-table: #79c0ff;
     --legacy-table: #ffa657;
+    --uncategorized-table: #8b949e;
     --view-color: #56d364;
     --link-line: #30363d;
     --link-line-hover: #58a6ff;
@@ -194,6 +195,7 @@
   <div class="legend-item"><div class="legend-dot" style="background:var(--platform-table)"></div> Platform</div>
   <div class="legend-item"><div class="legend-dot" style="background:var(--workflow-table)"></div> Workflow</div>
   <div class="legend-item"><div class="legend-dot" style="background:var(--legacy-table)"></div> Legacy Registry</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--uncategorized-table)"></div> Uncategorized</div>
   <div class="legend-item"><div class="legend-dot" style="background:var(--view-color)"></div> Views</div>
   <div class="sep"></div>
   <div class="legend-item"><span style="color:var(--pk)">&#9632;</span> PK</div>
@@ -214,7 +216,7 @@ var SCHEMA = {
       "category": "ref",
       "columns": [
         {
-          "name": "assay_type_id",
+          "name": "assay_type_idx",
           "type": "INTEGER",
           "pk": true
         },
@@ -229,7 +231,7 @@ var SCHEMA = {
       "category": "ref",
       "columns": [
         {
-          "name": "platform_id",
+          "name": "platform_idx",
           "type": "INTEGER",
           "pk": true
         },
@@ -244,7 +246,7 @@ var SCHEMA = {
       "category": "ref",
       "columns": [
         {
-          "name": "sample_type_id",
+          "name": "sample_type_idx",
           "type": "INTEGER",
           "pk": true
         },
@@ -259,7 +261,7 @@ var SCHEMA = {
       "category": "core",
       "columns": [
         {
-          "name": "project_id",
+          "name": "project_idx",
           "type": "INTEGER",
           "pk": true
         },
@@ -294,7 +296,7 @@ var SCHEMA = {
       "category": "core",
       "columns": [
         {
-          "name": "input_plate_id",
+          "name": "input_plate_idxx",
           "type": "INTEGER",
           "pk": true
         },
@@ -303,7 +305,7 @@ var SCHEMA = {
           "type": "TEXT"
         },
         {
-          "name": "primary_project_id",
+          "name": "primary_project_idx",
           "type": "INTEGER",
           "fk": "project"
         },
@@ -318,7 +320,7 @@ var SCHEMA = {
       "category": "core",
       "columns": [
         {
-          "name": "input_sample_id",
+          "name": "input_sample_idx",
           "type": "INTEGER",
           "pk": true
         },
@@ -327,7 +329,7 @@ var SCHEMA = {
           "type": "TEXT"
         },
         {
-          "name": "input_plate_id",
+          "name": "input_plate_idxx",
           "type": "INTEGER",
           "fk": "input_plate"
         },
@@ -336,15 +338,20 @@ var SCHEMA = {
           "type": "TEXT"
         },
         {
-          "name": "project_id",
+          "name": "project_idx",
           "type": "INTEGER",
           "fk": "project",
           "note": "NULL for controls; controls inherit project via input_plate"
         },
         {
-          "name": "sample_type_id",
+          "name": "sample_type_idx",
           "type": "INTEGER",
           "fk": "sample_type"
+        },
+        {
+          "name": "biosample_accession",
+          "type": "TEXT",
+          "note": "NCBI BioSample accession; nullable, populated post-fill via updates.set_biosample_accession"
         }
       ]
     },
@@ -353,7 +360,7 @@ var SCHEMA = {
       "category": "core",
       "columns": [
         {
-          "name": "run_id",
+          "name": "run_idx",
           "type": "INTEGER",
           "pk": true
         },
@@ -374,12 +381,12 @@ var SCHEMA = {
           "type": "TEXT"
         },
         {
-          "name": "assay_type_id",
+          "name": "assay_type_idx",
           "type": "INTEGER",
           "fk": "assay_type"
         },
         {
-          "name": "platform_id",
+          "name": "platform_idx",
           "type": "INTEGER",
           "fk": "sequencing_platform"
         },
@@ -392,7 +399,7 @@ var SCHEMA = {
           "type": "TEXT"
         },
         {
-          "name": "legacy_format_id",
+          "name": "legacy_format_idx",
           "type": "INTEGER",
           "fk": "legacy_samplesheet_format"
         }
@@ -403,17 +410,17 @@ var SCHEMA = {
       "category": "core",
       "columns": [
         {
-          "name": "compression_sample_id",
+          "name": "compression_sample_idx",
           "type": "INTEGER",
           "pk": true
         },
         {
-          "name": "run_id",
+          "name": "run_idx",
           "type": "INTEGER",
           "fk": "sequencing_run"
         },
         {
-          "name": "input_sample_id",
+          "name": "input_sample_idx",
           "type": "INTEGER",
           "fk": "input_sample"
         },
@@ -429,12 +436,12 @@ var SCHEMA = {
       "category": "core",
       "columns": [
         {
-          "name": "prepped_sample_id",
+          "name": "prepped_sample_idx",
           "type": "INTEGER",
           "pk": true
         },
         {
-          "name": "compression_sample_id",
+          "name": "compression_sample_idx",
           "type": "INTEGER",
           "fk": "compression_sample"
         },
@@ -459,7 +466,7 @@ var SCHEMA = {
       "category": "platform",
       "columns": [
         {
-          "name": "run_id",
+          "name": "run_idx",
           "type": "INTEGER",
           "pk": true,
           "fk": "sequencing_run"
@@ -503,12 +510,12 @@ var SCHEMA = {
       "category": "platform",
       "columns": [
         {
-          "name": "illumina_sample_id",
+          "name": "illumina_sample_idx",
           "type": "INTEGER",
           "pk": true
         },
         {
-          "name": "prepped_sample_id",
+          "name": "prepped_sample_idx",
           "type": "INTEGER",
           "fk": "prepped_sample"
         },
@@ -539,12 +546,12 @@ var SCHEMA = {
       "category": "platform",
       "columns": [
         {
-          "name": "tellseq_sample_id",
+          "name": "tellseq_sample_idx",
           "type": "INTEGER",
           "pk": true
         },
         {
-          "name": "prepped_sample_id",
+          "name": "prepped_sample_idx",
           "type": "INTEGER",
           "fk": "prepped_sample"
         },
@@ -563,12 +570,12 @@ var SCHEMA = {
       "category": "platform",
       "columns": [
         {
-          "name": "pacbio_sample_id",
+          "name": "pacbio_sample_idx",
           "type": "INTEGER",
           "pk": true
         },
         {
-          "name": "prepped_sample_id",
+          "name": "prepped_sample_idx",
           "type": "INTEGER",
           "fk": "prepped_sample"
         },
@@ -591,7 +598,7 @@ var SCHEMA = {
       "category": "workflow",
       "columns": [
         {
-          "name": "prepped_sample_id",
+          "name": "prepped_sample_idx",
           "type": "INTEGER",
           "pk": true,
           "fk": "prepped_sample"
@@ -631,7 +638,7 @@ var SCHEMA = {
       "category": "workflow",
       "columns": [
         {
-          "name": "prepped_sample_id",
+          "name": "prepped_sample_idx",
           "type": "INTEGER",
           "pk": true,
           "fk": "prepped_sample"
@@ -647,7 +654,7 @@ var SCHEMA = {
       "category": "workflow",
       "columns": [
         {
-          "name": "input_sample_id",
+          "name": "input_sample_idx",
           "type": "INTEGER",
           "pk": true,
           "fk": "input_sample"
@@ -682,7 +689,7 @@ var SCHEMA = {
       "category": "legacy",
       "columns": [
         {
-          "name": "legacy_format_id",
+          "name": "legacy_format_idx",
           "type": "INTEGER",
           "pk": true
         },
@@ -701,7 +708,7 @@ var SCHEMA = {
       "category": "legacy",
       "columns": [
         {
-          "name": "legacy_format_id",
+          "name": "legacy_format_idx",
           "type": "INTEGER",
           "pk": true,
           "fk": "legacy_samplesheet_format"
@@ -731,7 +738,7 @@ var SCHEMA = {
       "category": "legacy",
       "columns": [
         {
-          "name": "legacy_format_id",
+          "name": "legacy_format_idx",
           "type": "INTEGER",
           "pk": true,
           "fk": "legacy_samplesheet_format"
@@ -767,7 +774,7 @@ var SCHEMA = {
       "category": "legacy",
       "columns": [
         {
-          "name": "prepped_sample_id",
+          "name": "prepped_sample_idx",
           "type": "INTEGER",
           "pk": true,
           "fk": "prepped_sample"
@@ -779,6 +786,45 @@ var SCHEMA = {
         },
         {
           "name": "column_value",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "change_log",
+      "category": "uncategorized",
+      "columns": [
+        {
+          "name": "change_idx",
+          "type": "INTEGER",
+          "pk": true
+        },
+        {
+          "name": "changed_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "table_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "row_idx",
+          "type": "INTEGER"
+        },
+        {
+          "name": "column_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "old_value",
+          "type": "TEXT"
+        },
+        {
+          "name": "new_value",
+          "type": "TEXT"
+        },
+        {
+          "name": "reason",
           "type": "TEXT"
         }
       ]
@@ -917,7 +963,8 @@ var CATEGORY_COLORS = {
   core: 'var(--core-table)',
   platform: 'var(--platform-table)',
   workflow: 'var(--workflow-table)',
-  legacy: 'var(--legacy-table)'
+  legacy: 'var(--legacy-table)',
+  uncategorized: 'var(--uncategorized-table)'
 };
 
 var COL_W = 260, ROW_H = 18, HEADER_H = 26, PAD = 8;
@@ -931,9 +978,9 @@ var POSITIONS = {
   'project': { x: 380, y: 60 },
   'input_plate': { x: 380, y: 236 },
   'input_sample': { x: 380, y: 358 },
-  'sequencing_run': { x: 380, y: 516 },
-  'compression_sample': { x: 380, y: 746 },
-  'prepped_sample': { x: 380, y: 868 },
+  'sequencing_run': { x: 380, y: 534 },
+  'compression_sample': { x: 380, y: 764 },
+  'prepped_sample': { x: 380, y: 886 },
   'illumina_run': { x: 720, y: 60 },
   'illumina_sample': { x: 720, y: 272 },
   'tellseq_sample': { x: 720, y: 448 },
@@ -945,41 +992,42 @@ var POSITIONS = {
   'legacy_samplesheet_format': { x: 40, y: 386 },
   'legacy_samplesheet_view': { x: 40, y: 490 },
   'legacy_samplesheet_optional_columns': { x: 40, y: 630 },
-  'legacy_extra_column': { x: 40, y: 788 }
+  'legacy_extra_column': { x: 40, y: 788 },
+  'change_log': { x: 380, y: 1026 }
 };
 
 var VIEW_POSITIONS = {
-  'control_project_associations': { x: 40, y: 1052 },
-  'input_plate_projects': { x: 320, y: 1052 },
-  'omnibus_abs_quant_metag_v10_data': { x: 600, y: 1052 },
-  'omnibus_contact': { x: 880, y: 1052 },
-  'omnibus_illumina_header': { x: 1160, y: 1052 },
-  'omnibus_illumina_reads': { x: 40, y: 1088 },
-  'omnibus_pacbio_absquant_v10_data': { x: 320, y: 1088 },
-  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 600, y: 1088 },
-  'omnibus_pacbio_absquant_v11_data': { x: 880, y: 1088 },
-  'omnibus_pacbio_absquant_v11_header': { x: 1160, y: 1088 },
-  'omnibus_pacbio_absquant_v12_data': { x: 40, y: 1124 },
-  'omnibus_pacbio_metag_v10_data': { x: 320, y: 1124 },
-  'omnibus_pacbio_metag_v11_data': { x: 600, y: 1124 },
-  'omnibus_sample_context': { x: 880, y: 1124 },
-  'omnibus_standard_metag_v0_data': { x: 1160, y: 1124 },
-  'omnibus_standard_metag_v0_settings': { x: 40, y: 1160 },
-  'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1160 },
-  'omnibus_standard_metag_v101_data': { x: 600, y: 1160 },
-  'omnibus_standard_metag_v101_settings': { x: 880, y: 1160 },
-  'omnibus_standard_metag_v90_bioinformatics': { x: 1160, y: 1160 },
-  'omnibus_standard_metag_v90_data': { x: 40, y: 1196 },
-  'omnibus_standard_metag_v90_settings': { x: 320, y: 1196 },
-  'omnibus_standard_metat_v10_data': { x: 600, y: 1196 },
-  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1196 },
-  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1196 },
-  'replicated_samples': { x: 40, y: 1232 },
-  'run_capability': { x: 320, y: 1232 },
-  'run_capability_absquant_mass': { x: 600, y: 1232 },
-  'run_capability_absquant_surface_area': { x: 880, y: 1232 },
-  'run_capability_absquant_volume': { x: 1160, y: 1232 },
-  'run_derived_capability': { x: 40, y: 1268 }
+  'control_project_associations': { x: 40, y: 1264 },
+  'input_plate_projects': { x: 320, y: 1264 },
+  'omnibus_abs_quant_metag_v10_data': { x: 600, y: 1264 },
+  'omnibus_contact': { x: 880, y: 1264 },
+  'omnibus_illumina_header': { x: 1160, y: 1264 },
+  'omnibus_illumina_reads': { x: 40, y: 1300 },
+  'omnibus_pacbio_absquant_v10_data': { x: 320, y: 1300 },
+  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 600, y: 1300 },
+  'omnibus_pacbio_absquant_v11_data': { x: 880, y: 1300 },
+  'omnibus_pacbio_absquant_v11_header': { x: 1160, y: 1300 },
+  'omnibus_pacbio_absquant_v12_data': { x: 40, y: 1336 },
+  'omnibus_pacbio_metag_v10_data': { x: 320, y: 1336 },
+  'omnibus_pacbio_metag_v11_data': { x: 600, y: 1336 },
+  'omnibus_sample_context': { x: 880, y: 1336 },
+  'omnibus_standard_metag_v0_data': { x: 1160, y: 1336 },
+  'omnibus_standard_metag_v0_settings': { x: 40, y: 1372 },
+  'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1372 },
+  'omnibus_standard_metag_v101_data': { x: 600, y: 1372 },
+  'omnibus_standard_metag_v101_settings': { x: 880, y: 1372 },
+  'omnibus_standard_metag_v90_bioinformatics': { x: 1160, y: 1372 },
+  'omnibus_standard_metag_v90_data': { x: 40, y: 1408 },
+  'omnibus_standard_metag_v90_settings': { x: 320, y: 1408 },
+  'omnibus_standard_metat_v10_data': { x: 600, y: 1408 },
+  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1408 },
+  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1408 },
+  'replicated_samples': { x: 40, y: 1444 },
+  'run_capability': { x: 320, y: 1444 },
+  'run_capability_absquant_mass': { x: 600, y: 1444 },
+  'run_capability_absquant_surface_area': { x: 880, y: 1444 },
+  'run_capability_absquant_volume': { x: 1160, y: 1444 },
+  'run_derived_capability': { x: 40, y: 1480 }
 };
 
 var svg = document.getElementById('canvas');

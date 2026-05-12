@@ -38,22 +38,19 @@ class TestLegacyApi(unittest.TestCase):
         # Inspect the populated DB via the public open_db entry point
         conn = open_db(str(db_path))
         try:
-            run_ids = [
-                row[0] for row in conn.execute("SELECT run_id FROM sequencing_run")
+            run_idxs = [
+                row[0] for row in conn.execute("SELECT run_idx FROM sequencing_run")
             ]
         finally:
             conn.close()
-        self.assertEqual(run_ids, [1])
+        self.assertEqual(run_idxs, [1])
 
     def test_load_legacy_csv_validation_failure(self):
         # Build a CSV that parses but advertises an unknown sheet type so it
         # fails at the validation step rather than the parse step
         bad_csv = self.tmp_dir / "bad.csv"
         bad_csv.write_text(
-            "[Header],,,\n"
-            "SheetType,bogus_type,,\n"
-            "SheetVersion,99,,\n"
-            ",,,\n"
+            "[Header],,,\nSheetType,bogus_type,,\nSheetVersion,99,,\n,,,\n"
         )
 
         # Validation failure must raise a ValueError naming the unknown
@@ -115,9 +112,7 @@ class TestLegacyApi(unittest.TestCase):
         # The error must name the field, the observed value, and the
         # expected value so the user knows exactly what cannot be preserved
         db_path = self.tmp_dir / "bad.db"
-        with self.assertRaisesRegex(
-            ValueError, r"Workflow.*bcl2fastq.*GenerateFASTQ"
-        ):
+        with self.assertRaisesRegex(ValueError, r"Workflow.*bcl2fastq.*GenerateFASTQ"):
             load_legacy_csv(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
@@ -141,8 +136,7 @@ class TestLegacyApi(unittest.TestCase):
 
         # Settings missing MaskShortReads / OverrideCycles must NOT error
         settings_missing = [
-            e for e in errors
-            if e.startswith("[Settings]") and "missing columns" in e
+            e for e in errors if e.startswith("[Settings]") and "missing columns" in e
         ]
         self.assertEqual(settings_missing, [])
 

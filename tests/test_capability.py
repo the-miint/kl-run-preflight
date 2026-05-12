@@ -9,12 +9,12 @@ from sequencing_brief.db import create_db
 
 
 def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
-    """Create minimal prerequisite rows and return (run_id, prs_id).
+    """Create minimal prerequisite rows and return (run_idx, prs_idx).
 
     Inserts a project, input_plate, input_sample, sequencing_run,
     compression_sample, and prepped_sample so that
     metagenomic_absquant_sample can reference a valid
-    prepped_sample_id.
+    prepped_sample_idx.
     """
     cur = conn.cursor()
 
@@ -26,84 +26,84 @@ def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
         "VALUES ('proj1', '1', 1, 'proto', 'desc')"
     )
     assert cur.lastrowid is not None
-    project_id = cur.lastrowid
+    project_idx = cur.lastrowid
 
     # Insert an input plate
     cur.execute(
-        "INSERT INTO input_plate (plate_name, primary_project_id) VALUES ('plate1', ?)",
-        (project_id,),
+        "INSERT INTO input_plate (plate_name, primary_project_idx) VALUES ('plate1', ?)",
+        (project_idx,),
     )
     assert cur.lastrowid is not None
-    plate_id = cur.lastrowid
+    plate_idx = cur.lastrowid
 
     # Insert an input sample
     cur.execute(
         "INSERT INTO input_sample "
-        "(sample_name, input_plate_id, project_id, sample_type_id) "
+        "(sample_name, input_plate_idxx, project_idx, sample_type_idx) "
         "VALUES ('sample1', ?, ?, 1)",
-        (plate_id, project_id),
+        (plate_idx, project_idx),
     )
     assert cur.lastrowid is not None
-    input_sample_id = cur.lastrowid
+    input_sample_idx = cur.lastrowid
 
     # Insert a sequencing run
     cur.execute(
         "INSERT INTO sequencing_run "
         "(experiment_name, run_date, sequencer, "
-        " assay_type_id, platform_id) "
+        " assay_type_idx, platform_idx) "
         "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
     )
     assert cur.lastrowid is not None
-    run_id = cur.lastrowid
+    run_idx = cur.lastrowid
 
     # Insert a compression_sample
     cur.execute(
         "INSERT INTO compression_sample "
-        "(run_id, input_sample_id, compression_well) "
+        "(run_idx, input_sample_idx, compression_well) "
         "VALUES (?, ?, 'A1')",
-        (run_id, input_sample_id),
+        (run_idx, input_sample_idx),
     )
     assert cur.lastrowid is not None
-    cs_id = cur.lastrowid
+    cs_idx = cur.lastrowid
 
     # Insert a compression sample
     cur.execute(
         "INSERT INTO prepped_sample "
-        "(compression_sample_id, prepped_well) "
+        "(compression_sample_idx, prepped_well) "
         "VALUES (?, 'A1')",
-        (cs_id,),
+        (cs_idx,),
     )
     assert cur.lastrowid is not None
-    prs_id = cur.lastrowid
+    prs_idx = cur.lastrowid
 
     conn.commit()
-    return run_id, prs_id
+    return run_idx, prs_idx
 
 
 class TestRunCapabilityViews(unittest.TestCase):
     def setUp(self):
         # Create an in-memory DB with the full schema
         self.conn = create_db(":memory:")
-        self.run_id, self.prs_id = _setup_run_and_sample(self.conn)
+        self.run_idx, self.prs_idx = _setup_run_and_sample(self.conn)
 
     def tearDown(self):
         self.conn.close()
 
     def test_run_capability_absquant_mass_present(self):
-        """Per-capability view returns run_id when mass data exists."""
+        """Per-capability view returns run_idx when mass data exists."""
         cur = self.conn.cursor()
 
         # Insert a sample with non-null mass
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g) "
+            "(prepped_sample_idx, extracted_sample_mass_g) "
             "VALUES (?, 1.5)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
-        cur.execute("SELECT run_id FROM run_capability_absquant_mass")
-        expected = [(self.run_id,)]
+        cur.execute("SELECT run_idx FROM run_capability_absquant_mass")
+        expected = [(self.run_idx,)]
         result = cur.fetchall()
         self.assertEqual(result, expected)
 
@@ -114,48 +114,48 @@ class TestRunCapabilityViews(unittest.TestCase):
         # Insert a sample with NULL mass
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g) "
+            "(prepped_sample_idx, extracted_sample_mass_g) "
             "VALUES (?, NULL)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
-        cur.execute("SELECT run_id FROM run_capability_absquant_mass")
+        cur.execute("SELECT run_idx FROM run_capability_absquant_mass")
         expected = []
         result = cur.fetchall()
         self.assertEqual(result, expected)
 
     def test_run_capability_absquant_volume_present(self):
-        """Per-capability view returns run_id when volume data exists."""
+        """Per-capability view returns run_idx when volume data exists."""
         cur = self.conn.cursor()
 
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_volume_ul) "
+            "(prepped_sample_idx, extracted_sample_volume_ul) "
             "VALUES (?, 2.0)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
-        cur.execute("SELECT run_id FROM run_capability_absquant_volume")
-        expected = [(self.run_id,)]
+        cur.execute("SELECT run_idx FROM run_capability_absquant_volume")
+        expected = [(self.run_idx,)]
         result = cur.fetchall()
         self.assertEqual(result, expected)
 
     def test_run_capability_absquant_surface_area_present(self):
-        """Per-capability view returns run_id when surface area data exists."""
+        """Per-capability view returns run_idx when surface area data exists."""
         cur = self.conn.cursor()
 
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_surface_area_cm2) "
+            "(prepped_sample_idx, extracted_sample_surface_area_cm2) "
             "VALUES (?, 3.0)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
-        cur.execute("SELECT run_id FROM run_capability_absquant_surface_area")
-        expected = [(self.run_id,)]
+        cur.execute("SELECT run_idx FROM run_capability_absquant_surface_area")
+        expected = [(self.run_idx,)]
         result = cur.fetchall()
         self.assertEqual(result, expected)
 
@@ -166,17 +166,17 @@ class TestRunCapabilityViews(unittest.TestCase):
         # Insert a sample with mass and volume but not surface area
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g, "
+            "(prepped_sample_idx, extracted_sample_mass_g, "
             " extracted_sample_volume_ul) "
             "VALUES (?, 1.5, 2.0)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
         cur.execute(
             "SELECT capability_name FROM run_capability "
-            "WHERE run_id = ? ORDER BY capability_name",
-            (self.run_id,),
+            "WHERE run_idx = ? ORDER BY capability_name",
+            (self.run_idx,),
         )
         expected = [("absquant_mass",), ("absquant_volume",)]
         result = cur.fetchall()
@@ -188,15 +188,14 @@ class TestRunCapabilityViews(unittest.TestCase):
 
         # Insert a sample with all metrics NULL
         cur.execute(
-            "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id) VALUES (?)",
-            (self.prs_id,),
+            "INSERT INTO metagenomic_absquant_sample (prepped_sample_idx) VALUES (?)",
+            (self.prs_idx,),
         )
         self.conn.commit()
 
         cur.execute(
-            "SELECT capability_name FROM run_capability WHERE run_id = ?",
-            (self.run_id,),
+            "SELECT capability_name FROM run_capability WHERE run_idx = ?",
+            (self.run_idx,),
         )
         expected = []
         result = cur.fetchall()
@@ -209,24 +208,24 @@ class TestRunCapabilityViews(unittest.TestCase):
         # Insert first sample with mass
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g) "
+            "(prepped_sample_idx, extracted_sample_mass_g) "
             "VALUES (?, 1.5)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
 
         # Add a second sample (blank/control) with NULL mass
-        second_cs_id = self._add_second_sample()
+        second_cs_idx = self._add_second_sample()
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g) "
+            "(prepped_sample_idx, extracted_sample_mass_g) "
             "VALUES (?, NULL)",
-            (second_cs_id,),
+            (second_cs_idx,),
         )
         self.conn.commit()
 
         # Capability should still be detected from the first sample
-        cur.execute("SELECT run_id FROM run_capability_absquant_mass")
-        expected = [(self.run_id,)]
+        cur.execute("SELECT run_idx FROM run_capability_absquant_mass")
+        expected = [(self.run_idx,)]
         result = cur.fetchall()
         self.assertEqual(result, expected)
 
@@ -237,26 +236,26 @@ class TestRunCapabilityViews(unittest.TestCase):
         # Reuse existing plate and project
         cur.execute(
             "INSERT INTO input_sample "
-            "(sample_name, input_plate_id, project_id, sample_type_id) "
+            "(sample_name, input_plate_idxx, project_idx, sample_type_idx) "
             "VALUES ('sample2', 1, 1, 1)"
         )
         assert cur.lastrowid is not None
-        input_sample_id = cur.lastrowid
+        input_sample_idx = cur.lastrowid
 
         cur.execute(
             "INSERT INTO compression_sample "
-            "(run_id, input_sample_id, compression_well) "
+            "(run_idx, input_sample_idx, compression_well) "
             "VALUES (?, ?, 'B1')",
-            (self.run_id, input_sample_id),
+            (self.run_idx, input_sample_idx),
         )
         assert cur.lastrowid is not None
-        cs_id = cur.lastrowid
+        cs_idx = cur.lastrowid
 
         cur.execute(
             "INSERT INTO prepped_sample "
-            "(compression_sample_id, prepped_well) "
+            "(compression_sample_idx, prepped_well) "
             "VALUES (?, 'B1')",
-            (cs_id,),
+            (cs_idx,),
         )
         assert cur.lastrowid is not None
         return cur.lastrowid
@@ -265,7 +264,7 @@ class TestRunCapabilityViews(unittest.TestCase):
 class TestRunDerivedCapability(unittest.TestCase):
     def setUp(self):
         self.conn = create_db(":memory:")
-        self.run_id, self.prs_id = _setup_run_and_sample(self.conn)
+        self.run_idx, self.prs_idx = _setup_run_and_sample(self.conn)
 
     def tearDown(self):
         self.conn.close()
@@ -277,16 +276,16 @@ class TestRunDerivedCapability(unittest.TestCase):
         # Insert a sample with mass data
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g) "
+            "(prepped_sample_idx, extracted_sample_mass_g) "
             "VALUES (?, 1.5)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
         cur.execute(
             "SELECT capability_family, version "
-            "FROM run_derived_capability WHERE run_id = ?",
-            (self.run_id,),
+            "FROM run_derived_capability WHERE run_idx = ?",
+            (self.run_idx,),
         )
         expected = [("absquant", 1)]
         result = cur.fetchall()
@@ -298,8 +297,8 @@ class TestRunDerivedCapability(unittest.TestCase):
 
         cur.execute(
             "SELECT capability_family, version "
-            "FROM run_derived_capability WHERE run_id = ?",
-            (self.run_id,),
+            "FROM run_derived_capability WHERE run_idx = ?",
+            (self.run_idx,),
         )
         expected = []
         result = cur.fetchall()
@@ -312,17 +311,17 @@ class TestRunDerivedCapability(unittest.TestCase):
         # Insert a sample with both mass and volume
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g, "
+            "(prepped_sample_idx, extracted_sample_mass_g, "
             " extracted_sample_volume_ul) "
             "VALUES (?, 1.5, 2.0)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
         cur.execute(
             "SELECT MAX(version) FROM run_derived_capability "
-            "WHERE run_id = ? AND capability_family = 'absquant'",
-            (self.run_id,),
+            "WHERE run_idx = ? AND capability_family = 'absquant'",
+            (self.run_idx,),
         )
         expected = [(1,)]
         result = cur.fetchall()
@@ -335,17 +334,17 @@ class TestRunDerivedCapability(unittest.TestCase):
         # Insert a sample with mass and surface area
         cur.execute(
             "INSERT INTO metagenomic_absquant_sample "
-            "(prepped_sample_id, extracted_sample_mass_g, "
+            "(prepped_sample_idx, extracted_sample_mass_g, "
             " extracted_sample_surface_area_cm2) "
             "VALUES (?, 1.5, 3.0)",
-            (self.prs_id,),
+            (self.prs_idx,),
         )
         self.conn.commit()
 
         cur.execute(
             "SELECT capability_family, version "
-            "FROM run_derived_capability WHERE run_id = ?",
-            (self.run_id,),
+            "FROM run_derived_capability WHERE run_idx = ?",
+            (self.run_idx,),
         )
         expected = [("absquant", 1)]
         result = cur.fetchall()

@@ -144,7 +144,7 @@ COL_SC_SAMPLE_TYPE = "sample_type"
 # Internal / filter column (in SQL views but excluded from CSV output)
 # ---------------------------------------------------------------------------
 
-COL_RUN_ID = "run_id"
+COL_RUN_IDX = "run_idx"
 
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ from .constants import (
     COL_SEQUENCED_SAMPLE_GDNA_MASS,
     LEGACY_COLUMN_ALIASES,
     COL_LANE,
-    COL_RUN_ID,
+    COL_RUN_IDX,
     COL_BARCODES_ARE_RC,
     COL_DESTINATION_WELL_384,
     COL_EMAIL,
@@ -154,7 +154,7 @@ def create_db(db_path: str) -> sqlite3.Connection:
 
 
 def introspect_view(cur, view_name: str) -> tuple[list[str], bool]:
-    """Return column names (excluding run_id) and whether run_id exists.
+    """Return column names (excluding run_idx) and whether run_idx exists.
 
     Issues a single PRAGMA table_info call per view so callers never
     need to re-query the view schema.
@@ -164,17 +164,17 @@ def introspect_view(cur, view_name: str) -> tuple[list[str], bool]:
         view_name: Name of the SQL view to introspect.
 
     Returns:
-        tuple[list[str], bool]: (column names sans run_id, has_run_id).
+        tuple[list[str], bool]: (column names sans run_idx, has_run_idx).
     """
     cur.execute(f"PRAGMA table_info({view_name})")
     all_info = cur.fetchall()
-    has_run_id = any(row[1] == COL_RUN_ID for row in all_info)
-    cols = [row[1] for row in all_info if row[1] != COL_RUN_ID]
-    return cols, has_run_id
+    has_run_idx = any(row[1] == COL_RUN_IDX for row in all_info)
+    cols = [row[1] for row in all_info if row[1] != COL_RUN_IDX]
+    return cols, has_run_idx
 
 
 def get_view_columns(cur, view_name: str) -> list[str]:
-    """Return the column names of a SQL view, excluding run_id.
+    """Return the column names of a SQL view, excluding run_idx.
 
     Thin wrapper around introspect_view for callers that only need
     the column list.
@@ -185,7 +185,7 @@ def get_view_columns(cur, view_name: str) -> list[str]:
 
     Returns:
         list[str]: Ordered list of column names from the view, with
-        run_id omitted.
+        run_idx omitted.
     """
     cols, _ = introspect_view(cur, view_name)
     return cols
@@ -287,7 +287,7 @@ def _parse_bool_str(value: str | None, *, nullable: bool = False) -> int | None:
     return 1
 
 
-def _lookup_id(cur, table: str, col: str, value) -> int:
+def _lookup_idx(cur, table: str, col: str, value) -> int:
     """Return the primary-key rowid for the row where *col* equals *value*.
 
     Args:
@@ -387,22 +387,22 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         control_names[row[COL_SC_SAMPLE_NAME]] = CONTEXT_TYPE_MAP.get(st, st)
 
     # -- Resolve reference-table IDs ----------------------------------------
-    assay_type_id = _lookup_id(cur, "assay_type", "name", header[FIELD_ASSAY])
-    platform_id = _lookup_id(cur, "sequencing_platform", "name", platform_name)
+    assay_type_idx = _lookup_idx(cur, "assay_type", "name", header[FIELD_ASSAY])
+    platform_idx = _lookup_idx(cur, "sequencing_platform", "name", platform_name)
 
     # Cache all sample_type IDs for quick lookup.
-    cur.execute("SELECT sample_type_id, name FROM sample_type")
+    cur.execute("SELECT sample_type_idx, name FROM sample_type")
     type_ids: dict[str, int] = {name: sid for sid, name in cur.fetchall()}
 
     # -- Resolve legacy format ID (may be NULL for native runs) -------------
     sheet_version = int(header.get(FIELD_SHEET_VERSION, 0))
     cur.execute(
-        "SELECT legacy_format_id FROM legacy_samplesheet_format "
+        "SELECT legacy_format_idx FROM legacy_samplesheet_format "
         "WHERE legacy_sheet_type = ? AND legacy_version = ?",
         (sheet_type, sheet_version),
     )
     fmt_row = cur.fetchone()
-    legacy_format_id = fmt_row[0] if fmt_row else None
+    legacy_format_idx = fmt_row[0] if fmt_row else None
 
     # Reject pre-v101 files with replicates (unsupported well semantics)
     _reject_unsupported_replicates(sheet_version, data_rows, bio_rows)
@@ -411,7 +411,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     # Build a quick email lookup from the Contact section.
     contact_map = {r[COL_SAMPLE_PROJECT]: r.get(COL_EMAIL, "") for r in contact_rows}
 
-    project_ids: dict[str, int] = {}
+    project_idxs: dict[str, int] = {}
     for bio in bio_rows:
         proj_name = bio[COL_SAMPLE_PROJECT]
         human_filt = _parse_bool_str(bio.get(COL_HUMAN_FILTERING, "True"))
@@ -431,11 +431,11 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             ),
         )
         assert cur.lastrowid is not None
-        project_ids[proj_name] = cur.lastrowid
+        project_idxs[proj_name] = cur.lastrowid
 
     # -- Insert input plates ------------------------------------------------
     # Each unique Sample_Plate in the Data section becomes an input_plate.
-    # The first project seen on that plate becomes primary_project_id.
+    # The first project seen on that plate becomes primary_project_idx.
     plate_info: dict[str, dict] = {}
     for row in data_rows:
         pname = row[COL_SAMPLE_PLATE]
@@ -445,43 +445,43 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
                 "elution_vol": row.get(COL_VOL_EXTRACTED_ELUTION),
             }
 
-    plate_ids: dict[str, int] = {}
+    plate_idxs: dict[str, int] = {}
     for pname, info in plate_info.items():
-        proj_id = project_ids.get(info["project"])
+        proj_id = project_idxs.get(info["project"])
         elution = float(info["elution_vol"]) if info["elution_vol"] else None
         cur.execute(
-            "INSERT INTO input_plate (plate_name, primary_project_id, elution_vol) "
+            "INSERT INTO input_plate (plate_name, primary_project_idx, elution_vol) "
             "VALUES (?, ?, ?)",
             (pname, proj_id, elution),
         )
         assert cur.lastrowid is not None
-        plate_ids[pname] = cur.lastrowid
+        plate_idxs[pname] = cur.lastrowid
 
     # -- Insert sequencing run ----------------------------------------------
     cur.execute(
         """INSERT INTO sequencing_run
            (experiment_name, run_date, investigator_name, sequencer,
-            assay_type_id, platform_id, compression_plate_name,
-            description, legacy_format_id)
+            assay_type_idx, platform_idx, compression_plate_name,
+            description, legacy_format_idx)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             header.get(FIELD_EXPERIMENT_NAME, ""),
             header.get(FIELD_DATE, ""),
             header.get(FIELD_INVESTIGATOR_NAME, ""),
             sequencer,
-            assay_type_id,
-            platform_id,
+            assay_type_idx,
+            platform_idx,
             None,
             header.get(FIELD_DESCRIPTION, ""),
-            legacy_format_id,
+            legacy_format_idx,
         ),
     )
     assert cur.lastrowid is not None
-    run_id = cur.lastrowid
+    run_idx = cur.lastrowid
 
     # -- Illumina-specific run config (Reads + Settings + Bioinformatics) ---
     if not is_pacbio:
-        _populate_illumina_run(cur, run_id, sections, bio_rows)
+        _populate_illumina_run(cur, run_idx, sections, bio_rows)
 
     # -- Insert samples -----------------------------------------------------
     # Figure out which column holds the well identifier.
@@ -489,7 +489,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     has_replicates = COL_ORIG_NAME in data_rows[0]
 
     # Determine extra Data columns not recognized by the format's view
-    extra_cols = _get_extra_columns(cur, legacy_format_id, data_rows)
+    extra_cols = _get_extra_columns(cur, legacy_format_idx, data_rows)
 
     # Three-layer dedup ladder.  Replicates share input_sample + compression_sample
     # but get distinct prepped_samples (different dest_well).  Lane
@@ -518,80 +518,80 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         # Create or reuse input_sample and compression_sample.
         cache_key = (plate_name, orig_name)
         if cache_key in input_sample_cache:
-            cs_id = compression_cache[cache_key]
+            cs_idx = compression_cache[cache_key]
         else:
-            # Controls have NULL project_id; they inherit via input_plate.
+            # Controls have NULL project_idx; they inherit via input_plate.
             if is_control:
                 st_name = control_names[control_key]
-                sample_project_id = None
+                sample_project_idx = None
             else:
                 st_name = SAMPLE_TYPE_STANDARD
-                sample_project_id = project_ids.get(project_name)
+                sample_project_idx = project_idxs.get(project_name)
 
             cur.execute(
                 """INSERT INTO input_sample
-                   (sample_name, input_plate_id, project_id, sample_type_id)
+                   (sample_name, input_plate_idxx, project_idx, sample_type_idx)
                    VALUES (?, ?, ?, ?)""",
                 (
                     orig_name,
-                    plate_ids[plate_name],
-                    sample_project_id,
+                    plate_idxs[plate_name],
+                    sample_project_idx,
                     type_ids[st_name],
                 ),
             )
             assert cur.lastrowid is not None
-            input_sample_id = cur.lastrowid
-            input_sample_cache[cache_key] = input_sample_id
+            input_sample_idx = cur.lastrowid
+            input_sample_cache[cache_key] = input_sample_idx
 
             # Create compression_sample (one per input_sample per run)
             cur.execute(
                 """INSERT INTO compression_sample
-                   (run_id, input_sample_id, compression_well)
+                   (run_idx, input_sample_idx, compression_well)
                    VALUES (?, ?, ?)""",
-                (run_id, input_sample_id, well),
+                (run_idx, input_sample_idx, well),
             )
             assert cur.lastrowid is not None
-            cs_id = cur.lastrowid
-            compression_cache[cache_key] = cs_id
+            cs_idx = cur.lastrowid
+            compression_cache[cache_key] = cs_idx
 
         # Reuse prepped_sample for lane splits; create a new one
         # otherwise.  On reuse, every column except Lane must match.
         prs_cache_key = (plate_name, orig_name, dest_well)
         if prs_cache_key in prs_cache:
-            prs_id = prs_cache[prs_cache_key]
-            _check_per_tube_consistency(prs_first_row[prs_id], row, prs_cache_key)
+            prs_idx = prs_cache[prs_cache_key]
+            _check_per_tube_consistency(prs_first_row[prs_idx], row, prs_cache_key)
         else:
             # -- prepped_sample --
             well_desc = row.get(COL_WELL_DESCRIPTION) or None
             prepped_sample_name = sample_name if has_replicates else None
             cur.execute(
                 """INSERT INTO prepped_sample
-                   (compression_sample_id, prepped_well,
+                   (compression_sample_idx, prepped_well,
                     sample_name, well_description)
                    VALUES (?, ?, ?, ?)""",
-                (cs_id, dest_well, prepped_sample_name, well_desc),
+                (cs_idx, dest_well, prepped_sample_name, well_desc),
             )
             assert cur.lastrowid is not None
-            prs_id = cur.lastrowid
-            prs_cache[prs_cache_key] = prs_id
-            prs_first_row[prs_id] = row
+            prs_idx = cur.lastrowid
+            prs_cache[prs_cache_key] = prs_idx
+            prs_first_row[prs_idx] = row
 
             # Per-tube tables: written once per prepped_sample, using
             # the first row's values.  Lane-split rows are guaranteed to
             # agree on these columns by _check_per_tube_consistency above.
-            _populate_absquant_sample(cur, prs_id, row)
-            _populate_metatranscriptomic_sample(cur, prs_id, row)
-            _populate_extra_columns(cur, prs_id, row, extra_cols)
+            _populate_absquant_sample(cur, prs_idx, row)
+            _populate_metatranscriptomic_sample(cur, prs_idx, row)
+            _populate_extra_columns(cur, prs_idx, row, extra_cols)
 
         # Per-loading platform-specific row: one per CSV row, always.
         if is_pacbio:
-            _populate_pacbio_sample(cur, prs_id, row)
+            _populate_pacbio_sample(cur, prs_idx, row)
         elif is_tellseq:
             # TellSeq is a library prep protocol on Illumina; it uses
             # tellseq_sample instead of illumina_sample for per-sample data.
-            _populate_tellseq_sample(cur, prs_id, row)
+            _populate_tellseq_sample(cur, prs_idx, row)
         else:
-            _populate_illumina_sample(cur, prs_id, row)
+            _populate_illumina_sample(cur, prs_idx, row)
 
     conn.commit()
 
@@ -601,7 +601,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
+def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
     """Insert a single illumina_run row for the given sequencing run.
 
     Combines data from the Reads, Settings, and Bioinformatics sections to
@@ -610,7 +610,7 @@ def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
 
     Args:
         cur: An open SQLite cursor.
-        run_id: The sequencing_run.run_id to associate the row with.
+        run_idx: The sequencing_run.run_idx to associate the row with.
         sections: The full parsed-sections dict (used to read "Reads"
             and "Settings").
         bio_rows: The list of Bioinformatics row dicts (adapter info is
@@ -631,12 +631,12 @@ def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
 
     cur.execute(
         """INSERT INTO illumina_run
-           (run_id, read1_length, read2_length,
+           (run_idx, read1_length, read2_length,
             reverse_complement, mask_short_reads, override_cycles,
             forward_adapter, reverse_adapter, barcodes_are_rc)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            run_id,
+            run_idx,
             read1,
             read2,
             rc_bool,
@@ -649,7 +649,7 @@ def _populate_illumina_run(cur, run_id: int, sections: dict, bio_rows: list):
     )
 
 
-def _populate_absquant_sample(cur, prs_id: int, row: dict):
+def _populate_absquant_sample(cur, prs_idx: int, row: dict):
     """Insert a metagenomic_absquant_sample row if absquant columns are present.
 
     AbsQuant columns (mass_syndna_input_ng, etc.) appear in both PacBio and
@@ -658,7 +658,7 @@ def _populate_absquant_sample(cur, prs_id: int, row: dict):
 
     Args:
         cur: An open SQLite cursor.
-        prs_id: The prepped_sample_id for this sample.
+        prs_idx: The prepped_sample_idx for this sample.
         row: A single Data-section row dict.
     """
     # AbsQuant columns are only present in absquant sheet types.
@@ -698,14 +698,14 @@ def _populate_absquant_sample(cur, prs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO metagenomic_absquant_sample "
-        "(prepped_sample_id, syndna_pool_mass_ng, "
+        "(prepped_sample_idx, syndna_pool_mass_ng, "
         " extracted_gdna_concentration, syndna_pool_number, "
         " sequenced_sample_gdna_mass_ng, "
         " extracted_sample_mass_g, extracted_sample_volume_ul, "
         " extracted_sample_surface_area_cm2) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            prs_id,
+            prs_idx,
             mass,
             conc,
             row.get(COL_SYNDNA_POOL_NUMBER) or None,
@@ -717,7 +717,7 @@ def _populate_absquant_sample(cur, prs_id: int, row: dict):
     )
 
 
-def _populate_metatranscriptomic_sample(cur, prs_id: int, row: dict):
+def _populate_metatranscriptomic_sample(cur, prs_idx: int, row: dict):
     """Insert a metatranscriptomic_sample row if metat columns are present.
 
     The total_rna_concentration_ng_ul column identifies a metatranscriptomic
@@ -725,7 +725,7 @@ def _populate_metatranscriptomic_sample(cur, prs_id: int, row: dict):
 
     Args:
         cur: An open SQLite cursor.
-        prs_id: The prepped_sample_id for this sample.
+        prs_idx: The prepped_sample_idx for this sample.
         row: A single Data-section row dict.
     """
     if COL_TOTAL_RNA_CONC not in row:
@@ -735,18 +735,18 @@ def _populate_metatranscriptomic_sample(cur, prs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO metatranscriptomic_sample "
-        "(prepped_sample_id, total_rna_concentration_ng_ul) "
+        "(prepped_sample_idx, total_rna_concentration_ng_ul) "
         "VALUES (?, ?)",
-        (prs_id, conc),
+        (prs_idx, conc),
     )
 
 
-def _populate_pacbio_sample(cur, prs_id: int, row: dict):
+def _populate_pacbio_sample(cur, prs_idx: int, row: dict):
     """Insert a pacbio_sample row for a PacBio sample.
 
     Args:
         cur: An open SQLite cursor.
-        prs_id: The prepped_sample_id for this sample.
+        prs_idx: The prepped_sample_idx for this sample.
         row: A single Data-section row dict containing PacBio-specific
             columns.
     """
@@ -755,10 +755,10 @@ def _populate_pacbio_sample(cur, prs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO pacbio_sample "
-        "(prepped_sample_id, barcode_id, twist_adaptor_id, syndna_is_twisted) "
+        "(prepped_sample_idx, barcode_id, twist_adaptor_id, syndna_is_twisted) "
         "VALUES (?, ?, ?, ?)",
         (
-            prs_id,
+            prs_idx,
             row.get(COL_BARCODE_ID, ""),
             row.get(COL_TWIST_ADAPTOR_ID) or None,
             twisted,
@@ -766,12 +766,12 @@ def _populate_pacbio_sample(cur, prs_id: int, row: dict):
     )
 
 
-def _populate_tellseq_sample(cur, prs_id: int, row: dict):
+def _populate_tellseq_sample(cur, prs_idx: int, row: dict):
     """Insert a tellseq_sample row with barcode and lane information.
 
     Args:
         cur: An open SQLite cursor.
-        prs_id: The prepped_sample_id for this sample.
+        prs_idx: The prepped_sample_idx for this sample.
         row: A single Data-section row dict containing TellSeq-specific
             columns (barcode_id, and optionally Lane).
     """
@@ -781,18 +781,18 @@ def _populate_tellseq_sample(cur, prs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO tellseq_sample "
-        "(prepped_sample_id, barcode_id, lane) "
+        "(prepped_sample_idx, barcode_id, lane) "
         "VALUES (?, ?, ?)",
-        (prs_id, row.get(COL_BARCODE_ID, ""), lane),
+        (prs_idx, row.get(COL_BARCODE_ID, ""), lane),
     )
 
 
-def _populate_illumina_sample(cur, prs_id: int, row: dict):
+def _populate_illumina_sample(cur, prs_idx: int, row: dict):
     """Insert an illumina_sample row with i5/i7 index information.
 
     Args:
         cur: An open SQLite cursor.
-        prs_id: The prepped_sample_id for this sample.
+        prs_idx: The prepped_sample_idx for this sample.
         row: A single Data-section row dict containing Illumina index
             columns (I7_Index_ID, index, I5_Index_ID, index2).
     """
@@ -802,11 +802,11 @@ def _populate_illumina_sample(cur, prs_id: int, row: dict):
 
     cur.execute(
         "INSERT INTO illumina_sample "
-        "(prepped_sample_id, i7_index_id, i7_sequence, "
+        "(prepped_sample_idx, i7_index_id, i7_sequence, "
         " i5_index_id, i5_sequence, lane) "
         "VALUES (?, ?, ?, ?, ?, ?)",
         (
-            prs_id,
+            prs_idx,
             row.get(COL_I7_INDEX_ID, ""),
             row.get(COL_INDEX, ""),
             row.get(COL_I5_INDEX_ID, ""),
@@ -817,26 +817,26 @@ def _populate_illumina_sample(cur, prs_id: int, row: dict):
 
 
 def _get_extra_columns(
-    cur, legacy_format_id: int | None, data_rows: list[dict]
+    cur, legacy_format_idx: int | None, data_rows: list[dict]
 ) -> list[str]:
     """Return sorted list of Data columns not recognized by the format's view.
 
     Args:
         cur: An open SQLite cursor.
-        legacy_format_id: The legacy format id for this run, or None.
+        legacy_format_idx: The legacy format id for this run, or None.
         data_rows: The parsed Data-section row dicts.
 
     Returns:
         list[str]: Alphabetically sorted extra column names, or empty list.
     """
-    if legacy_format_id is None or not data_rows:
+    if legacy_format_idx is None or not data_rows:
         return []
 
     # Look up the Data view for this format
     cur.execute(
         "SELECT view_name FROM legacy_samplesheet_view "
-        "WHERE legacy_format_id = ? AND section_name = 'Data'",
-        (legacy_format_id,),
+        "WHERE legacy_format_idx = ? AND section_name = 'Data'",
+        (legacy_format_idx,),
     )
     view_row = cur.fetchone()
     if view_row is None:
@@ -849,8 +849,7 @@ def _get_extra_columns(
     # extracted_sample_mass_g (DB name), causing it to be misclassified
     # as an extra column.
     known_cols = {
-        LEGACY_COLUMN_ALIASES.get(c, c)
-        for c in get_view_columns(cur, view_row[0])
+        LEGACY_COLUMN_ALIASES.get(c, c) for c in get_view_columns(cur, view_row[0])
     }
 
     # Identify extra columns from the parsed data
@@ -871,19 +870,19 @@ def _get_extra_columns(
     return extras
 
 
-def _populate_extra_columns(cur, prs_id: int, row: dict, extra_cols: list[str]):
+def _populate_extra_columns(cur, prs_idx: int, row: dict, extra_cols: list[str]):
     """Insert legacy_extra_column rows for a single sample.
 
     Args:
         cur: An open SQLite cursor.
-        prs_id: The prepped_sample_id for this sample.
+        prs_idx: The prepped_sample_idx for this sample.
         row: A single Data-section row dict.
         extra_cols: Column names to store as extra columns.
     """
     for col_name in extra_cols:
         cur.execute(
             "INSERT INTO legacy_extra_column "
-            "(prepped_sample_id, column_name, column_value) "
+            "(prepped_sample_idx, column_name, column_value) "
             "VALUES (?, ?, ?)",
-            (prs_id, col_name, row.get(col_name)),
+            (prs_idx, col_name, row.get(col_name)),
         )

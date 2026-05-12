@@ -74,16 +74,16 @@ def _pad_to_max_width(csv_text: str) -> str:
 
 
 def _query_view(
-    cur, view_name: str, col_names: list[str], has_run_id: bool, run_id: int
+    cur, view_name: str, col_names: list[str], has_run_idx: bool, run_idx: int
 ):
     """Query a view for the given run and return all matching rows.
 
     Args:
         cur: An open SQLite cursor.
         view_name: Name of the SQL view to query.
-        col_names: Column names to select (should exclude run_id).
-        has_run_id: Whether the view contains a run_id column.
-        run_id: The sequencing_run.run_id to filter on.
+        col_names: Column names to select (should exclude run_idx).
+        has_run_idx: Whether the view contains a run_idx column.
+        run_idx: The sequencing_run.run_idx to filter on.
 
     Returns:
         list[tuple]: All matching rows, each as a tuple of values in the
@@ -91,10 +91,10 @@ def _query_view(
     """
     select_cols = ", ".join(f'"{c}"' for c in col_names)
 
-    if has_run_id:
+    if has_run_idx:
         cur.execute(
-            f'SELECT {select_cols} FROM "{view_name}" WHERE run_id = ?',
-            (run_id,),
+            f'SELECT {select_cols} FROM "{view_name}" WHERE run_idx = ?',
+            (run_idx,),
         )
     else:
         # Fallback: return everything (shouldn't happen in practice).
@@ -116,7 +116,7 @@ def _write_header_kv(writer, section_name, col_names, row):
     Args:
         writer: A csv.writer instance to write rows to.
         section_name: The section label (written as [SectionName]).
-        col_names: Column names (excluding run_id).
+        col_names: Column names (excluding run_idx).
         row: A single data tuple matching col_names, or None.
     """
     if not row:
@@ -197,44 +197,44 @@ def _write_tabular(writer, section_name, col_names, rows):
 # Map check_function names → callables that inspect the DB for a given run.
 # Each returns True if the optional column group should be included.
 _CHECK_FUNCTIONS = {
-    CHECK_CONTAINS_REPLICATES: lambda cur, run_id: _db_has_rows(
+    CHECK_CONTAINS_REPLICATES: lambda cur, run_idx: _db_has_rows(
         cur,
-        "SELECT 1 FROM replicated_samples WHERE run_id = ? LIMIT 1",
-        (run_id,),
+        "SELECT 1 FROM replicated_samples WHERE run_idx = ? LIMIT 1",
+        (run_idx,),
     ),
-    CHECK_CONTAINS_KATHAROSEQ: lambda cur, run_id: _db_has_rows(
+    CHECK_CONTAINS_KATHAROSEQ: lambda cur, run_idx: _db_has_rows(
         cur,
         "SELECT 1 FROM katharoseq_sample LIMIT 1",
         (),
     ),
     # Each absquant metric column is gated by its per-capability view:
-    # the view returns the run_id iff at least one sample has a non-null
+    # the view returns the run_idx iff at least one sample has a non-null
     # value in the corresponding metric column.
-    CHECK_HAS_SEQUENCED_GDNA_MASS: lambda cur, run_id: _db_has_rows(
+    CHECK_HAS_SEQUENCED_GDNA_MASS: lambda cur, run_idx: _db_has_rows(
         cur,
         "SELECT 1 FROM metagenomic_absquant_sample ma "
         "JOIN prepped_sample prs "
-        "ON ma.prepped_sample_id = prs.prepped_sample_id "
+        "ON ma.prepped_sample_idx = prs.prepped_sample_idx "
         "JOIN compression_sample cs "
-        "ON prs.compression_sample_id = cs.compression_sample_id "
-        "WHERE cs.run_id = ? "
+        "ON prs.compression_sample_idx = cs.compression_sample_idx "
+        "WHERE cs.run_idx = ? "
         "AND ma.sequenced_sample_gdna_mass_ng IS NOT NULL LIMIT 1",
-        (run_id,),
+        (run_idx,),
     ),
-    CHECK_HAS_EXTRACTED_SAMPLE_MASS: lambda cur, run_id: _db_has_rows(
+    CHECK_HAS_EXTRACTED_SAMPLE_MASS: lambda cur, run_idx: _db_has_rows(
         cur,
-        "SELECT 1 FROM run_capability_absquant_mass WHERE run_id = ? LIMIT 1",
-        (run_id,),
+        "SELECT 1 FROM run_capability_absquant_mass WHERE run_idx = ? LIMIT 1",
+        (run_idx,),
     ),
-    CHECK_HAS_EXTRACTED_SAMPLE_VOLUME: lambda cur, run_id: _db_has_rows(
+    CHECK_HAS_EXTRACTED_SAMPLE_VOLUME: lambda cur, run_idx: _db_has_rows(
         cur,
-        "SELECT 1 FROM run_capability_absquant_volume WHERE run_id = ? LIMIT 1",
-        (run_id,),
+        "SELECT 1 FROM run_capability_absquant_volume WHERE run_idx = ? LIMIT 1",
+        (run_idx,),
     ),
-    CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA: lambda cur, run_id: _db_has_rows(
+    CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA: lambda cur, run_idx: _db_has_rows(
         cur,
-        "SELECT 1 FROM run_capability_absquant_surface_area WHERE run_id = ? LIMIT 1",
-        (run_id,),
+        "SELECT 1 FROM run_capability_absquant_surface_area WHERE run_idx = ? LIMIT 1",
+        (run_idx,),
     ),
 }
 
@@ -256,10 +256,10 @@ def _db_has_rows(cur, sql: str, params: tuple) -> bool:
 
 def _get_active_columns(
     cur,
-    legacy_format_id: int,
+    legacy_format_idx: int,
     section_name: str,
     all_cols: list[str],
-    run_id: int,
+    run_idx: int,
 ) -> list[str]:
     """Return the subset of all_cols that should appear in the output.
 
@@ -268,11 +268,11 @@ def _get_active_columns(
 
     Args:
         cur: An open SQLite cursor.
-        legacy_format_id: The legacy format to look up optional column
+        legacy_format_idx: The legacy format to look up optional column
             groups for.
         section_name: The section whose optional groups to evaluate.
         all_cols: The full list of column names defined by the view.
-        run_id: The sequencing_run.run_id used to evaluate check functions.
+        run_idx: The sequencing_run.run_idx used to evaluate check functions.
 
     Returns:
         list[str]: The filtered column list with inactive optional columns
@@ -281,8 +281,8 @@ def _get_active_columns(
     cur.execute(
         "SELECT group_name, column_names, check_function "
         "FROM legacy_samplesheet_optional_columns "
-        "WHERE legacy_format_id = ? AND section_name = ?",
-        (legacy_format_id, section_name),
+        "WHERE legacy_format_idx = ? AND section_name = ?",
+        (legacy_format_idx, section_name),
     )
     optional_groups = cur.fetchall()
     if not optional_groups:
@@ -293,7 +293,7 @@ def _get_active_columns(
     exclude: set[str] = set()
     for _group_name, col_names_csv, check_fn_name in optional_groups:
         checker = _CHECK_FUNCTIONS.get(check_fn_name)
-        if checker is None or not checker(cur, run_id):
+        if checker is None or not checker(cur, run_idx):
             # Check function missing or returned False — exclude these columns.
             exclude.update(c.strip() for c in col_names_csv.split(","))
 
@@ -306,7 +306,7 @@ def _get_active_columns(
 
 
 def _merge_extra_columns(
-    cur, run_id: int, active_cols: list[str], rows: list[tuple]
+    cur, run_idx: int, active_cols: list[str], rows: list[tuple]
 ) -> tuple[list[str], list[tuple]]:
     """Append extra columns from legacy_extra_column to the Data section.
 
@@ -316,7 +316,7 @@ def _merge_extra_columns(
 
     Args:
         cur: An open SQLite cursor.
-        run_id: The sequencing_run.run_id to query extra columns for.
+        run_idx: The sequencing_run.run_idx to query extra columns for.
         active_cols: The current list of active column names.
         rows: The current list of data tuples matching active_cols.
 
@@ -329,11 +329,11 @@ def _merge_extra_columns(
         "SELECT DISTINCT lec.column_name "
         "FROM legacy_extra_column lec "
         "JOIN prepped_sample prs "
-        "ON lec.prepped_sample_id = prs.prepped_sample_id "
-        "JOIN compression_sample cs ON prs.compression_sample_id = cs.compression_sample_id "
-        "WHERE cs.run_id = ? "
+        "ON lec.prepped_sample_idx = prs.prepped_sample_idx "
+        "JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx "
+        "WHERE cs.run_idx = ? "
         "ORDER BY lec.column_name",
-        (run_id,),
+        (run_idx,),
     )
     extra_col_names = [r[0] for r in cur.fetchall()]
     if not extra_col_names:
@@ -348,29 +348,29 @@ def _merge_extra_columns(
         stacklevel=2,
     )
 
-    # Build a lookup: (prepped_sample_id, column_name) → value
+    # Build a lookup: (prepped_sample_idx, column_name) → value
     cur.execute(
-        "SELECT lec.prepped_sample_id, lec.column_name, lec.column_value "
+        "SELECT lec.prepped_sample_idx, lec.column_name, lec.column_value "
         "FROM legacy_extra_column lec "
         "JOIN prepped_sample prs "
-        "ON lec.prepped_sample_id = prs.prepped_sample_id "
-        "JOIN compression_sample cs ON prs.compression_sample_id = cs.compression_sample_id "
-        "WHERE cs.run_id = ?",
-        (run_id,),
+        "ON lec.prepped_sample_idx = prs.prepped_sample_idx "
+        "JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx "
+        "WHERE cs.run_idx = ?",
+        (run_idx,),
     )
     extra_values: dict[tuple[int, str], str | None] = {}
-    for prs_id, col_name, col_value in cur.fetchall():
-        extra_values[(prs_id, col_name)] = col_value
+    for prs_idx, col_name, col_value in cur.fetchall():
+        extra_values[(prs_idx, col_name)] = col_value
 
-    # Sample_ID is the prepped_sample_id; find its index in active_cols
+    # Sample_ID is the prepped_sample_idx; find its index in active_cols
     sample_id_idx = active_cols.index(COL_SAMPLE_ID)
 
     # Append extra column values to each row
     merged_rows = []
     for row in rows:
-        prs_id = row[sample_id_idx]
+        prs_idx = row[sample_id_idx]
         extra_vals = tuple(
-            extra_values.get((prs_id, col), "") for col in extra_col_names
+            extra_values.get((prs_idx, col), "") for col in extra_col_names
         )
         merged_rows.append(row + extra_vals)
 
@@ -382,7 +382,7 @@ def _merge_extra_columns(
 # ---------------------------------------------------------------------------
 
 
-def reconstruct_omnibus(conn, run_id: int) -> str:
+def reconstruct_omnibus(conn, run_idx: int) -> str:
     """Rebuild the full omnibus CSV for a sequencing run.
 
     Steps:
@@ -394,7 +394,7 @@ def reconstruct_omnibus(conn, run_id: int) -> str:
 
     Args:
         conn: An open SQLite connection with a fully populated database.
-        run_id: The sequencing_run.run_id to reconstruct the CSV for.
+        run_idx: The sequencing_run.run_idx to reconstruct the CSV for.
 
     Returns:
         str: The complete reconstructed omnibus CSV as a string.
@@ -406,25 +406,25 @@ def reconstruct_omnibus(conn, run_id: int) -> str:
 
     # Resolve the legacy format for this run.
     cur.execute(
-        """SELECT lf.legacy_format_id, lf.legacy_sheet_type, lf.legacy_version
+        """SELECT lf.legacy_format_idx, lf.legacy_sheet_type, lf.legacy_version
            FROM sequencing_run sr
            JOIN legacy_samplesheet_format lf
-             ON sr.legacy_format_id = lf.legacy_format_id
-           WHERE sr.run_id = ?""",
-        (run_id,),
+             ON sr.legacy_format_idx = lf.legacy_format_idx
+           WHERE sr.run_idx = ?""",
+        (run_idx,),
     )
     fmt = cur.fetchone()
     if not fmt:
-        raise ValueError(f"Run {run_id} has no legacy format assigned")
-    legacy_format_id = fmt[0]
+        raise ValueError(f"Run {run_idx} has no legacy format assigned")
+    legacy_format_idx = fmt[0]
 
     # Fetch the ordered list of sections for this format.
     cur.execute(
         """SELECT section_name, view_name, section_format
            FROM legacy_samplesheet_view
-           WHERE legacy_format_id = ?
+           WHERE legacy_format_idx = ?
            ORDER BY section_order""",
-        (legacy_format_id,),
+        (legacy_format_idx,),
     )
     section_views = cur.fetchall()
 
@@ -432,24 +432,26 @@ def reconstruct_omnibus(conn, run_id: int) -> str:
     output = io.StringIO()
     writer = csv.writer(output, lineterminator="\n")
     for section_name, view_name, section_format in section_views:
-        # Introspect the view once to get columns and run_id presence
-        all_cols, has_run_id = introspect_view(cur, view_name)
+        # Introspect the view once to get columns and run_idx presence
+        all_cols, has_run_idx = introspect_view(cur, view_name)
 
         if section_format == FORMAT_TABULAR:
             # Filter out inactive optional columns before querying
             active_cols = _get_active_columns(
-                cur, legacy_format_id, section_name, all_cols, run_id
+                cur, legacy_format_idx, section_name, all_cols, run_idx
             )
-            rows = _query_view(cur, view_name, active_cols, has_run_id, run_id)
+            rows = _query_view(cur, view_name, active_cols, has_run_idx, run_idx)
 
             # Merge extra columns for the Data section
             if section_name == SECTION_DATA:
-                active_cols, rows = _merge_extra_columns(cur, run_id, active_cols, rows)
+                active_cols, rows = _merge_extra_columns(
+                    cur, run_idx, active_cols, rows
+                )
 
             _write_tabular(writer, section_name, active_cols, rows)
         else:
             # Single-row sections (header_kv, values_only)
-            rows = _query_view(cur, view_name, all_cols, has_run_id, run_id)
+            rows = _query_view(cur, view_name, all_cols, has_run_idx, run_idx)
             row = rows[0] if rows else None
 
             if section_format == FORMAT_VALUES_ONLY:

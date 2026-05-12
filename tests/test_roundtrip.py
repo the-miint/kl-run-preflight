@@ -22,9 +22,7 @@ class TestRoundTrip(unittest.TestCase):
         self._tmp.cleanup()
 
     def _assert_roundtrips(self, csv_name: str):
-        normalized, reconstructed = roundtrip_via_api(
-            DATA_DIR / csv_name, self.tmp_dir
-        )
+        normalized, reconstructed = roundtrip_via_api(DATA_DIR / csv_name, self.tmp_dir)
         self.assertEqual(normalized, reconstructed)
 
     def test_good_pacbio_absquantv11(self):
