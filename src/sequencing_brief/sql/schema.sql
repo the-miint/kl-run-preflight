@@ -338,7 +338,7 @@ CREATE TABLE project (
 );
 
 CREATE TABLE input_plate (
-    input_plate_idxx      INTEGER PRIMARY KEY AUTOINCREMENT,
+    input_plate_idx      INTEGER PRIMARY KEY AUTOINCREMENT,
     plate_name          TEXT NOT NULL,
     primary_project_idx  INTEGER NOT NULL REFERENCES project(project_idx),
     elution_vol         REAL
@@ -347,7 +347,7 @@ CREATE TABLE input_plate (
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_name         TEXT NOT NULL,
-    input_plate_idxx      INTEGER NOT NULL REFERENCES input_plate(input_plate_idxx),
+    input_plate_idx      INTEGER NOT NULL REFERENCES input_plate(input_plate_idx),
     well                TEXT,
     project_idx          INTEGER REFERENCES project(project_idx),
         -- NULL for controls; controls inherit project via input_plate
@@ -368,8 +368,9 @@ CREATE TABLE sequencing_run (
     compression_plate_name TEXT,
     description         TEXT DEFAULT '',
     legacy_format_idx    INTEGER
-        REFERENCES legacy_samplesheet_format(legacy_format_idx)
+        REFERENCES legacy_samplesheet_format(legacy_format_idx),
         -- NULL for native DB-originated runs; non-NULL for ingested legacy files
+    run_name            TEXT
 );
 
 
@@ -636,10 +637,10 @@ WHERE capability_name IN ('absquant_mass', 'absquant_volume', 'absquant_surface_
 
 -- All projects associated with a plate (includes primary + sample-level)
 CREATE VIEW input_plate_projects AS
-    SELECT DISTINCT input_plate_idxx, project_idx
+    SELECT DISTINCT input_plate_idx, project_idx
         FROM input_sample WHERE project_idx IS NOT NULL
     UNION
-    SELECT input_plate_idxx, primary_project_idx AS project_idx
+    SELECT input_plate_idx, primary_project_idx AS project_idx
         FROM input_plate;
 
 -- Maps each control sample to every project on its plate
@@ -648,7 +649,7 @@ CREATE VIEW control_project_associations AS
            pp.project_idx, p.project_name, p.qiita_id
     FROM input_sample s
     JOIN sample_type st ON s.sample_type_idx = st.sample_type_idx
-    JOIN input_plate_projects pp ON s.input_plate_idxx = pp.input_plate_idxx
+    JOIN input_plate_projects pp ON s.input_plate_idx = pp.input_plate_idx
     JOIN project p ON pp.project_idx = p.project_idx
     WHERE s.project_idx IS NULL;
 
@@ -690,9 +691,9 @@ CREATE VIEW omnibus_sample_context AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
     JOIN sample_type st ON ins.sample_type_idx = st.sample_type_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     JOIN project pp ON ip.primary_project_idx = pp.project_idx
-    LEFT JOIN input_plate_projects ipp ON ins.input_plate_idxx = ipp.input_plate_idxx
+    LEFT JOIN input_plate_projects ipp ON ins.input_plate_idx = ipp.input_plate_idx
     LEFT JOIN project op ON ipp.project_idx = op.project_idx
     WHERE ins.project_idx IS NULL
     GROUP BY cs.run_idx, prs.prepped_sample_idx,
@@ -739,7 +740,7 @@ CREATE VIEW omnibus_pacbio_absquant_v10_data AS
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN project p ON ins.project_idx = p.project_idx
     JOIN pacbio_sample ps ON prs.prepped_sample_idx = ps.prepped_sample_idx
     LEFT JOIN metagenomic_absquant_sample ma
@@ -835,7 +836,7 @@ CREATE VIEW omnibus_pacbio_metag_v10_data AS
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN project p ON ins.project_idx = p.project_idx
     JOIN pacbio_sample ps ON prs.prepped_sample_idx = ps.prepped_sample_idx;
 
@@ -921,7 +922,7 @@ CREATE VIEW omnibus_standard_metag_v90_data AS
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN project p ON ins.project_idx = p.project_idx
     JOIN illumina_sample ils
         ON prs.prepped_sample_idx = ils.prepped_sample_idx;
@@ -1050,7 +1051,7 @@ CREATE VIEW omnibus_abs_quant_metag_v10_data AS
     JOIN prepped_sample prs ON v101."Sample_ID" = prs.prepped_sample_idx
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN metagenomic_absquant_sample ma
         ON v101."Sample_ID" = ma.prepped_sample_idx;
 
@@ -1078,7 +1079,7 @@ CREATE VIEW omnibus_standard_metat_v10_data AS
     JOIN prepped_sample prs ON v0."Sample_ID" = prs.prepped_sample_idx
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN metatranscriptomic_sample mt
         ON v0."Sample_ID" = mt.prepped_sample_idx;
 
@@ -1106,7 +1107,7 @@ CREATE VIEW omnibus_tellseq_metag_v10_data AS
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN project p ON ins.project_idx = p.project_idx
     JOIN tellseq_sample ts ON prs.prepped_sample_idx = ts.prepped_sample_idx;
 
@@ -1135,7 +1136,7 @@ CREATE VIEW omnibus_tellseq_absquant_v10_data AS
     JOIN prepped_sample prs ON v10."Sample_ID" = prs.prepped_sample_idx
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
-    JOIN input_plate ip ON ins.input_plate_idxx = ip.input_plate_idxx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN metagenomic_absquant_sample ma
         ON v10."Sample_ID" = ma.prepped_sample_idx;
 

@@ -68,7 +68,7 @@ def _add_sample(
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO input_sample "
-        "(sample_name, input_plate_idxx, project_idx, sample_type_idx) "
+        "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
         "VALUES (?, ?, ?, 1)",
         (sample_name, plate_idx, project_idx),
     )
@@ -176,7 +176,7 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             cur = conn.cursor()
             cur.execute(
                 "INSERT INTO input_sample "
-                "(sample_name, input_plate_idxx, project_idx, sample_type_idx) "
+                "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
                 "VALUES ('S1', ?, ?, 1)",
                 (self.plate_idx, self.project_idx),
             )

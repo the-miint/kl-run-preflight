@@ -39,7 +39,7 @@ def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
     # Insert an input sample
     cur.execute(
         "INSERT INTO input_sample "
-        "(sample_name, input_plate_idxx, project_idx, sample_type_idx) "
+        "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
         "VALUES ('sample1', ?, ?, 1)",
         (plate_idx, project_idx),
     )
@@ -236,7 +236,7 @@ class TestRunCapabilityViews(unittest.TestCase):
         # Reuse existing plate and project
         cur.execute(
             "INSERT INTO input_sample "
-            "(sample_name, input_plate_idxx, project_idx, sample_type_idx) "
+            "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
             "VALUES ('sample2', 1, 1, 1)"
         )
         assert cur.lastrowid is not None
