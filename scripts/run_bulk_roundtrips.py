@@ -36,6 +36,13 @@ def roundtrip_csv(csv_path: Path) -> tuple[str, str | None]:
                 return "mismatch", (
                     f"line {i + 1}:\n    expected:  {n}\n    got:       {r}"
                 )
+
+        # All overlap matches: distinguish the spurious-trailing-row case
+        # (recon has exactly one extra final row that is comma-only) from
+        # a generic line-count divergence.
+        if len(recon_lines) == len(norm_lines) + 1 and set(recon_lines[-1]) == {","}:
+            return "mismatch", "extra trailing comma-only row in reconstructed output"
+
         return "mismatch", (
             f"line count differs: expected {len(norm_lines)}, got {len(recon_lines)}"
         )
