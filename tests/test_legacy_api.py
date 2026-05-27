@@ -143,6 +143,32 @@ class TestLegacyApi(unittest.TestCase):
         ]
         self.assertEqual(settings_missing, [])
 
+    def test_validate_omnibus_accepts_all_settings_keys_in_v90(self):
+        # After unifying the per-version Settings views into
+        # omnibus_illumina_settings, all three keys (ReverseComplement,
+        # MaskShortReads, OverrideCycles) are valid for v90 and v0 too,
+        # not only v100/v101.
+        conn = create_db(":memory:")
+        try:
+            sections = {
+                "Header": {
+                    "SheetType": "standard_metag",
+                    "SheetVersion": "90",
+                },
+                "Settings": {
+                    "ReverseComplement": "0",
+                    "MaskShortReads": "1",
+                    "OverrideCycles": "Y150;I8N2;I8N16;Y150",
+                },
+            }
+            errors = validate_omnibus(conn, sections)
+        finally:
+            conn.close()
+
+        # No Settings-related errors should be produced
+        settings_errors = [e for e in errors if e.startswith("[Settings]")]
+        self.assertEqual(settings_errors, [])
+
     def test_validate_omnibus_skips_constant_check_for_pacbio(self):
         # PacBio uses a different Header view with no hardcoded literals,
         # so the constant-preservation check must not fire for PacBio
