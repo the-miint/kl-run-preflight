@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_preflight import load_legacy_csv
+from run_preflight import migrate_legacy_csv_to_db_file
 from run_preflight.legacy.roundtrip import roundtrip_via_api
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -82,7 +82,7 @@ class TestRoundTrip(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError, r"Replicates in legacy version.*v101 or later"
         ):
-            load_legacy_csv(str(csv_path), str(db_path))
+            migrate_legacy_csv_to_db_file(str(csv_path), str(db_path))
 
     def test_good_multilane_synthetic(self):
         self._assert_roundtrips("good_multilane_synthetic.csv")

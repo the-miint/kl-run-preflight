@@ -63,7 +63,7 @@ implementation.
 
 1) Read a legacy omnibus file into SQLite format:
 
-    - **Consumer call:** `load_legacy_csv(csv_path, db_path)`
+    - **Consumer call:** `migrate_legacy_csv_to_sqlite(csv_path, db_path)`
     - Internally: `db.create_db` → `db.get_section_formats` →
       `parser.parse_omnibus` → `validate.validate_omnibus` →
       `db.populate_db` (raises `ValueError` and removes the partial DB
@@ -99,7 +99,7 @@ Tests are in `tests/`. SQL schema is in `src/run_preflight/sql/`.
 | `src/run_preflight/sql/schema.sql` | Provides full DDL: reference tables, legacy format registry, core domain tables, platform-specific tables, reconstruction views |
 | `src/run_preflight/constants.py` | Holds all string-literal constants (section names, column names, platform strings) |
 | `src/run_preflight/db.py` | Creates SQLite DB from schema.sql, populates tables from parsed data |
-| `src/run_preflight/legacy/api.py` | Provides consumer-facing wrappers (load_legacy_csv, write_legacy_csv) over the load and write pipelines |
+| `src/run_preflight/legacy/api.py` | Provides consumer-facing wrappers (migrate_legacy_csv_to_sqlite, write_legacy_csv) over the load and write pipelines |
 | `src/run_preflight/legacy/parser.py` | Parses omnibus CSV into dict of sections (header_kv, values_only, tabular) |
 | `src/run_preflight/legacy/validate.py` | Validates parsed sections against the view registry |
 | `src/run_preflight/legacy/reconstruct.py` | Rebuilds omnibus CSV from SQL views via the legacy format registry |

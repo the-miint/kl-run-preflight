@@ -10,8 +10,9 @@ from pathlib import Path
 from run_preflight import (
     create_db,
     load_legacy_csv,
-    open_db,
-    write_legacy_csv,
+    migrate_legacy_csv_to_db_file,
+    open_db_file,
+    save_legacy_csv,
 )
 from run_preflight.legacy import LegacyExtraColumnWarning
 from run_preflight.legacy.roundtrip import roundtrip_via_api
@@ -23,20 +24,20 @@ GOOD_CSV = DATA_DIR / "good_pacbio_metagv11.csv"
 
 class TestLegacyApi(unittest.TestCase):
     def setUp(self):
-        # Per-test scratch dir for intermediate DB and reconstructed CSV
+        # Per-test scratch dir for the intermediate DB and reconstructed CSV
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp_dir = Path(self._tmp.name)
 
     def tearDown(self):
         self._tmp.cleanup()
 
-    def test_load_legacy_csv(self):
+    def test_migrate_legacy_csv_to_db_file(self):
         # Loading a known-good CSV should produce exactly one run row
         db_path = self.tmp_dir / "loaded.db"
-        load_legacy_csv(str(GOOD_CSV), str(db_path))
+        migrate_legacy_csv_to_db_file(str(GOOD_CSV), str(db_path))
 
-        # Inspect the populated DB via the public open_db entry point
-        conn = open_db(str(db_path))
+        # Inspect the populated DB via the public open_db_file entry point
+        conn = open_db_file(str(db_path))
         try:
             run_idxs = [
                 row[0] for row in conn.execute("SELECT run_idx FROM processing_run")
@@ -45,7 +46,7 @@ class TestLegacyApi(unittest.TestCase):
             conn.close()
         self.assertEqual(run_idxs, [1])
 
-    def test_load_legacy_csv_validation_failure(self):
+    def test_migrate_legacy_csv_to_db_file_validation_failure(self):
         # Build a CSV that parses but advertises an unknown sheet type so it
         # fails at the validation step rather than the parse step
         bad_csv = self.tmp_dir / "bad.csv"
@@ -57,50 +58,53 @@ class TestLegacyApi(unittest.TestCase):
         # format and must leave no DB file behind
         db_path = self.tmp_dir / "bad.db"
         with self.assertRaisesRegex(ValueError, r"Unknown format.*bogus_type"):
-            load_legacy_csv(str(bad_csv), str(db_path))
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
-    def test_write_legacy_csv(self):
+    def test_save_legacy_csv(self):
         # The written CSV should byte-equal the (normalized) original — a
         # weaker check (e.g. "starts with [Header]") would not catch
         # corruption inside the file
         normalized, reconstructed = roundtrip_via_api(GOOD_CSV, self.tmp_dir)
         self.assertEqual(reconstructed, normalized)
 
-    def test_write_legacy_csv_no_runs(self):
+    def test_save_legacy_csv_no_runs(self):
         # Empty DB has the schema but no processing_run rows; the error
         # must report the actual found count (0)
-        db_path = self.tmp_dir / "empty.db"
-        create_db(str(db_path)).close()
-
-        out_path = self.tmp_dir / "out.csv"
-        with self.assertRaisesRegex(
-            ValueError, r"Expected exactly one processing run, found 0"
-        ):
-            write_legacy_csv(str(db_path), str(out_path))
+        conn = create_db(":memory:")
+        try:
+            out_path = self.tmp_dir / "out.csv"
+            with self.assertRaisesRegex(
+                ValueError, r"Expected exactly one processing run, found 0"
+            ):
+                save_legacy_csv(conn, str(out_path))
+        finally:
+            conn.close()
 
     def test_load_legacy_csv_warns_on_extras(self):
         # PacBio CSVs carry a Lane column that is not part of any PacBio
         # view, so it must be flagged via LegacyExtraColumnWarning
-        db_path = self.tmp_dir / "extras.db"
         with self.assertWarnsRegex(LegacyExtraColumnWarning, r"\bLane\b"):
-            load_legacy_csv(str(GOOD_CSV), str(db_path))
+            conn = load_legacy_csv(str(GOOD_CSV))
+        conn.close()
 
-    def test_write_legacy_csv_warns_on_extras(self):
-        # Load with warnings suppressed so only the write-side warning is
+    def test_save_legacy_csv_warns_on_extras(self):
+        # Load with warnings suppressed so only the save-side warning is
         # observed; otherwise the load warning would dominate the assertion
-        db_path = self.tmp_dir / "extras.db"
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", LegacyExtraColumnWarning)
-            load_legacy_csv(str(GOOD_CSV), str(db_path))
+            conn = load_legacy_csv(str(GOOD_CSV))
 
-        # Writing the DB back out re-emits the carried extras and must
-        # warn naming the same Lane column
-        out_path = self.tmp_dir / "out.csv"
-        with self.assertWarnsRegex(LegacyExtraColumnWarning, r"\bLane\b"):
-            write_legacy_csv(str(db_path), str(out_path))
+        try:
+            # Writing the DB back out re-emits the carried extras and must
+            # warn naming the same Lane column
+            out_path = self.tmp_dir / "out.csv"
+            with self.assertWarnsRegex(LegacyExtraColumnWarning, r"\bLane\b"):
+                save_legacy_csv(conn, str(out_path))
+        finally:
+            conn.close()
 
-    def test_load_legacy_csv_rejects_deviant_header_constant(self):
+    def test_migrate_legacy_csv_to_db_file_rejects_deviant_header_constant(self):
         # Corrupt the Workflow value in a known-good Illumina v101 file;
         # validation must reject so the user is told at load time rather
         # than getting silently-replaced output from a round-trip
@@ -113,15 +117,14 @@ class TestLegacyApi(unittest.TestCase):
         # expected value so the user knows exactly what cannot be preserved
         db_path = self.tmp_dir / "bad.db"
         with self.assertRaisesRegex(ValueError, r"Workflow.*bcl2fastq.*GenerateFASTQ"):
-            load_legacy_csv(str(bad_csv), str(db_path))
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
     def test_validate_omnibus_allows_missing_settings_keys(self):
         # Settings keys may legitimately be absent: the reconstructor's
         # _write_header_kv NULL-skips on output, so missing Settings keys
         # round-trip cleanly. Header keys, by contrast, must remain required.
-        db_path = self.tmp_dir / "schema.db"
-        conn = create_db(str(db_path))
+        conn = create_db(":memory:")
         try:
             sections = {
                 "Header": {
@@ -145,8 +148,7 @@ class TestLegacyApi(unittest.TestCase):
         # so the constant-preservation check must not fire for PacBio
         # even when a deviant value is supplied. Other errors may appear
         # (e.g. missing sections), but not the constant-preservation one.
-        db_path = self.tmp_dir / "schema.db"
-        conn = create_db(str(db_path))
+        conn = create_db(":memory:")
         try:
             sections = {
                 "Header": {

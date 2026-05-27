@@ -16,12 +16,7 @@ from run_preflight.updates import set_biosample_accession, update_lane
 
 @contextlib.contextmanager
 def _open(db_path: str):
-    """Open a raw connection to *db_path* with foreign keys enabled.
-
-    Used by tests for arrange-phase setup and assert-phase verification.
-    The act-phase call goes through the public path-based update API,
-    which opens its own connection via ``migrate.open_db``.
-    """
+    """Open a raw connection to *db_path* with foreign keys enabled."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -116,8 +111,8 @@ class _UpdatesTestBase(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.tmpdir.name, "test.db")
         # Build the DB via create_db so it is stamped at the latest
-        # user_version; seed the run, then close so the public
-        # path-based API can reopen via open_db on each call.
+        # user_version; seed the run, then close so each test reopens
+        # via _open for its arrange / act / assert phases.
         conn = create_db(self.db_path)
         try:
             self.project_idx, self.plate_idx, self.run_idx = _setup_run(conn)
@@ -135,7 +130,8 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
 
-        set_biosample_accession(self.db_path, "S1", "SAMN001", reason="initial")
+        with _open(self.db_path) as conn:
+            set_biosample_accession(conn, "S1", "SAMN001", reason="initial")
 
         with _open(self.db_path) as conn:
             cur = conn.execute(
@@ -159,7 +155,8 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
                 prs_name="S1.A1",
             )
 
-        set_biosample_accession(self.db_path, "S1.A1", "SAMN002")
+        with _open(self.db_path) as conn:
+            set_biosample_accession(conn, "S1.A1", "SAMN002")
 
         with _open(self.db_path) as conn:
             cur = conn.execute(
@@ -203,7 +200,8 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             conn.commit()
 
         # Update via one alias, the other alias shows the same accession
-        set_biosample_accession(self.db_path, "S1.B2", "SAMN003")
+        with _open(self.db_path) as conn:
+            set_biosample_accession(conn, "S1.B2", "SAMN003")
 
         with _open(self.db_path) as conn:
             cur = conn.execute(
@@ -229,12 +227,14 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
                 prs_name="S1",
             )
 
-        with pytest.raises(ValueError, match="ambiguous"):
-            set_biosample_accession(self.db_path, "S1", "SAMN004")
+        with _open(self.db_path) as conn, pytest.raises(ValueError, match="ambiguous"):
+            set_biosample_accession(conn, "S1", "SAMN004")
 
     def test_set_biosample_accession_missing(self):
-        with pytest.raises(ValueError, match="No input_sample matches"):
-            set_biosample_accession(self.db_path, "nonexistent", "SAMN005")
+        with _open(self.db_path) as conn, pytest.raises(
+            ValueError, match="No input_sample matches"
+        ):
+            set_biosample_accession(conn, "nonexistent", "SAMN005")
 
     def test_set_biosample_accession_audit(self):
         with _open(self.db_path) as conn:
@@ -244,8 +244,9 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
 
         # Two successive sets so the second log entry captures the
         # first call's value as old_value
-        set_biosample_accession(self.db_path, "S1", "SAMN006", reason="initial")
-        set_biosample_accession(self.db_path, "S1", "SAMN007", reason="correction")
+        with _open(self.db_path) as conn:
+            set_biosample_accession(conn, "S1", "SAMN006", reason="initial")
+            set_biosample_accession(conn, "S1", "SAMN007", reason="correction")
 
         with _open(self.db_path) as conn:
             cur = conn.execute(
@@ -287,7 +288,8 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=None)
             _add_illumina_row(conn, prs2, lane=None)
 
-        n = update_lane(self.db_path, "illumina", from_lane=None, to_lane=2)
+        with _open(self.db_path) as conn:
+            n = update_lane(conn, "illumina", from_lane=None, to_lane=2)
         self.assertEqual(n, 2)
         with _open(self.db_path) as conn:
             cur = conn.execute(
@@ -306,7 +308,8 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=1)
             _add_illumina_row(conn, prs2, lane=1)
 
-        n = update_lane(self.db_path, "illumina", from_lane=1, to_lane=3)
+        with _open(self.db_path) as conn:
+            n = update_lane(conn, "illumina", from_lane=1, to_lane=3)
         self.assertEqual(n, 2)
         with _open(self.db_path) as conn:
             cur = conn.execute(
@@ -323,8 +326,10 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=1)
             _add_illumina_row(conn, prs1, lane=2)
 
-        with pytest.raises(ValueError, match="already have a row at"):
-            update_lane(self.db_path, "illumina", from_lane=1, to_lane=2)
+        with _open(self.db_path) as conn, pytest.raises(
+            ValueError, match="already have a row at"
+        ):
+            update_lane(conn, "illumina", from_lane=1, to_lane=2)
 
     def test_update_lane_uniformity_violation(self):
         # Setting some rows to NULL while others remain non-NULL is mixed
@@ -338,12 +343,16 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=1)
             _add_illumina_row(conn, prs2, lane=2)
 
-        with pytest.raises(ValueError, match="uniformity violation"):
-            update_lane(self.db_path, "illumina", from_lane=1, to_lane=None)
+        with _open(self.db_path) as conn, pytest.raises(
+            ValueError, match="uniformity violation"
+        ):
+            update_lane(conn, "illumina", from_lane=1, to_lane=None)
 
     def test_update_lane_unsupported_platform(self):
-        with pytest.raises(ValueError, match="Unsupported platform"):
-            update_lane(self.db_path, "pacbio", from_lane=1, to_lane=2)
+        with _open(self.db_path) as conn, pytest.raises(
+            ValueError, match="Unsupported platform"
+        ):
+            update_lane(conn, "pacbio", from_lane=1, to_lane=2)
 
     def test_update_lane_audit(self):
         with _open(self.db_path) as conn:
@@ -356,7 +365,8 @@ class TestUpdateLane(_UpdatesTestBase):
             i1 = _add_illumina_row(conn, prs1, lane=1)
             i2 = _add_illumina_row(conn, prs2, lane=1)
 
-        update_lane(self.db_path, "illumina", from_lane=1, to_lane=4, reason="reload")
+        with _open(self.db_path) as conn:
+            update_lane(conn, "illumina", from_lane=1, to_lane=4, reason="reload")
 
         with _open(self.db_path) as conn:
             cur = conn.execute(
@@ -383,7 +393,8 @@ class TestUpdateLane(_UpdatesTestBase):
             )
             conn.commit()
 
-        n = update_lane(self.db_path, "tellseq", from_lane=None, to_lane=1)
+        with _open(self.db_path) as conn:
+            n = update_lane(conn, "tellseq", from_lane=None, to_lane=1)
         self.assertEqual(n, 1)
         with _open(self.db_path) as conn:
             cur = conn.execute("SELECT lane FROM tellseq_sample")

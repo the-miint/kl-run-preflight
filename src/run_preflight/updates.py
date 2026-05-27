@@ -1,26 +1,12 @@
 """Post-fill update operations for filled SQLite run preflights.
 
-These operations are intentionally scoped: they update specific fields
-on an already-populated database without touching unrelated state.
 Each operation writes one row to ``change_log`` per modified domain
-row, capturing the prior and new values plus an optional
-caller-supplied reason.
-
-Supported operations:
-
-- ``set_biosample_accession``: set ``input_sample.biosample_accession``
-  by looking up an effective Sample_Name (matches the CSV-side value
-  ``COALESCE(prs.sample_name, ins.sample_name)``).
-- ``update_lane``: bulk-reassign ``illumina_sample.lane`` or
-  ``tellseq_sample.lane`` from one value (or NULL) to another while
-  preserving the lane-uniformity invariant and the per-prepped-sample
-  uniqueness index.
+row, capturing the prior and new values plus an optional caller-
+supplied reason.
 """
 
 from __future__ import annotations
 
-import contextlib
-import os
 import sqlite3
 
 from .constants import (
@@ -33,7 +19,6 @@ from .constants import (
     UPDATE_PLATFORM_ILLUMINA,
     UPDATE_PLATFORM_TELLSEQ,
 )
-from .migrate import open_db
 
 # Map platform strings to (table_name, primary_key_column).  Used to
 # dispatch update_lane to the correct platform-specific sample table.
@@ -77,53 +62,23 @@ def _log_change(
     )
 
 
-# ---------------------------------------------------------------------------
-# set_biosample_accession
-# ---------------------------------------------------------------------------
-
-
 def set_biosample_accession(
-    db_path: str | os.PathLike,
+    conn: sqlite3.Connection,
     sample_name: str,
     accession: str | None,
     reason: str | None = None,
 ) -> None:
     """Set biosample_accession on the input_sample matching sample_name.
 
-    Opens *db_path* via ``migrate.open_db`` so any pending schema
-    patches are applied before the update runs, and closes the
-    connection afterward.
-
-    Args:
-        db_path: Filesystem path to the SQLite run-preflight file.
-        sample_name: The CSV-effective Sample_Name to match.  Resolved
-            via ``COALESCE(prepped_sample.sample_name,
-            input_sample.sample_name)`` so callers may pass either an
-            input-sample name or a per-replicate alias.  All replicate
-            aliases of a single biological sample resolve to the same
-            ``input_sample`` and update the shared accession.
-        accession: The new BioSample accession.  None clears it.
-        reason: Optional caller-supplied note recorded in change_log.
+    *sample_name* is resolved via ``COALESCE(prepped_sample.sample_name,
+    input_sample.sample_name)`` — callers may pass either an
+    input-sample name or a per-replicate alias. All replicate aliases
+    of a single biological sample resolve to the same input_sample and
+    update the shared accession. *accession* may be None to clear.
 
     Raises:
         ValueError: If no input_sample matches *sample_name*, or if
-            multiple distinct input_samples match (ambiguous name).
-    """
-    with contextlib.closing(open_db(str(db_path))) as conn:
-        _set_biosample_accession(conn, sample_name, accession, reason)
-
-
-def _set_biosample_accession(
-    conn: sqlite3.Connection,
-    sample_name: str,
-    accession: str | None,
-    reason: str | None,
-) -> None:
-    """Connection-scoped implementation of set_biosample_accession.
-
-    Tests use this directly against an in-memory connection to avoid
-    file I/O.  External callers should use the path-based public
-    function so that schema patches are guaranteed to be applied.
+            multiple distinct input_samples match (ambiguous).
     """
     cur = conn.cursor()
 
@@ -172,13 +127,8 @@ def _set_biosample_accession(
         raise
 
 
-# ---------------------------------------------------------------------------
-# update_lane
-# ---------------------------------------------------------------------------
-
-
 def update_lane(
-    db_path: str | os.PathLike,
+    conn: sqlite3.Connection,
     platform: str,
     from_lane: int | None,
     to_lane: int | None,
@@ -186,51 +136,14 @@ def update_lane(
 ) -> int:
     """Bulk-reassign lane values on a platform-specific sample table.
 
-    Opens *db_path* via ``migrate.open_db`` so any pending schema
-    patches are applied before the update runs, and closes the
-    connection afterward.
-
-    Every row whose current lane equals *from_lane* (NULL is treated as
-    a value) is updated to *to_lane*.  The operation rejects on:
-
-    - an unsupported platform (only ``"illumina"`` and ``"tellseq"`` are
-      supported; pacbio_sample has no lane column)
-    - a post-update state that would mix NULL and non-NULL lane values
-      across the platform table (lane-uniformity violation)
-    - a post-update state that would collide with the unique
-      ``(prepped_sample_idx, COALESCE(lane, -1))`` index (i.e. a
-      prepped_sample already has a row at *to_lane*)
-
-    Args:
-        db_path: Filesystem path to the SQLite run-preflight file.
-        platform: Either ``"illumina"`` or ``"tellseq"``.
-        from_lane: The current lane value to match.  None matches NULL.
-        to_lane: The new lane value.  None sets the column to NULL.
-        reason: Optional caller-supplied note recorded in change_log
-            (one row per affected platform-sample row).
-
-    Returns:
-        int: The number of platform-sample rows updated.
+    Every row whose current lane equals *from_lane* (NULL is a value)
+    is updated to *to_lane*. *platform* must be ``"illumina"`` or
+    ``"tellseq"``. Returns the number of rows updated.
 
     Raises:
-        ValueError: For any of the rejection conditions described above.
-    """
-    with contextlib.closing(open_db(str(db_path))) as conn:
-        return _update_lane(conn, platform, from_lane, to_lane, reason)
-
-
-def _update_lane(
-    conn: sqlite3.Connection,
-    platform: str,
-    from_lane: int | None,
-    to_lane: int | None,
-    reason: str | None,
-) -> int:
-    """Connection-scoped implementation of update_lane.
-
-    Tests use this directly against an in-memory connection to avoid
-    file I/O.  External callers should use the path-based public
-    function so that schema patches are guaranteed to be applied.
+        ValueError: For an unsupported platform, a post-update state
+            that mixes NULL and non-NULL lane values, or a collision
+            with the unique ``(prepped_sample_idx, lane)`` index.
     """
     if platform not in _PLATFORM_TABLES:
         supported = sorted(_PLATFORM_TABLES.keys())

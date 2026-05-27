@@ -13,7 +13,7 @@ from run_preflight.migrate import (
     get_latest_version,
     get_pending_patches,
     get_schema_version,
-    open_db,
+    open_db_file,
 )
 
 
@@ -171,22 +171,22 @@ class TestApplyPatches:
             apply_patches(conn, tmp_path)
 
 
-class TestOpenDb:
-    def test_open_db_current_version(self, tmp_path):
+class TestOpenDbFile:
+    def test_open_db_file_current_version(self, tmp_path):
         """Opening a current-version DB is a no-op."""
         db_path = str(tmp_path / "test.db")
         # Create fresh DB (already at latest version)
         conn = create_db(db_path)
         conn.close()
-        # Reopen via open_db
-        conn = open_db(db_path)
+        # Reopen via open_db_file
+        conn = open_db_file(db_path)
         assert get_schema_version(conn) == get_latest_version()
         # Verify foreign keys enabled
         fk = conn.execute("PRAGMA foreign_keys").fetchone()
         assert fk[0] == 1
         conn.close()
 
-    def test_open_db_applies_patches(self, tmp_path):
+    def test_open_db_file_applies_patches(self, tmp_path):
         """Opening a DB with lowered version applies pending patches."""
         db_path = str(tmp_path / "test.db")
         patches_subdir = tmp_path / "patches"
@@ -203,7 +203,7 @@ class TestOpenDb:
             "ALTER TABLE base ADD COLUMN tag TEXT;"
         )
 
-        conn = open_db(db_path, patches_dir=patches_subdir)
+        conn = open_db_file(db_path, patches_dir=patches_subdir)
         assert get_schema_version(conn) == 1
         # Verify column added
         cur = conn.execute("PRAGMA table_info(base)")
