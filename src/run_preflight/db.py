@@ -622,8 +622,11 @@ def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
     read1 = int(reads[0]) if len(reads) > 0 else 0
     read2 = int(reads[1]) if len(reads) > 1 else 0
 
-    # ReverseComplement is stored as "0"/"1" in Settings.
-    rc_bool = _parse_bool_str(settings.get(FIELD_REVERSE_COMPLEMENT, "False"))
+    # ReverseComplement is optional in Settings; absent values are stored
+    # as NULL so reconstruction NULL-skips and round-trips byte-equal.
+    rc_bool = _parse_bool_str(
+        settings.get(FIELD_REVERSE_COMPLEMENT), nullable=True
+    )
 
     # Adapter sequences and BarcodesAreRC come from Bioinformatics
     # (same for every project in a run, so we grab from the first row).

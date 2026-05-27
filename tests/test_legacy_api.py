@@ -143,6 +143,24 @@ class TestLegacyApi(unittest.TestCase):
         ]
         self.assertEqual(settings_missing, [])
 
+    def test_absent_reverse_complement_stays_null(self):
+        # An Illumina sheet whose [Settings] lacks ReverseComplement must
+        # store NULL in illumina_run (not the False default), so that
+        # reconstruction NULL-skips and round-trips byte-equal. The
+        # previous BOOLEAN NOT NULL DEFAULT 0 column silently substituted
+        # 0 and forced a spurious ReverseComplement,0 into the output.
+        csv_path = DATA_DIR / "good_standard_metagv90_no_reverse_complement.csv"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", LegacyExtraColumnWarning)
+            conn = load_legacy_csv(str(csv_path))
+        try:
+            rc = conn.execute(
+                "SELECT reverse_complement FROM illumina_run"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertIsNone(rc)
+
     def test_validate_omnibus_accepts_all_settings_keys_in_v90(self):
         # After unifying the per-version Settings views into
         # omnibus_illumina_settings, all three keys (ReverseComplement,

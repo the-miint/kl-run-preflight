@@ -54,6 +54,9 @@ class TestRoundTrip(unittest.TestCase):
     def test_good_standard_metagv90_w_all_settings(self):
         self._assert_roundtrips("good_standard_metagv90_w_all_settings.csv")
 
+    def test_good_standard_metagv90_no_reverse_complement(self):
+        self._assert_roundtrips("good_standard_metagv90_no_reverse_complement.csv")
+
     def test_good_standard_metagv0_really_metat(self):
         self._assert_roundtrips("good_standard_metagv0_really_metat.csv")
 

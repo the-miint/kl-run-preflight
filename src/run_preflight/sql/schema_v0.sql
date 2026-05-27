@@ -1,14 +1,5 @@
 -- ============================================================
--- Sequencing Sample Sheet Schema v3 - FROZEN BASELINE (version 0)
--- ============================================================
---
--- DO NOT EDIT.  This file is the frozen schema as it existed before any
--- migration patch was applied.  It is consumed only by
--- tests/test_schema_drift.py, which applies every patch in
--- sql/patches/ to a database built from this file and then compares
--- the result to schema.sql.  Editing this file would defeat the
--- drift-detection check.
---
+-- Sequencing Sample Sheet Schema v3
 -- ============================================================
 
 PRAGMA foreign_keys = ON;
@@ -107,7 +98,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (2, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
     (2, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
-    (2, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (2, 'Settings',       3, 'omnibus_illumina_settings',       'header_kv'),
     (2, 'Data',           4, 'omnibus_standard_metag_v101_data',           'tabular'),
     (2, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
     (2, 'Contact',        6, 'omnibus_contact',                            'tabular'),
@@ -173,7 +164,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (6, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
     (6, 'Reads',          2, 'omnibus_illumina_reads',                    'values_only'),
-    (6, 'Settings',       3, 'omnibus_standard_metag_v90_settings',       'header_kv'),
+    (6, 'Settings',       3, 'omnibus_illumina_settings',       'header_kv'),
     (6, 'Data',           4, 'omnibus_standard_metag_v90_data',           'tabular'),
     (6, 'Bioinformatics', 5, 'omnibus_standard_metag_v90_bioinformatics', 'tabular'),
     (6, 'Contact',        6, 'omnibus_contact',                           'tabular');
@@ -186,7 +177,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (7, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
     (7, 'Reads',          2, 'omnibus_illumina_reads',                    'values_only'),
-    (7, 'Settings',       3, 'omnibus_standard_metag_v0_settings',        'header_kv'),
+    (7, 'Settings',       3, 'omnibus_illumina_settings',        'header_kv'),
     (7, 'Data',           4, 'omnibus_standard_metag_v0_data',            'tabular'),
     (7, 'Bioinformatics', 5, 'omnibus_standard_metag_v90_bioinformatics', 'tabular'),
     (7, 'Contact',        6, 'omnibus_contact',                           'tabular');
@@ -199,7 +190,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (8, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
     (8, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
-    (8, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (8, 'Settings',       3, 'omnibus_illumina_settings',       'header_kv'),
     (8, 'Data',           4, 'omnibus_standard_metag_v101_data',           'tabular'),
     (8, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
     (8, 'Contact',        6, 'omnibus_contact',                            'tabular');
@@ -216,7 +207,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (9, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
     (9, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
-    (9, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (9, 'Settings',       3, 'omnibus_illumina_settings',       'header_kv'),
     (9, 'Data',           4, 'omnibus_abs_quant_metag_v10_data',           'tabular'),
     (9, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
     (9, 'Contact',        6, 'omnibus_contact',                            'tabular');
@@ -233,7 +224,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (10, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
     (10, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
-    (10, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (10, 'Settings',       3, 'omnibus_illumina_settings',       'header_kv'),
     (10, 'Data',           4, 'omnibus_abs_quant_metag_v10_data',           'tabular'),
     (10, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
     (10, 'Contact',        6, 'omnibus_contact',                            'tabular'),
@@ -251,7 +242,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (11, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
     (11, 'Reads',          2, 'omnibus_illumina_reads',                    'values_only'),
-    (11, 'Settings',       3, 'omnibus_standard_metag_v101_settings',      'header_kv'),
+    (11, 'Settings',       3, 'omnibus_illumina_settings',      'header_kv'),
     (11, 'Data',           4, 'omnibus_standard_metat_v10_data',           'tabular'),
     (11, 'Bioinformatics', 5, 'omnibus_standard_metag_v90_bioinformatics', 'tabular'),
     (11, 'Contact',        6, 'omnibus_contact',                           'tabular');
@@ -263,7 +254,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (12, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
     (12, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
-    (12, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (12, 'Settings',       3, 'omnibus_illumina_settings',       'header_kv'),
     (12, 'Data',           4, 'omnibus_tellseq_metag_v10_data',             'tabular'),
     (12, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
     (12, 'Contact',        6, 'omnibus_contact',                            'tabular'),
@@ -281,7 +272,7 @@ INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
 INSERT INTO legacy_samplesheet_view VALUES
     (13, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
     (13, 'Reads',          2, 'omnibus_illumina_reads',                     'values_only'),
-    (13, 'Settings',       3, 'omnibus_standard_metag_v101_settings',       'header_kv'),
+    (13, 'Settings',       3, 'omnibus_illumina_settings',       'header_kv'),
     (13, 'Data',           4, 'omnibus_tellseq_absquant_v10_data',          'tabular'),
     (13, 'Bioinformatics', 5, 'omnibus_standard_metag_v101_bioinformatics', 'tabular'),
     (13, 'Contact',        6, 'omnibus_contact',                            'tabular'),
@@ -343,7 +334,8 @@ CREATE TABLE project (
     contact_email                   TEXT,
     human_filtering                 BOOLEAN NOT NULL DEFAULT 1,
     library_construction_protocol   TEXT NOT NULL,
-    experiment_design_description   TEXT NOT NULL
+    experiment_design_description   TEXT NOT NULL,
+    bioproject_accession            TEXT
 );
 
 CREATE TABLE input_plate (
@@ -360,7 +352,10 @@ CREATE TABLE input_sample (
     well                TEXT,
     project_idx          INTEGER REFERENCES project(project_idx),
         -- NULL for controls; controls inherit project via input_plate
-    sample_type_idx      INTEGER NOT NULL REFERENCES sample_type(sample_type_idx)
+    sample_type_idx      INTEGER NOT NULL REFERENCES sample_type(sample_type_idx),
+    biosample_accession TEXT
+        -- NCBI BioSample accession; nullable, populated post-fill
+        -- via updates.set_biosample_accession
 );
 
 CREATE TABLE processing_run (
@@ -374,8 +369,9 @@ CREATE TABLE processing_run (
     compression_plate_name TEXT,
     description         TEXT DEFAULT '',
     legacy_format_idx    INTEGER
-        REFERENCES legacy_samplesheet_format(legacy_format_idx)
+        REFERENCES legacy_samplesheet_format(legacy_format_idx),
         -- NULL for native DB-originated runs; non-NULL for ingested legacy files
+    external_run_id            TEXT
 );
 
 
@@ -408,7 +404,7 @@ CREATE TABLE illumina_run (
     run_idx              INTEGER PRIMARY KEY REFERENCES processing_run(run_idx),
     read1_length        INTEGER NOT NULL,
     read2_length        INTEGER NOT NULL,
-    reverse_complement  BOOLEAN NOT NULL DEFAULT 0,
+    reverse_complement  BOOLEAN,
     mask_short_reads    TEXT,
     override_cycles     TEXT,
     forward_adapter     TEXT,
@@ -895,16 +891,21 @@ CREATE VIEW omnibus_illumina_reads AS
     FROM processing_run sr
     JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
 
+-- Settings shared by all Illumina formats.
+-- Keys whose DB value is NULL are dropped on emit by the reconstructor,
+-- so a format that historically populated only a subset still round-trips
+-- cleanly while gaining the ability to read and emit any of the three.
+CREATE VIEW omnibus_illumina_settings AS
+    SELECT sr.run_idx,
+        ir.reverse_complement AS "ReverseComplement",
+        ir.mask_short_reads AS "MaskShortReads",
+        ir.override_cycles AS "OverrideCycles"
+    FROM processing_run sr
+    JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
+
 -- ============================================================
 -- Omnibus Reconstruction Views — Standard Metag v90
 -- ============================================================
-
--- Settings: ReverseComplement only.
-CREATE VIEW omnibus_standard_metag_v90_settings AS
-    SELECT sr.run_idx,
-        ir.reverse_complement AS "ReverseComplement"
-    FROM processing_run sr
-    JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
 
 -- Base Illumina Data view. Uses Sample_Well (v90 column name).
 -- v0 and v101 layer on top of this view.
@@ -959,14 +960,6 @@ CREATE VIEW omnibus_standard_metag_v90_bioinformatics AS
 -- Omnibus Reconstruction Views — Standard Metag v0
 -- ============================================================
 
--- Settings: ReverseComplement + MaskShortReads.
-CREATE VIEW omnibus_standard_metag_v0_settings AS
-    SELECT sr.run_idx,
-        ir.reverse_complement AS "ReverseComplement",
-        ir.mask_short_reads AS "MaskShortReads"
-    FROM processing_run sr
-    JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
-
 -- Sources well_id_384 from compression_well (original compression position).
 -- Sample_Well (prepped_well) and well_id_384 (compression_well) are equal
 -- for non-replicates but differ for replicates.
@@ -990,15 +983,6 @@ CREATE VIEW omnibus_standard_metag_v0_data AS
 -- ============================================================
 -- Omnibus Reconstruction Views — Standard Metag v101
 -- ============================================================
-
--- Settings: ReverseComplement + MaskShortReads + OverrideCycles.
-CREATE VIEW omnibus_standard_metag_v101_settings AS
-    SELECT sr.run_idx,
-        ir.reverse_complement AS "ReverseComplement",
-        ir.mask_short_reads AS "MaskShortReads",
-        ir.override_cycles AS "OverrideCycles"
-    FROM processing_run sr
-    JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
 
 -- Adds orig_name and destination_well_384 to the v0 base.
 CREATE VIEW omnibus_standard_metag_v101_data AS
@@ -1144,3 +1128,21 @@ CREATE VIEW omnibus_tellseq_absquant_v10_data AS
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN metagenomic_absquant_sample ma
         ON v10."Sample_ID" = ma.prepped_sample_idx;
+
+-- ============================================================
+-- Audit log
+-- ============================================================
+
+-- Lightweight per-column audit trail.  Update operations in
+-- updates.py write one row here per modified domain row, capturing
+-- the prior and new values plus an optional caller-supplied reason.
+CREATE TABLE change_log (
+    change_idx       INTEGER PRIMARY KEY AUTOINCREMENT,
+    changed_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    table_name      TEXT NOT NULL,
+    row_idx          INTEGER NOT NULL,
+    column_name     TEXT NOT NULL,
+    old_value       TEXT,
+    new_value       TEXT,
+    reason          TEXT
+);

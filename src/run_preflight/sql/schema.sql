@@ -404,7 +404,7 @@ CREATE TABLE illumina_run (
     run_idx              INTEGER PRIMARY KEY REFERENCES processing_run(run_idx),
     read1_length        INTEGER NOT NULL,
     read2_length        INTEGER NOT NULL,
-    reverse_complement  BOOLEAN NOT NULL DEFAULT 0,
+    reverse_complement  BOOLEAN,
     mask_short_reads    TEXT,
     override_cycles     TEXT,
     forward_adapter     TEXT,
