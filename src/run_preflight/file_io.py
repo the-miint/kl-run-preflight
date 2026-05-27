@@ -13,7 +13,7 @@ _SQLITE_MAGIC = b"SQLite format 3\x00"
 
 
 def open_file(path: str) -> sqlite3.Connection:
-    """Open a sample sheet from either a legacy omnibus CSV or a SQLite DB file.
+    """Open a run preflight from either a legacy omnibus CSV or a SQLite DB file.
 
     Detects the format from the file's first 16 bytes: files beginning
     with the SQLite magic header are opened via *open_db_file*; everything

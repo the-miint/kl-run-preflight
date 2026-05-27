@@ -1,4 +1,4 @@
-"""run_preflight — SQLite-backed sample-sheet representation."""
+"""run_preflight — SQLite-backed representation of a sequencing run preflight."""
 
 from .db import create_db
 from .file_io import open_file

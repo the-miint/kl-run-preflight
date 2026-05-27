@@ -1,5 +1,5 @@
 -- ============================================================
--- Sequencing Sample Sheet Schema v3
+-- Run Preflight Schema
 -- ============================================================
 
 PRAGMA foreign_keys = ON;

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "run-preflight"
 dynamic = ["version"]
-description = "Normalized SQLite representation of sequencing sample sheets, with round-trip support for legacy omnibus CSV formats."
+description = "Normalized SQLite run preflight, with round-trip support for legacy CSV sample sheets."
 requires-python = ">=3.9"
 dependencies = []
 

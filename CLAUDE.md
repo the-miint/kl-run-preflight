@@ -2,16 +2,17 @@
 
 ## Project Overview
 
-Encapsulate the "sample sheet" concept so that all consumers of sample sheets
-access them through this project. Internally, represent sample sheets
-in a normalized SQLite schema The current phase supports silent replacement of
-existing sample sheet objects by providing round-tripping of all versions of the
-legacy "omnibus" CSV files (parse → SQLite → reconstruct → diff)
-so that existing sample sheet class structures in other code can be swapped for
-SQL samplesheets without affecting their interaction with external producers and
-consumers. Once all domain consumers use this project, omnibus CSVs will be sunset
-in favor of SQLite files as the canonical sample sheet format, enabling stronger
-correctness constraints and easier data management.
+Encapsulate the "run preflight" concept (the information package handed off from
+the wet lab to the dry lab for sequencing data processing) so that all consumers
+access it through this project. Internally, represent run preflights in a
+normalized SQLite schema. The current phase supports silent replacement of
+existing legacy CSV sample sheet objects by providing round-tripping of all
+versions of the legacy "omnibus" CSV files (parse → SQLite → reconstruct → diff)
+so that existing legacy CSV sample sheet class structures in other code can be
+swapped for SQL run preflights without affecting their interaction with external
+producers and consumers. Once all domain consumers use this project, omnibus CSVs
+will be sunset in favor of SQLite run preflights as the canonical format,
+enabling stronger correctness constraints and easier data management.
 
 ## Architecture
 
@@ -116,7 +117,7 @@ table in `docs/tickets.md` before considering the work done.
 - Framework: **pytest**
 - Run tests: `pytest`
 - Tests are round-trip: load real CSV → DB → write CSV → compare to original
-- Test data: real sample sheet CSVs in `tests/data/`
+- Test data: real legacy CSV sample sheets in `tests/data/`
 - The `roundtrip_via_api` helper in `legacy/roundtrip.py` runs load + write + normalize against a per-test temp dir
 
 ## Imports

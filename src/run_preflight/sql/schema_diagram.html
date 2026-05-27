@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sequencing Sample Sheet Schema v3</title>
+<title>Run Preflight Schema</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;700&display=swap');
 
@@ -864,6 +864,10 @@ var SCHEMA = {
       "note": "Reads shared by all Illumina formats."
     },
     {
+      "id": "omnibus_illumina_settings",
+      "note": "Settings shared by all Illumina formats. Keys whose DB value is NULL are dropped on emit by the reconstructor, so a format that historically populated only a subset still round-trips cleanly while gaining the ability to read and emit any of the three."
+    },
+    {
       "id": "omnibus_pacbio_absquant_v10_data",
       "note": "Base PacBio absquant data view (no twist_adaptor_id or syndna_is_twisted). v11 builds on this by adding those columns."
     },
@@ -900,10 +904,6 @@ var SCHEMA = {
       "note": "Sources well_id_384 from compression_well (original compression position). Sample_Well (prepped_well) and well_id_384 (compression_well) are equal for non-replicates but differ for replicates."
     },
     {
-      "id": "omnibus_standard_metag_v0_settings",
-      "note": "Settings: ReverseComplement + MaskShortReads."
-    },
-    {
       "id": "omnibus_standard_metag_v101_bioinformatics",
       "note": "Adds contains_replicates to the v90 base Bioinformatics."
     },
@@ -912,20 +912,12 @@ var SCHEMA = {
       "note": "Adds orig_name and destination_well_384 to the v0 base."
     },
     {
-      "id": "omnibus_standard_metag_v101_settings",
-      "note": "Settings: ReverseComplement + MaskShortReads + OverrideCycles."
-    },
-    {
       "id": "omnibus_standard_metag_v90_bioinformatics",
       "note": "Base Illumina Bioinformatics view (no contains_replicates). v101 layers on top to add contains_replicates."
     },
     {
       "id": "omnibus_standard_metag_v90_data",
       "note": "Base Illumina Data view. Uses Sample_Well (v90 column name). v0 and v101 layer on top of this view."
-    },
-    {
-      "id": "omnibus_standard_metag_v90_settings",
-      "note": "Settings: ReverseComplement only."
     },
     {
       "id": "omnibus_standard_metat_v10_data",
@@ -1011,31 +1003,29 @@ var VIEW_POSITIONS = {
   'omnibus_contact': { x: 880, y: 1300 },
   'omnibus_illumina_header': { x: 1160, y: 1300 },
   'omnibus_illumina_reads': { x: 40, y: 1336 },
-  'omnibus_pacbio_absquant_v10_data': { x: 320, y: 1336 },
-  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 600, y: 1336 },
-  'omnibus_pacbio_absquant_v11_data': { x: 880, y: 1336 },
-  'omnibus_pacbio_absquant_v11_header': { x: 1160, y: 1336 },
-  'omnibus_pacbio_absquant_v12_data': { x: 40, y: 1372 },
-  'omnibus_pacbio_metag_v10_data': { x: 320, y: 1372 },
-  'omnibus_pacbio_metag_v11_data': { x: 600, y: 1372 },
-  'omnibus_sample_context': { x: 880, y: 1372 },
-  'omnibus_standard_metag_v0_data': { x: 1160, y: 1372 },
-  'omnibus_standard_metag_v0_settings': { x: 40, y: 1408 },
+  'omnibus_illumina_settings': { x: 320, y: 1336 },
+  'omnibus_pacbio_absquant_v10_data': { x: 600, y: 1336 },
+  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 880, y: 1336 },
+  'omnibus_pacbio_absquant_v11_data': { x: 1160, y: 1336 },
+  'omnibus_pacbio_absquant_v11_header': { x: 40, y: 1372 },
+  'omnibus_pacbio_absquant_v12_data': { x: 320, y: 1372 },
+  'omnibus_pacbio_metag_v10_data': { x: 600, y: 1372 },
+  'omnibus_pacbio_metag_v11_data': { x: 880, y: 1372 },
+  'omnibus_sample_context': { x: 1160, y: 1372 },
+  'omnibus_standard_metag_v0_data': { x: 40, y: 1408 },
   'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1408 },
   'omnibus_standard_metag_v101_data': { x: 600, y: 1408 },
-  'omnibus_standard_metag_v101_settings': { x: 880, y: 1408 },
-  'omnibus_standard_metag_v90_bioinformatics': { x: 1160, y: 1408 },
-  'omnibus_standard_metag_v90_data': { x: 40, y: 1444 },
-  'omnibus_standard_metag_v90_settings': { x: 320, y: 1444 },
-  'omnibus_standard_metat_v10_data': { x: 600, y: 1444 },
-  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1444 },
-  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1444 },
-  'replicated_samples': { x: 40, y: 1480 },
-  'run_capability': { x: 320, y: 1480 },
-  'run_capability_absquant_mass': { x: 600, y: 1480 },
-  'run_capability_absquant_surface_area': { x: 880, y: 1480 },
-  'run_capability_absquant_volume': { x: 1160, y: 1480 },
-  'run_derived_capability': { x: 40, y: 1516 }
+  'omnibus_standard_metag_v90_bioinformatics': { x: 880, y: 1408 },
+  'omnibus_standard_metag_v90_data': { x: 1160, y: 1408 },
+  'omnibus_standard_metat_v10_data': { x: 40, y: 1444 },
+  'omnibus_tellseq_absquant_v10_data': { x: 320, y: 1444 },
+  'omnibus_tellseq_metag_v10_data': { x: 600, y: 1444 },
+  'replicated_samples': { x: 880, y: 1444 },
+  'run_capability': { x: 1160, y: 1444 },
+  'run_capability_absquant_mass': { x: 40, y: 1480 },
+  'run_capability_absquant_surface_area': { x: 320, y: 1480 },
+  'run_capability_absquant_volume': { x: 600, y: 1480 },
+  'run_derived_capability': { x: 880, y: 1480 }
 };
 
 var svg = document.getElementById('canvas');

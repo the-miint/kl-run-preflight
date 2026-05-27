@@ -8,7 +8,7 @@ from pathlib import Path
 
 from run_preflight.legacy.roundtrip import roundtrip_via_api
 
-# TODO: put in path to directory with lots of CSV sample sheets
+# TODO: put in path to directory with lots of legacy CSV sample sheets
 SHEET_DIR_STR = ""
 _SHEET_DIR = Path(SHEET_DIR_STR)
 
@@ -55,7 +55,7 @@ def main():
     # Validate that SHEET_DIR_STR has been set to a real path
     if not str(SHEET_DIR_STR):
         raise ValueError(
-            "SHEET_DIR is empty; set it to a directory of CSV sample sheets"
+            "SHEET_DIR is empty; set it to a directory of legacy CSV sample sheets"
         )
 
     # Collect eligible CSV files

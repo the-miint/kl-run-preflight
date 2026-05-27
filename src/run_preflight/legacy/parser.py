@@ -1,4 +1,4 @@
-"""Parse an omnibus sample-sheet CSV into a dict of sections.
+"""Parse a legacy CSV sample sheet into a dict of sections.
 
 Omnibus files contain multiple logical sections delimited by [SectionName]
 headers. Each section has one of three formats:
@@ -30,7 +30,7 @@ from ..constants import (
 
 
 def parse_omnibus(filepath: str, section_formats: dict[str, str]) -> dict:
-    """Read an omnibus sample-sheet CSV and return parsed sections.
+    """Read a legacy CSV sample sheet and return parsed sections.
 
     Thin wrapper around parse_omnibus_text that reads the file first.
 
