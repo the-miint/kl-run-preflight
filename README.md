@@ -1,4 +1,4 @@
-# run_preflight
+# kl-run_preflight
 
 Normalized SQLite representation of the information package handed off from
 the wet lab to the dry lab for sequencing data processing. Replaces the legacy
