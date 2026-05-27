@@ -11,7 +11,7 @@ from run_preflight.db import create_db
 def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
     """Create minimal prerequisite rows and return (run_idx, prs_idx).
 
-    Inserts a project, input_plate, input_sample, sequencing_run,
+    Inserts a project, input_plate, input_sample, processing_run,
     compression_sample, and prepped_sample so that
     metagenomic_absquant_sample can reference a valid
     prepped_sample_idx.
@@ -46,10 +46,10 @@ def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
     assert cur.lastrowid is not None
     input_sample_idx = cur.lastrowid
 
-    # Insert a sequencing run
+    # Insert a processing run
     cur.execute(
-        "INSERT INTO sequencing_run "
-        "(experiment_name, run_date, sequencer, "
+        "INSERT INTO processing_run "
+        "(experiment_name, run_date, instrument_type, "
         " assay_type_idx, platform_idx) "
         "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
     )

@@ -288,6 +288,10 @@ var SCHEMA = {
         {
           "name": "experiment_design_description",
           "type": "TEXT"
+        },
+        {
+          "name": "bioproject_accession",
+          "type": "TEXT"
         }
       ]
     },
@@ -356,7 +360,7 @@ var SCHEMA = {
       ]
     },
     {
-      "id": "sequencing_run",
+      "id": "processing_run",
       "category": "core",
       "columns": [
         {
@@ -377,7 +381,7 @@ var SCHEMA = {
           "type": "TEXT"
         },
         {
-          "name": "sequencer",
+          "name": "instrument_type",
           "type": "TEXT"
         },
         {
@@ -404,7 +408,7 @@ var SCHEMA = {
           "fk": "legacy_samplesheet_format"
         },
         {
-          "name": "run_name",
+          "name": "external_run_id",
           "type": "TEXT"
         }
       ]
@@ -421,7 +425,7 @@ var SCHEMA = {
         {
           "name": "run_idx",
           "type": "INTEGER",
-          "fk": "sequencing_run"
+          "fk": "processing_run"
         },
         {
           "name": "input_sample_idx",
@@ -473,7 +477,7 @@ var SCHEMA = {
           "name": "run_idx",
           "type": "INTEGER",
           "pk": true,
-          "fk": "sequencing_run"
+          "fk": "processing_run"
         },
         {
           "name": "read1_length",
@@ -980,11 +984,11 @@ var POSITIONS = {
   'sequencing_platform': { x: 40, y: 146 },
   'sample_type': { x: 40, y: 232 },
   'project': { x: 380, y: 60 },
-  'input_plate': { x: 380, y: 236 },
-  'input_sample': { x: 380, y: 358 },
-  'sequencing_run': { x: 380, y: 534 },
-  'compression_sample': { x: 380, y: 782 },
-  'prepped_sample': { x: 380, y: 904 },
+  'input_plate': { x: 380, y: 254 },
+  'input_sample': { x: 380, y: 376 },
+  'processing_run': { x: 380, y: 552 },
+  'compression_sample': { x: 380, y: 800 },
+  'prepped_sample': { x: 380, y: 922 },
   'illumina_run': { x: 720, y: 60 },
   'illumina_sample': { x: 720, y: 272 },
   'tellseq_sample': { x: 720, y: 448 },
@@ -997,41 +1001,41 @@ var POSITIONS = {
   'legacy_samplesheet_view': { x: 40, y: 490 },
   'legacy_samplesheet_optional_columns': { x: 40, y: 630 },
   'legacy_extra_column': { x: 40, y: 788 },
-  'change_log': { x: 380, y: 1044 }
+  'change_log': { x: 380, y: 1062 }
 };
 
 var VIEW_POSITIONS = {
-  'control_project_associations': { x: 40, y: 1282 },
-  'input_plate_projects': { x: 320, y: 1282 },
-  'omnibus_abs_quant_metag_v10_data': { x: 600, y: 1282 },
-  'omnibus_contact': { x: 880, y: 1282 },
-  'omnibus_illumina_header': { x: 1160, y: 1282 },
-  'omnibus_illumina_reads': { x: 40, y: 1318 },
-  'omnibus_pacbio_absquant_v10_data': { x: 320, y: 1318 },
-  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 600, y: 1318 },
-  'omnibus_pacbio_absquant_v11_data': { x: 880, y: 1318 },
-  'omnibus_pacbio_absquant_v11_header': { x: 1160, y: 1318 },
-  'omnibus_pacbio_absquant_v12_data': { x: 40, y: 1354 },
-  'omnibus_pacbio_metag_v10_data': { x: 320, y: 1354 },
-  'omnibus_pacbio_metag_v11_data': { x: 600, y: 1354 },
-  'omnibus_sample_context': { x: 880, y: 1354 },
-  'omnibus_standard_metag_v0_data': { x: 1160, y: 1354 },
-  'omnibus_standard_metag_v0_settings': { x: 40, y: 1390 },
-  'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1390 },
-  'omnibus_standard_metag_v101_data': { x: 600, y: 1390 },
-  'omnibus_standard_metag_v101_settings': { x: 880, y: 1390 },
-  'omnibus_standard_metag_v90_bioinformatics': { x: 1160, y: 1390 },
-  'omnibus_standard_metag_v90_data': { x: 40, y: 1426 },
-  'omnibus_standard_metag_v90_settings': { x: 320, y: 1426 },
-  'omnibus_standard_metat_v10_data': { x: 600, y: 1426 },
-  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1426 },
-  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1426 },
-  'replicated_samples': { x: 40, y: 1462 },
-  'run_capability': { x: 320, y: 1462 },
-  'run_capability_absquant_mass': { x: 600, y: 1462 },
-  'run_capability_absquant_surface_area': { x: 880, y: 1462 },
-  'run_capability_absquant_volume': { x: 1160, y: 1462 },
-  'run_derived_capability': { x: 40, y: 1498 }
+  'control_project_associations': { x: 40, y: 1300 },
+  'input_plate_projects': { x: 320, y: 1300 },
+  'omnibus_abs_quant_metag_v10_data': { x: 600, y: 1300 },
+  'omnibus_contact': { x: 880, y: 1300 },
+  'omnibus_illumina_header': { x: 1160, y: 1300 },
+  'omnibus_illumina_reads': { x: 40, y: 1336 },
+  'omnibus_pacbio_absquant_v10_data': { x: 320, y: 1336 },
+  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 600, y: 1336 },
+  'omnibus_pacbio_absquant_v11_data': { x: 880, y: 1336 },
+  'omnibus_pacbio_absquant_v11_header': { x: 1160, y: 1336 },
+  'omnibus_pacbio_absquant_v12_data': { x: 40, y: 1372 },
+  'omnibus_pacbio_metag_v10_data': { x: 320, y: 1372 },
+  'omnibus_pacbio_metag_v11_data': { x: 600, y: 1372 },
+  'omnibus_sample_context': { x: 880, y: 1372 },
+  'omnibus_standard_metag_v0_data': { x: 1160, y: 1372 },
+  'omnibus_standard_metag_v0_settings': { x: 40, y: 1408 },
+  'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1408 },
+  'omnibus_standard_metag_v101_data': { x: 600, y: 1408 },
+  'omnibus_standard_metag_v101_settings': { x: 880, y: 1408 },
+  'omnibus_standard_metag_v90_bioinformatics': { x: 1160, y: 1408 },
+  'omnibus_standard_metag_v90_data': { x: 40, y: 1444 },
+  'omnibus_standard_metag_v90_settings': { x: 320, y: 1444 },
+  'omnibus_standard_metat_v10_data': { x: 600, y: 1444 },
+  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1444 },
+  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1444 },
+  'replicated_samples': { x: 40, y: 1480 },
+  'run_capability': { x: 320, y: 1480 },
+  'run_capability_absquant_mass': { x: 600, y: 1480 },
+  'run_capability_absquant_surface_area': { x: 880, y: 1480 },
+  'run_capability_absquant_volume': { x: 1160, y: 1480 },
+  'run_derived_capability': { x: 40, y: 1516 }
 };
 
 var svg = document.getElementById('canvas');

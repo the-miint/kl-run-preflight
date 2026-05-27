@@ -83,7 +83,7 @@ def _query_view(
         view_name: Name of the SQL view to query.
         col_names: Column names to select (should exclude run_idx).
         has_run_idx: Whether the view contains a run_idx column.
-        run_idx: The sequencing_run.run_idx to filter on.
+        run_idx: The processing_run.run_idx to filter on.
 
     Returns:
         list[tuple]: All matching rows, each as a tuple of values in the
@@ -129,7 +129,7 @@ def _write_header_kv(writer, section_name, col_names, row):
     for col in col_names:
         raw = values.get(col)
         # Skip keys whose DB value is NULL (e.g. settings not present
-        # for this sequencer). Empty strings are kept.
+        # for this instrument_type). Empty strings are kept.
         if raw is None:
             continue
         writer.writerow([col, format_value(raw, col)])
@@ -272,7 +272,7 @@ def _get_active_columns(
             groups for.
         section_name: The section whose optional groups to evaluate.
         all_cols: The full list of column names defined by the view.
-        run_idx: The sequencing_run.run_idx used to evaluate check functions.
+        run_idx: The processing_run.run_idx used to evaluate check functions.
 
     Returns:
         list[str]: The filtered column list with inactive optional columns
@@ -316,7 +316,7 @@ def _merge_extra_columns(
 
     Args:
         cur: An open SQLite cursor.
-        run_idx: The sequencing_run.run_idx to query extra columns for.
+        run_idx: The processing_run.run_idx to query extra columns for.
         active_cols: The current list of active column names.
         rows: The current list of data tuples matching active_cols.
 
@@ -383,7 +383,7 @@ def _merge_extra_columns(
 
 
 def reconstruct_omnibus(conn, run_idx: int) -> str:
-    """Rebuild the full omnibus CSV for a sequencing run.
+    """Rebuild the full omnibus CSV for a processing run.
 
     Steps:
       1. Look up which legacy format this run uses.
@@ -394,7 +394,7 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
 
     Args:
         conn: An open SQLite connection with a fully populated database.
-        run_idx: The sequencing_run.run_idx to reconstruct the CSV for.
+        run_idx: The processing_run.run_idx to reconstruct the CSV for.
 
     Returns:
         str: The complete reconstructed omnibus CSV as a string.
@@ -407,7 +407,7 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
     # Resolve the legacy format for this run.
     cur.execute(
         """SELECT lf.legacy_format_idx, lf.legacy_sheet_type, lf.legacy_version
-           FROM sequencing_run sr
+           FROM processing_run sr
            JOIN legacy_samplesheet_format lf
              ON sr.legacy_format_idx = lf.legacy_format_idx
            WHERE sr.run_idx = ?""",

@@ -355,7 +355,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     """Insert all parsed omnibus data into *conn*.
 
     Resolves reference-table IDs, inserts projects, input plates, the
-    sequencing run, and all sample rows (with platform- and protocol-
+    processing run, and all sample rows (with platform- and protocol-
     specific child tables, including TellSeq, absquant, and metatranscriptomic
     extensions) in a single transaction committed at the end.
 
@@ -377,7 +377,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     is_pacbio = "pacbio" in sheet_type.lower()
     is_tellseq = "tellseq" in sheet_type.lower()
     platform_name = PLATFORM_PACBIO if is_pacbio else PLATFORM_ILLUMINA
-    sequencer = SEQUENCER_PACBIO_REVIO if is_pacbio else SEQUENCER_UNKNOWN
+    instrument_type = SEQUENCER_PACBIO_REVIO if is_pacbio else SEQUENCER_UNKNOWN
 
     # -- Build a lookup: sample_name → sample_type DB name ------------------
     # SampleContext tells us which samples are controls and their type.
@@ -457,10 +457,10 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         assert cur.lastrowid is not None
         plate_idxs[pname] = cur.lastrowid
 
-    # -- Insert sequencing run ----------------------------------------------
+    # -- Insert processing run ----------------------------------------------
     cur.execute(
-        """INSERT INTO sequencing_run
-           (experiment_name, run_date, investigator_name, sequencer,
+        """INSERT INTO processing_run
+           (experiment_name, run_date, investigator_name, instrument_type,
             assay_type_idx, platform_idx, compression_plate_name,
             description, legacy_format_idx)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -468,7 +468,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             header.get(FIELD_EXPERIMENT_NAME, ""),
             header.get(FIELD_DATE, ""),
             header.get(FIELD_INVESTIGATOR_NAME, ""),
-            sequencer,
+            instrument_type,
             assay_type_idx,
             platform_idx,
             None,
@@ -602,7 +602,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 
 
 def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
-    """Insert a single illumina_run row for the given sequencing run.
+    """Insert a single illumina_run row for the given processing run.
 
     Combines data from the Reads, Settings, and Bioinformatics sections to
     populate read lengths, reverse-complement flag, adapter sequences, and
@@ -610,7 +610,7 @@ def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
 
     Args:
         cur: An open SQLite cursor.
-        run_idx: The sequencing_run.run_idx to associate the row with.
+        run_idx: The processing_run.run_idx to associate the row with.
         sections: The full parsed-sections dict (used to read "Reads"
             and "Settings").
         bio_rows: The list of Bioinformatics row dicts (adapter info is

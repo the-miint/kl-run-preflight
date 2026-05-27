@@ -32,7 +32,7 @@ CATEGORIES: dict[str, dict] = {
             "project",
             "input_plate",
             "input_sample",
-            "sequencing_run",
+            "processing_run",
             "compression_sample",
             "prepped_sample",
         ],

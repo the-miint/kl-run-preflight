@@ -60,7 +60,7 @@ position X on the compression plate for this run":
 ```sql
 CREATE TABLE compression_sample (
     compression_sample_idx    INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_idx          INTEGER NOT NULL REFERENCES sequencing_run(run_idx),
+    run_idx          INTEGER NOT NULL REFERENCES processing_run(run_idx),
     input_sample_idx INTEGER NOT NULL REFERENCES input_sample(input_sample_idx),
     well            TEXT NOT NULL   -- well_id_384 / Sample_Well
 );
@@ -102,8 +102,8 @@ well semantics cannot be round-tripped correctly.
 
 ### Schema structure
 
-A run-preflight SQLite file represents one sequencing run.  A trigger
-on `sequencing_run` enforces this; the rest of the multi-lane model
+A run-preflight SQLite file represents one processing run.  A trigger
+on `processing_run` enforces this; the rest of the multi-lane model
 relies on it.  Within that one run, lane splits are modeled as:
 
 - One `prepped_sample` per `(plate, orig_name, dest_well)` triple
@@ -312,7 +312,7 @@ normalization standpoint, but "every sample has a row for each declared
 metric" is a cross-row completeness constraint that cannot be enforced by
 a per-row INSERT trigger.
 
-**Finalize flag on `sequencing_run`:** An `is_finalized` column with a
+**Finalize flag on `processing_run`:** An `is_finalized` column with a
 trigger on UPDATE could check completeness at a single checkpoint. However,
 this allows invalid data to sit in the DB until finalization, requires every
 population path to remember to finalize, and forces consumers to filter on
@@ -424,8 +424,7 @@ maximum set of settings for a format, but `_add_metadata_to_sheet` deletes
 settings based on context:
 
 - **Amplicon assay:** unconditionally deletes MaskShortReads and OverrideCycles
-- **Sequencer-specific:** reads `delete_settings` from
-  `config/sequencer_types.yml`. Only **iSeq** defines this, deleting
+- **Sequencer-specific:** currently only **iSeq** deletes 
   MaskShortReads and OverrideCycles
 
 This means any Illumina format's class may define all three settings, but an

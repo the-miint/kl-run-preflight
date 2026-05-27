@@ -148,7 +148,7 @@ COL_RUN_IDX = "run_idx"
 
 
 # ---------------------------------------------------------------------------
-# Platform and sequencer strings
+# Platform and instrument_type strings
 # ---------------------------------------------------------------------------
 
 PLATFORM_PACBIO = "PacBio"

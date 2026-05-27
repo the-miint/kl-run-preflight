@@ -46,8 +46,8 @@ def _setup_run(conn: sqlite3.Connection) -> tuple[int, int, int]:
     )
     plate_idx = cur.lastrowid
     cur.execute(
-        "INSERT INTO sequencing_run "
-        "(experiment_name, run_date, sequencer, assay_type_idx, platform_idx) "
+        "INSERT INTO processing_run "
+        "(experiment_name, run_date, instrument_type, assay_type_idx, platform_idx) "
         "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
     )
     run_idx = cur.lastrowid

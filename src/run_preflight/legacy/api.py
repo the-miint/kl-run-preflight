@@ -58,7 +58,7 @@ def write_legacy_csv(db_path: str, csv_path: str) -> None:
     """Write a SQLite database out as a legacy omnibus CSV.
 
     Opens the DB at *db_path* (applying any pending schema patches),
-    locates the single sequencing run, reconstructs the omnibus CSV
+    locates the single processing run, reconstructs the omnibus CSV
     text, and writes it to *csv_path*.
 
     Args:
@@ -66,19 +66,19 @@ def write_legacy_csv(db_path: str, csv_path: str) -> None:
         csv_path: Path at which the omnibus CSV will be written.
 
     Raises:
-        ValueError: If the database contains zero or multiple sequencing
+        ValueError: If the database contains zero or multiple processing
             runs (legacy omnibus files describe exactly one run).
     """
     # Open with patching so callers can write from any compatible DB version
     conn = open_db(db_path)
     try:
-        # Confirm exactly one sequencing run before reconstructing
+        # Confirm exactly one processing run before reconstructing
         run_idxs = [
-            row[0] for row in conn.execute("SELECT run_idx FROM sequencing_run")
+            row[0] for row in conn.execute("SELECT run_idx FROM processing_run")
         ]
         if len(run_idxs) != 1:
             raise ValueError(
-                f"Expected exactly one sequencing run, found {len(run_idxs)}"
+                f"Expected exactly one processing run, found {len(run_idxs)}"
             )
 
         csv_text = reconstruct_omnibus(conn, run_idxs[0])

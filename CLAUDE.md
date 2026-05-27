@@ -42,7 +42,7 @@ There are only two sequencing platforms: **Illumina** and **PacBio**. These are
 the physical instruments that perform sequencing. **TellSeq is a library prep
 protocol, not a sequencing platform** — TellSeq-prepared samples are sequenced
 on Illumina instruments. A TellSeq run therefore uses `illumina_run` config
-(read lengths, override cycles, etc.) because the sequencer is Illumina. The
+(read lengths, override cycles, etc.) because the instrument_type is Illumina. The
 `tellseq_sample` table captures the TellSeq-specific per-sample barcode, but
 the run-level configuration is Illumina.
 
@@ -72,7 +72,7 @@ implementation.
 2) Write a legacy omnibus file from SQLite format:
 
     - **Consumer call:** `write_legacy_csv(db_path, csv_path)`
-    - Internally: `migrate.open_db` → look up the single `sequencing_run`
+    - Internally: `migrate.open_db` → look up the single `processing_run`
       (raises `ValueError` if zero or multiple) →
       `reconstruct.reconstruct_omnibus` → write text to file
 

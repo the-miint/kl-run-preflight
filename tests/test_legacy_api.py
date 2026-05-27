@@ -39,7 +39,7 @@ class TestLegacyApi(unittest.TestCase):
         conn = open_db(str(db_path))
         try:
             run_idxs = [
-                row[0] for row in conn.execute("SELECT run_idx FROM sequencing_run")
+                row[0] for row in conn.execute("SELECT run_idx FROM processing_run")
             ]
         finally:
             conn.close()
@@ -68,14 +68,14 @@ class TestLegacyApi(unittest.TestCase):
         self.assertEqual(reconstructed, normalized)
 
     def test_write_legacy_csv_no_runs(self):
-        # Empty DB has the schema but no sequencing_run rows; the error
+        # Empty DB has the schema but no processing_run rows; the error
         # must report the actual found count (0)
         db_path = self.tmp_dir / "empty.db"
         create_db(str(db_path)).close()
 
         out_path = self.tmp_dir / "out.csv"
         with self.assertRaisesRegex(
-            ValueError, r"Expected exactly one sequencing run, found 0"
+            ValueError, r"Expected exactly one processing run, found 0"
         ):
             write_legacy_csv(str(db_path), str(out_path))
 

@@ -334,7 +334,8 @@ CREATE TABLE project (
     contact_email                   TEXT,
     human_filtering                 BOOLEAN NOT NULL DEFAULT 1,
     library_construction_protocol   TEXT NOT NULL,
-    experiment_design_description   TEXT NOT NULL
+    experiment_design_description   TEXT NOT NULL,
+    bioproject_accession            TEXT
 );
 
 CREATE TABLE input_plate (
@@ -357,12 +358,12 @@ CREATE TABLE input_sample (
         -- via updates.set_biosample_accession
 );
 
-CREATE TABLE sequencing_run (
+CREATE TABLE processing_run (
     run_idx              INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_name     TEXT NOT NULL,
     run_date            TEXT NOT NULL,
     investigator_name   TEXT NOT NULL DEFAULT '',
-    sequencer           TEXT NOT NULL,
+    instrument_type           TEXT NOT NULL,
     assay_type_idx       INTEGER NOT NULL REFERENCES assay_type(assay_type_idx),
     platform_idx         INTEGER NOT NULL REFERENCES sequencing_platform(platform_idx),
     compression_plate_name TEXT,
@@ -370,13 +371,13 @@ CREATE TABLE sequencing_run (
     legacy_format_idx    INTEGER
         REFERENCES legacy_samplesheet_format(legacy_format_idx),
         -- NULL for native DB-originated runs; non-NULL for ingested legacy files
-    run_name            TEXT
+    external_run_id            TEXT
 );
 
 
 CREATE TABLE compression_sample (
     compression_sample_idx    INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_idx          INTEGER NOT NULL REFERENCES sequencing_run(run_idx),
+    run_idx          INTEGER NOT NULL REFERENCES processing_run(run_idx),
     input_sample_idx INTEGER NOT NULL REFERENCES input_sample(input_sample_idx),
     compression_well  TEXT NOT NULL
         -- Position on the compression plate (well_id_384 / Sample_Well)
@@ -400,7 +401,7 @@ CREATE TABLE prepped_sample (
 -- ============================================================
 
 CREATE TABLE illumina_run (
-    run_idx              INTEGER PRIMARY KEY REFERENCES sequencing_run(run_idx),
+    run_idx              INTEGER PRIMARY KEY REFERENCES processing_run(run_idx),
     read1_length        INTEGER NOT NULL,
     read2_length        INTEGER NOT NULL,
     reverse_complement  BOOLEAN NOT NULL DEFAULT 0,
@@ -538,11 +539,11 @@ END;
 -- this property holding.
 
 CREATE TRIGGER one_run_per_db
-BEFORE INSERT ON sequencing_run
-WHEN (SELECT COUNT(*) FROM sequencing_run) > 0
+BEFORE INSERT ON processing_run
+WHEN (SELECT COUNT(*) FROM processing_run) > 0
 BEGIN
     SELECT RAISE(ABORT,
-        'a run-preflight database may contain at most one sequencing_run');
+        'a run-preflight database may contain at most one processing_run');
 END;
 
 -- ============================================================
@@ -713,7 +714,7 @@ CREATE VIEW omnibus_pacbio_absquant_v11_header AS
         sr.run_date AS "Date",
         at.name AS "Assay",
         sr.description AS "Description"
-    FROM sequencing_run sr
+    FROM processing_run sr
     JOIN assay_type at ON sr.assay_type_idx = at.assay_type_idx
     JOIN legacy_samplesheet_format lf ON sr.legacy_format_idx = lf.legacy_format_idx;
 
@@ -878,7 +879,7 @@ CREATE VIEW omnibus_illumina_header AS
         at.name AS "Assay",
         sr.description AS "Description",
         'Default' AS "Chemistry"
-    FROM sequencing_run sr
+    FROM processing_run sr
     JOIN assay_type at ON sr.assay_type_idx = at.assay_type_idx
     JOIN legacy_samplesheet_format lf ON sr.legacy_format_idx = lf.legacy_format_idx;
 
@@ -887,7 +888,7 @@ CREATE VIEW omnibus_illumina_reads AS
     SELECT sr.run_idx,
         ir.read1_length AS "read1_length",
         ir.read2_length AS "read2_length"
-    FROM sequencing_run sr
+    FROM processing_run sr
     JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
 
 -- ============================================================
@@ -898,7 +899,7 @@ CREATE VIEW omnibus_illumina_reads AS
 CREATE VIEW omnibus_standard_metag_v90_settings AS
     SELECT sr.run_idx,
         ir.reverse_complement AS "ReverseComplement"
-    FROM sequencing_run sr
+    FROM processing_run sr
     JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
 
 -- Base Illumina Data view. Uses Sample_Well (v90 column name).
@@ -943,7 +944,7 @@ CREATE VIEW omnibus_standard_metag_v90_bioinformatics AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
     JOIN project p ON ins.project_idx = p.project_idx
-    JOIN sequencing_run sr ON cs.run_idx = sr.run_idx
+    JOIN processing_run sr ON cs.run_idx = sr.run_idx
     JOIN illumina_run ir ON sr.run_idx = ir.run_idx
     GROUP BY cs.run_idx, p.project_idx, p.project_name, p.qiita_id,
              ir.barcodes_are_rc, ir.forward_adapter, ir.reverse_adapter,
@@ -959,7 +960,7 @@ CREATE VIEW omnibus_standard_metag_v0_settings AS
     SELECT sr.run_idx,
         ir.reverse_complement AS "ReverseComplement",
         ir.mask_short_reads AS "MaskShortReads"
-    FROM sequencing_run sr
+    FROM processing_run sr
     JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
 
 -- Sources well_id_384 from compression_well (original compression position).
@@ -992,7 +993,7 @@ CREATE VIEW omnibus_standard_metag_v101_settings AS
         ir.reverse_complement AS "ReverseComplement",
         ir.mask_short_reads AS "MaskShortReads",
         ir.override_cycles AS "OverrideCycles"
-    FROM sequencing_run sr
+    FROM processing_run sr
     JOIN illumina_run ir ON sr.run_idx = ir.run_idx;
 
 -- Adds orig_name and destination_well_384 to the v0 base.

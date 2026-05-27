@@ -41,8 +41,8 @@ def _setup_run_and_prs(conn: sqlite3.Connection) -> tuple[int, int]:
     input_sample_idx = cur.lastrowid
 
     cur.execute(
-        "INSERT INTO sequencing_run "
-        "(experiment_name, run_date, sequencer, "
+        "INSERT INTO processing_run "
+        "(experiment_name, run_date, instrument_type, "
         " assay_type_idx, platform_idx) "
         "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
     )
@@ -173,12 +173,12 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
     def test_one_run_per_db_rejects_second_run(self):
         with self.assertRaises(sqlite3.IntegrityError) as ctx:
             self.conn.execute(
-                "INSERT INTO sequencing_run "
-                "(experiment_name, run_date, sequencer, "
+                "INSERT INTO processing_run "
+                "(experiment_name, run_date, instrument_type, "
                 " assay_type_idx, platform_idx) "
                 "VALUES ('exp2', '2025-01-02', 'Unknown', 1, 1)"
             )
-        self.assertIn("at most one sequencing_run", str(ctx.exception))
+        self.assertIn("at most one processing_run", str(ctx.exception))
 
 
 class TestMultiLanePopulate(unittest.TestCase):
