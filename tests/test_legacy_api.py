@@ -169,6 +169,52 @@ class TestLegacyApi(unittest.TestCase):
         settings_errors = [e for e in errors if e.startswith("[Settings]")]
         self.assertEqual(settings_errors, [])
 
+    def test_validate_omnibus_errors_on_missing_sheet_type(self):
+        # SheetType drives format dispatch; absence must produce a clear
+        # field-specific error rather than the misleading "Unknown
+        # format:  v0" that the previous ("", 0) default lookup yielded.
+        conn = create_db(":memory:")
+        try:
+            sections = {"Header": {"SheetVersion": "101"}}
+            errors = validate_omnibus(conn, sections)
+        finally:
+            conn.close()
+
+        self.assertEqual(
+            errors, ["[Header] missing required field: SheetType"]
+        )
+
+    def test_validate_omnibus_errors_on_missing_sheet_version(self):
+        # SheetVersion is also required for format dispatch; absence must
+        # produce a clear field-specific error rather than a silent v0 default
+        conn = create_db(":memory:")
+        try:
+            sections = {"Header": {"SheetType": "standard_metag"}}
+            errors = validate_omnibus(conn, sections)
+        finally:
+            conn.close()
+
+        self.assertEqual(
+            errors, ["[Header] missing required field: SheetVersion"]
+        )
+
+    def test_validate_omnibus_errors_on_missing_header_section(self):
+        # An entirely-missing [Header] section surfaces as both field-level
+        # errors rather than a dedicated section-missing error
+        conn = create_db(":memory:")
+        try:
+            errors = validate_omnibus(conn, {})
+        finally:
+            conn.close()
+
+        self.assertEqual(
+            errors,
+            [
+                "[Header] missing required field: SheetType",
+                "[Header] missing required field: SheetVersion",
+            ],
+        )
+
     def test_validate_omnibus_skips_constant_check_for_pacbio(self):
         # PacBio uses a different Header view with no hardcoded literals,
         # so the constant-preservation check must not fire for PacBio

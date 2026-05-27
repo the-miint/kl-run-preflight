@@ -37,16 +37,17 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
     """Validate a parsed omnibus file against the view registry.
 
     Checks performed:
-      1. SheetVersion parses as an integer.
-      2. SheetType + SheetVersion map to a known legacy format.
-      3. For non-PacBio formats, the four hardcoded Illumina header
+      1. SheetType and SheetVersion are present in [Header].
+      2. SheetVersion parses as an integer.
+      3. SheetType + SheetVersion map to a known legacy format.
+      4. For non-PacBio formats, the four hardcoded Illumina header
          constants (IEMFileVersion, Workflow, Application, Chemistry),
          if present in the file, match the literals the reconstructor
          emits.  Deviating values would be silently replaced on
          round-trip and so are rejected here.
-      4. All expected sections are present; no unexpected sections
+      5. All expected sections are present; no unexpected sections
          exist.
-      5. Per-section column checks, with section-specific contracts:
+      6. Per-section column checks, with section-specific contracts:
            * [Header] (header_kv): all required view columns present;
              unexpected keys flagged.
            * [Settings] (header_kv): missing keys are allowed (the
@@ -74,10 +75,24 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
     cur = conn.cursor()
     errors: list[str] = []
 
+    # SheetType and SheetVersion drive the format lookup; missing values
+    # would default into a meaningless ("", 0) lookup, so flag them up front.
     header = sections.get(SECTION_HEADER, {})
-    sheet_type = header.get(FIELD_SHEET_TYPE, "")
+    sheet_type = header.get(FIELD_SHEET_TYPE)
+    sheet_version_raw = header.get(FIELD_SHEET_VERSION)
+    if not sheet_type:
+        errors.append(
+            f"[{SECTION_HEADER}] missing required field: {FIELD_SHEET_TYPE}"
+        )
+    if not sheet_version_raw:
+        errors.append(
+            f"[{SECTION_HEADER}] missing required field: {FIELD_SHEET_VERSION}"
+        )
+    if errors:
+        return errors
+
     try:
-        sheet_version = int(header.get(FIELD_SHEET_VERSION, "0"))
+        sheet_version = int(sheet_version_raw)
     except ValueError:
         errors.append("Invalid SheetVersion")
         return errors
