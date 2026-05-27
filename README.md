@@ -5,15 +5,11 @@ the wet lab to the dry lab for sequencing data processing. Replaces the legacy
 CSV "samplesheet" format with a relational schema that enforces
 correctness constraints and simplifies data management.
 
-## Status
 
-**Current phase:** Adding support for round-tripping legacy CSV samplesheet
-files (parse → SQLite → reconstruct → prove same) for all `kl-metapool` samplesheet
-formats.
 
 **Supported formats:**
 
-- `pacbio_absquant` v10, v11
+- `pacbio_absquant` v10, v11, v12
 - `pacbio_metag` v10, v11
 - `standard_metag` v90, v100, v101
 - `standard_metag` v0 (which is really the first metaT)
@@ -21,7 +17,3 @@ formats.
 - `standard_metat` v10
 - `tellseq_metag` v10
 - `tellseq_absquant` v10
-
-## Project structure
-
-```
