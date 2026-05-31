@@ -53,9 +53,7 @@ def save_legacy_csv(conn: sqlite3.Connection, csv_path: str) -> None:
     # Confirm exactly one processing run before reconstructing
     run_idxs = [row[0] for row in conn.execute("SELECT run_idx FROM processing_run")]
     if len(run_idxs) != 1:
-        raise ValueError(
-            f"Expected exactly one processing run, found {len(run_idxs)}"
-        )
+        raise ValueError(f"Expected exactly one processing run, found {len(run_idxs)}")
 
     csv_text = reconstruct_omnibus(conn, run_idxs[0])
 

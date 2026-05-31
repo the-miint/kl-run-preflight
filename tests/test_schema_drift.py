@@ -19,9 +19,7 @@ import pytest
 from run_preflight.db import create_db
 from run_preflight.migrate import apply_patches, get_latest_version
 
-_SCHEMA_DIR = (
-    Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
-)
+_SCHEMA_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
 _SCHEMA_V0 = _SCHEMA_DIR / "schema_v0.sql"
 
 

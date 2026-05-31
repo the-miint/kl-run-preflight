@@ -81,9 +81,7 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
     sheet_type = header.get(FIELD_SHEET_TYPE)
     sheet_version_raw = header.get(FIELD_SHEET_VERSION)
     if not sheet_type:
-        errors.append(
-            f"[{SECTION_HEADER}] missing required field: {FIELD_SHEET_TYPE}"
-        )
+        errors.append(f"[{SECTION_HEADER}] missing required field: {FIELD_SHEET_TYPE}")
     if not sheet_version_raw:
         errors.append(
             f"[{SECTION_HEADER}] missing required field: {FIELD_SHEET_VERSION}"

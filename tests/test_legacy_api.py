@@ -154,9 +154,9 @@ class TestLegacyApi(unittest.TestCase):
             warnings.simplefilter("ignore", LegacyExtraColumnWarning)
             conn = load_legacy_csv(str(csv_path))
         try:
-            rc = conn.execute(
-                "SELECT reverse_complement FROM illumina_run"
-            ).fetchone()[0]
+            rc = conn.execute("SELECT reverse_complement FROM illumina_run").fetchone()[
+                0
+            ]
         finally:
             conn.close()
         self.assertIsNone(rc)
@@ -198,9 +198,7 @@ class TestLegacyApi(unittest.TestCase):
         finally:
             conn.close()
 
-        self.assertEqual(
-            errors, ["[Header] missing required field: SheetType"]
-        )
+        self.assertEqual(errors, ["[Header] missing required field: SheetType"])
 
     def test_validate_omnibus_errors_on_missing_sheet_version(self):
         # SheetVersion is also required for format dispatch; absence must
@@ -212,9 +210,7 @@ class TestLegacyApi(unittest.TestCase):
         finally:
             conn.close()
 
-        self.assertEqual(
-            errors, ["[Header] missing required field: SheetVersion"]
-        )
+        self.assertEqual(errors, ["[Header] missing required field: SheetVersion"])
 
     def test_validate_omnibus_errors_on_missing_header_section(self):
         # An entirely-missing [Header] section surfaces as both field-level

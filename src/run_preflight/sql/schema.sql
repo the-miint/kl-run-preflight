@@ -347,15 +347,16 @@ CREATE TABLE input_plate (
 
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
-    sample_name         TEXT NOT NULL,
+    sample_name         TEXT,
     input_plate_idx      INTEGER NOT NULL REFERENCES input_plate(input_plate_idx),
     well                TEXT,
     project_idx          INTEGER REFERENCES project(project_idx),
         -- NULL for controls; controls inherit project via input_plate
     sample_type_idx      INTEGER NOT NULL REFERENCES sample_type(sample_type_idx),
-    biosample_accession TEXT
-        -- NCBI BioSample accession; nullable, populated post-fill
-        -- via updates.set_biosample_accession
+    biosample_accession TEXT,
+        -- NCBI BioSample accession
+    -- A sample is identified by sample_name, biosample_accession, or both
+    CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)
 );
 
 CREATE TABLE processing_run (

@@ -231,8 +231,9 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             set_biosample_accession(conn, "S1", "SAMN004")
 
     def test_set_biosample_accession_missing(self):
-        with _open(self.db_path) as conn, pytest.raises(
-            ValueError, match="No input_sample matches"
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="No input_sample matches"),
         ):
             set_biosample_accession(conn, "nonexistent", "SAMN005")
 
@@ -326,8 +327,9 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=1)
             _add_illumina_row(conn, prs1, lane=2)
 
-        with _open(self.db_path) as conn, pytest.raises(
-            ValueError, match="already have a row at"
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="already have a row at"),
         ):
             update_lane(conn, "illumina", from_lane=1, to_lane=2)
 
@@ -343,14 +345,16 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=1)
             _add_illumina_row(conn, prs2, lane=2)
 
-        with _open(self.db_path) as conn, pytest.raises(
-            ValueError, match="uniformity violation"
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="uniformity violation"),
         ):
             update_lane(conn, "illumina", from_lane=1, to_lane=None)
 
     def test_update_lane_unsupported_platform(self):
-        with _open(self.db_path) as conn, pytest.raises(
-            ValueError, match="Unsupported platform"
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="Unsupported platform"),
         ):
             update_lane(conn, "pacbio", from_lane=1, to_lane=2)
 
@@ -399,3 +403,59 @@ class TestUpdateLane(_UpdatesTestBase):
         with _open(self.db_path) as conn:
             cur = conn.execute("SELECT lane FROM tellseq_sample")
             self.assertEqual(cur.fetchone(), (1,))
+
+
+class TestInputSampleCheck(_UpdatesTestBase):
+    """input_sample requires sample_name OR biosample_accession non-null."""
+
+    # SQL prefix shared by all four cases; varies only in identity values
+    _INSERT_SQL = (
+        "INSERT INTO input_sample "
+        "(sample_name, input_plate_idx, project_idx, "
+        " sample_type_idx, biosample_accession) "
+        "VALUES (?, ?, ?, 1, ?)"
+    )
+
+    def _insert(self, conn, sample_name, biosample_accession):
+        """Insert an input_sample with the given identity values."""
+        cur = conn.execute(
+            self._INSERT_SQL,
+            (sample_name, self.plate_idx, self.project_idx, biosample_accession),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+    def _read_identity(self, conn, ins_idx):
+        """Return (sample_name, biosample_accession) for *ins_idx*."""
+        cur = conn.execute(
+            "SELECT sample_name, biosample_accession FROM input_sample "
+            "WHERE input_sample_idx = ?",
+            (ins_idx,),
+        )
+        return cur.fetchone()
+
+    def test_input_sample_check_rejects_both_null(self):
+        # Both identity columns NULL must violate the CHECK
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(sqlite3.IntegrityError, match="CHECK"),
+        ):
+            self._insert(conn, None, None)
+
+    def test_input_sample_check_accepts_sample_name_only(self):
+        # sample_name alone satisfies the CHECK
+        with _open(self.db_path) as conn:
+            ins_idx = self._insert(conn, "S1", None)
+            self.assertEqual(self._read_identity(conn, ins_idx), ("S1", None))
+
+    def test_input_sample_check_accepts_biosample_accession_only(self):
+        # biosample_accession alone satisfies the CHECK
+        with _open(self.db_path) as conn:
+            ins_idx = self._insert(conn, None, "SAMN100")
+            self.assertEqual(self._read_identity(conn, ins_idx), (None, "SAMN100"))
+
+    def test_input_sample_check_accepts_both_non_null(self):
+        # Both non-null satisfies the CHECK
+        with _open(self.db_path) as conn:
+            ins_idx = self._insert(conn, "S1", "SAMN101")
+            self.assertEqual(self._read_identity(conn, ins_idx), ("S1", "SAMN101"))
