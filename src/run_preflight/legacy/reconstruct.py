@@ -194,9 +194,8 @@ def _write_tabular(writer, section_name, col_names, rows):
 # Optional column detection
 # ---------------------------------------------------------------------------
 
-# Per-capability views gated by absquant metric columns.  Each view returns
-# the run_idx iff at least one sample has a non-null value in the
-# corresponding metric column.
+# Per-capability views: each returns run_idx iff at least one sample has
+# a non-null value in the corresponding absquant metric column.
 _CAPABILITY_VIEWS: dict[str, str] = {
     CHECK_HAS_EXTRACTED_SAMPLE_MASS: "run_capability_absquant_mass",
     CHECK_HAS_EXTRACTED_SAMPLE_VOLUME: "run_capability_absquant_volume",
@@ -323,9 +322,8 @@ def _merge_extra_columns(
         tuple[list[str], list[tuple]]: Updated (columns, rows) with extra
         columns appended.
     """
-    # Pull every extra-column row for this run in one query; derive the
-    # sorted distinct column list and the (prs_idx, col_name) → value
-    # lookup from the same result set.
+    # Pull every extra-column row for this run in one query; derive both the
+    # sorted distinct column list and the (prs_idx, col_name) → value lookup.
     cur.execute(
         "SELECT lec.prepped_sample_idx, lec.column_name, lec.column_value "
         "FROM legacy_extra_column lec "

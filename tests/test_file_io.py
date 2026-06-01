@@ -80,7 +80,7 @@ def _seed_prepped_sample(
 
 
 # ---------------------------------------------------------------------------
-# TestOpenFile (existing) — unchanged
+# TestOpenFile
 # ---------------------------------------------------------------------------
 
 
@@ -195,9 +195,8 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         self.assertEqual(self.out_path.read_text(), expected)
 
     def test_save_bclconvert_v1_csv_no_lane(self):
-        # When illumina_sample.lane is uniformly NULL, the Lane column
-        # is omitted from [Data]. Settings are populated here so this
-        # test isolates the no-lane behavior from the no-settings path.
+        # When illumina_sample.lane is uniformly NULL, the Lane column is
+        # omitted from [Data]. Settings stay populated to isolate the no-lane case.
         project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(
             self.conn, mask_short_reads="22", override_cycles="Y151;I8;I8;Y151"
@@ -307,10 +306,8 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         self.assertEqual(self.out_path.read_text(), expected)
 
     def test_save_bclconvert_v1_csv_multi_lane(self):
-        # The same prepped_sample appearing on two lanes produces two
-        # data rows ordered by illumina_sample_idx. Lane values 3 and 7
-        # are deliberately distinct from the illumina_sample_idx values
-        # (1 and 2) so a swap between the two columns would be visible.
+        # Two lanes for one prepped_sample produce two rows ordered by illumina_sample_idx.
+        # Lanes 3 and 7 differ from the illumina_sample_idx values to catch a column swap.
         project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(self.conn)
         prs1 = _seed_prepped_sample(
@@ -338,9 +335,8 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         self.assertEqual(self.out_path.read_text(), expected)
 
     def test_save_bclconvert_v1_csv_deterministic_ordering_from_legacy(self):
-        # Loading a legacy CSV and writing the bcl-convert sheet must
-        # produce Sample_ID values that match the source CSV's data-row
-        # order (monotonic 1..N matching illumina_sample_idx)
+        # A legacy-loaded run must emit Sample_ID values matching the source CSV's
+        # data-row order (monotonic 1..N matching illumina_sample_idx).
         self.conn.close()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", LegacyExtraColumnWarning)
@@ -380,17 +376,14 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         self.assertEqual(sample_ids, list(range(1, len(sample_ids) + 1)))
 
     def test_save_bclconvert_v1_csv_zero_runs_raise_err(self):
-        # A freshly-created DB with zero processing_run rows must raise
-        # a ValueError naming the run-count problem. The matching ">1"
-        # case is unreachable in practice because the schema's
-        # "at most one processing_run" trigger blocks the second insert.
+        # Zero-run case raises naming the run-count problem; the >1 case is
+        # unreachable because the schema's "at most one run" trigger blocks it.
         with self.assertRaisesRegex(ValueError, r"exactly one processing run"):
             save_bclconvert_v1_csv(self.conn, str(self.out_path))
 
     def test_save_bclconvert_v1_csv_pacbio_raise_err(self):
-        # A PacBio run (no illumina_run, no illumina_sample) must be
-        # rejected with a ValueError naming the missing illumina_sample
-        # rows, not a generic failure
+        # A PacBio run (no illumina_run, no illumina_sample) must be rejected with
+        # a ValueError naming the missing illumina_sample rows, not a generic failure.
         _helpers.seed_project_and_plate(self.conn)
         _seed_pacbio_run(self.conn)
         self.conn.commit()
@@ -399,9 +392,8 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             save_bclconvert_v1_csv(self.conn, str(self.out_path))
 
     def test_save_bclconvert_v1_csv_tellseq_raise_err(self):
-        # A TellSeq run has an illumina_run row but uses tellseq_sample
-        # instead of illumina_sample, so the writer must reject it with
-        # the same no-illumina_sample-rows error as PacBio
+        # A TellSeq run has illumina_run but no illumina_sample rows, so the writer
+        # must reject it with the same no-illumina_sample-rows error as PacBio.
         project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(self.conn)
         prs1 = _seed_prepped_sample(

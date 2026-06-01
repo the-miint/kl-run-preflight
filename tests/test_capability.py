@@ -11,13 +11,7 @@ from . import _helpers
 
 
 def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
-    """Create minimal prerequisite rows and return (run_idx, prs_idx).
-
-    Inserts a project, input_plate, input_sample, processing_run,
-    compression_sample, and prepped_sample so that
-    metagenomic_absquant_sample can reference a valid
-    prepped_sample_idx.
-    """
+    """Seed the minimal chain ending in a prepped_sample; return (run_idx, prs_idx)."""
     project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
     run_idx = _helpers.seed_processing_run(conn)
     input_sample_idx = _helpers.seed_input_sample(conn, plate_idx, project_idx)

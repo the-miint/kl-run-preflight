@@ -154,11 +154,8 @@ def update_lane(
     table, pk_col = _PLATFORM_TABLES[platform]
     cur = conn.cursor()
 
-    # Verify post-update lane uniformity: the platform table must be
-    # uniformly NULL or uniformly non-NULL after the update.  The
-    # update touches only rows whose current lane equals from_lane;
-    # any other row keeps its current lane value and so violates
-    # uniformity if its null-ness differs from to_lane's.
+    # Verify post-update lane uniformity: rows whose current lane != from_lane
+    # keep their value and break uniformity if their null-ness differs from to_lane's.
     if to_lane is None:
         null_filter, would_state, target = "lane IS NOT NULL", "non-NULL", "NULL"
     else:

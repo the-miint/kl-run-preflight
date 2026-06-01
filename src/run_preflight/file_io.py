@@ -1,4 +1,4 @@
-"""Format-detecting entry point that opens either a legacy omnibus CSV or a SQLite database file."""
+"""File-level read and write entry points for run preflights (legacy CSV, SQLite DB, bcl-convert v1)."""
 
 from __future__ import annotations
 
@@ -31,16 +31,15 @@ def save_bclconvert_v1_csv(conn: sqlite3.Connection, csv_path: str) -> None:
     """Write a minimal bcl-convert v1 sample sheet from the run in *conn*.
 
     *conn* must describe exactly one Illumina processing run with at
-    least one illumina_sample row (i.e. neither PacBio nor TellSeq).
-    Sample_ID values are emitted as the integer illumina_sample_idx;
-    index/index2 are emitted exactly as stored on illumina_sample.
-    The Lane column appears in [Data] only when illumina_sample.lane
-    is non-null (lane uniformity is enforced by trigger). Settings keys
-    appear in [Settings] only when their illumina_run column is non-null.
+    least one illumina_sample row. Sample_ID is emitted as the integer
+    illumina_sample_idx; index/index2 are emitted exactly as stored.
+    Lane is included in [Data] only when illumina_sample.lane is
+    non-null; Settings keys appear only when their illumina_run column
+    is non-null.
 
     Raises:
-        ValueError: If *conn* contains zero or multiple processing runs,
-            or if the run has no illumina_sample rows.
+        ValueError: If *conn* lacks exactly one processing run, or has
+            no illumina_sample rows.
     """
     # Resolve the one run and pull all needed data before any formatting
     run_idx = get_single_run_idx(conn)
@@ -146,15 +145,13 @@ def _format_bclconvert_v1(
 def open_file(path: str) -> sqlite3.Connection:
     """Open a run preflight from either a legacy omnibus CSV or a SQLite DB file.
 
-    Detects the format from the file's first 16 bytes: files beginning
-    with the SQLite magic header are opened via *open_db_file*; everything
-    else is treated as a legacy omnibus CSV via *load_legacy_csv*. Caller
-    owns and must close the returned connection.
+    Detects the format from the file's first 16 bytes (SQLite magic
+    header). Caller owns and must close the returned connection.
 
     Raises:
         FileNotFoundError: If *path* does not exist.
-        ValueError: If the file is detected as legacy CSV but fails parsing
-            or validation (re-raised from load_legacy_csv).
+        ValueError: If the file is detected as legacy CSV but fails
+            parsing or validation.
     """
     # Confirm the file exists before any read attempt so the error is unambiguous
     p = Path(path)
