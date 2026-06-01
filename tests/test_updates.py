@@ -30,7 +30,7 @@ def _setup_run(conn: sqlite3.Connection) -> tuple[int, int, int]:
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO project "
-        "(project_name, qiita_id, human_filtering, "
+        "(project_name, external_project_id, human_filtering, "
         " library_construction_protocol, experiment_design_description) "
         "VALUES ('proj1', '1', 1, 'proto', 'desc')"
     )

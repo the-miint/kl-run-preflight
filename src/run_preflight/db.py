@@ -417,7 +417,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         human_filt = _parse_bool_str(bio.get(COL_HUMAN_FILTERING, "True"))
         cur.execute(
             """INSERT INTO project
-               (project_name, qiita_id, contact_email,
+               (project_name, external_project_id, contact_email,
                 human_filtering, library_construction_protocol,
                 experiment_design_description)
                VALUES (?, ?, ?, ?, ?, ?)""",
