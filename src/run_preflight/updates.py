@@ -12,13 +12,17 @@ import sqlite3
 from .constants import (
     DB_COL_BIOSAMPLE_ACCESSION,
     DB_COL_LANE,
+    DB_COL_MASK_SHORT_READS,
+    DB_COL_OVERRIDE_CYCLES,
     TABLE_CHANGE_LOG,
+    TABLE_ILLUMINA_RUN,
     TABLE_ILLUMINA_SAMPLE,
     TABLE_INPUT_SAMPLE,
     TABLE_TELLSEQ_SAMPLE,
     UPDATE_PLATFORM_ILLUMINA,
     UPDATE_PLATFORM_TELLSEQ,
 )
+from .db import get_single_run_idx
 
 # Map platform strings to (table_name, primary_key_column).  Used to
 # dispatch update_lane to the correct platform-specific sample table.
@@ -222,3 +226,61 @@ def update_lane(
         raise
 
     return len(affected)
+
+
+def _set_illumina_run_column(
+    conn: sqlite3.Connection,
+    column: str,
+    value: str | None,
+    reason: str | None,
+) -> None:
+    """Set *column* on the sole illumina_run row to *value*.
+
+    *column* must be a constant from this module's closed set, never
+    user input — it is interpolated into the SQL statement.
+    """
+    run_idx = get_single_run_idx(conn)
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT {column} FROM {TABLE_ILLUMINA_RUN} WHERE run_idx = ?",
+        (run_idx,),
+    )
+    (old_value,) = cur.fetchone()
+
+    # Apply the update and write the audit row in a single transaction.
+    try:
+        cur.execute(
+            f"UPDATE {TABLE_ILLUMINA_RUN} SET {column} = ? WHERE run_idx = ?",
+            (value, run_idx),
+        )
+        _log_change(
+            conn,
+            TABLE_ILLUMINA_RUN,
+            run_idx,
+            column,
+            old_value,
+            value,
+            reason,
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def set_mask_short_reads(
+    conn: sqlite3.Connection,
+    value: str | None,
+    reason: str | None = None,
+) -> None:
+    """Set illumina_run.mask_short_reads to *value*; None clears it."""
+    _set_illumina_run_column(conn, DB_COL_MASK_SHORT_READS, value, reason)
+
+
+def set_override_cycles(
+    conn: sqlite3.Connection,
+    value: str | None,
+    reason: str | None = None,
+) -> None:
+    """Set illumina_run.override_cycles to *value*; None clears it."""
+    _set_illumina_run_column(conn, DB_COL_OVERRIDE_CYCLES, value, reason)

@@ -1,4 +1,5 @@
-"""Tests for updates.py: set_biosample_accession and update_lane."""
+"""Tests for updates.py: set_biosample_accession, update_lane,
+set_mask_short_reads, set_override_cycles."""
 
 from __future__ import annotations
 
@@ -11,7 +12,13 @@ import unittest
 import pytest
 
 from run_preflight.db import create_db
-from run_preflight.updates import set_biosample_accession, update_lane
+from run_preflight.updates import (
+    _set_illumina_run_column,
+    set_biosample_accession,
+    set_mask_short_reads,
+    set_override_cycles,
+    update_lane,
+)
 
 from . import _helpers
 
@@ -67,6 +74,23 @@ def _add_illumina_row(
     ils_idx = _helpers.seed_illumina_sample(conn, prs_idx, lane=lane)
     conn.commit()
     return ils_idx
+
+
+def _add_illumina_run(
+    conn: sqlite3.Connection,
+    run_idx: int,
+    *,
+    mask_short_reads: str | None = None,
+    override_cycles: str | None = None,
+) -> None:
+    """Insert the matching illumina_run config row and commit."""
+    _helpers.seed_illumina_run_config(
+        conn,
+        run_idx,
+        mask_short_reads=mask_short_reads,
+        override_cycles=override_cycles,
+    )
+    conn.commit()
 
 
 class _UpdatesTestBase(unittest.TestCase):
@@ -368,6 +392,118 @@ class TestUpdateLane(_UpdatesTestBase):
         with _open(self.db_path) as conn:
             cur = conn.execute("SELECT lane FROM tellseq_sample")
             self.assertEqual(cur.fetchone(), (1,))
+
+
+class TestSetIlluminaSettings(_UpdatesTestBase):
+    """set_mask_short_reads / set_override_cycles on illumina_run."""
+
+    # mask_short_reads is the chosen probe column for the behavior-matrix
+    # tests below; the per-wrapper tests then prove dispatch is correct
+    # for each public function (and that the other column is untouched).
+
+    def _read_column(self, column: str) -> str | None:
+        """Return illumina_run.<column> for the test's processing_run."""
+        with _open(self.db_path) as conn:
+            (val,) = conn.execute(
+                f"SELECT {column} FROM illumina_run WHERE run_idx = ?",
+                (self.run_idx,),
+            ).fetchone()
+            return val
+
+    def test__set_illumina_run_column_from_null(self):
+        with _open(self.db_path) as conn:
+            _add_illumina_run(conn, self.run_idx)
+
+        with _open(self.db_path) as conn:
+            _set_illumina_run_column(conn, "mask_short_reads", "R1:Y*N,R2:Y*N", None)
+        self.assertEqual(self._read_column("mask_short_reads"), "R1:Y*N,R2:Y*N")
+
+    def test__set_illumina_run_column_overwrite(self):
+        with _open(self.db_path) as conn:
+            _add_illumina_run(conn, self.run_idx, mask_short_reads="R1:Y*N,R2:Y*N")
+
+        with _open(self.db_path) as conn:
+            _set_illumina_run_column(conn, "mask_short_reads", "R1:N*,R2:N*", None)
+        self.assertEqual(self._read_column("mask_short_reads"), "R1:N*,R2:N*")
+
+    def test__set_illumina_run_column_clear(self):
+        with _open(self.db_path) as conn:
+            _add_illumina_run(conn, self.run_idx, mask_short_reads="R1:Y*N,R2:Y*N")
+
+        with _open(self.db_path) as conn:
+            _set_illumina_run_column(conn, "mask_short_reads", None, None)
+        self.assertIsNone(self._read_column("mask_short_reads"))
+
+    def test__set_illumina_run_column_audit(self):
+        # Two successive sets so the second captures the first as old_value
+        with _open(self.db_path) as conn:
+            _add_illumina_run(conn, self.run_idx)
+
+        with _open(self.db_path) as conn:
+            _set_illumina_run_column(
+                conn, "mask_short_reads", "R1:Y*N,R2:Y*N", "initial"
+            )
+            _set_illumina_run_column(
+                conn, "mask_short_reads", "R1:N*,R2:N*", "correction"
+            )
+
+        with _open(self.db_path) as conn:
+            cur = conn.execute(
+                "SELECT table_name, row_idx, column_name, "
+                " old_value, new_value, reason "
+                "FROM change_log ORDER BY change_idx"
+            )
+            expected = [
+                (
+                    "illumina_run",
+                    self.run_idx,
+                    "mask_short_reads",
+                    None,
+                    "R1:Y*N,R2:Y*N",
+                    "initial",
+                ),
+                (
+                    "illumina_run",
+                    self.run_idx,
+                    "mask_short_reads",
+                    "R1:Y*N,R2:Y*N",
+                    "R1:N*,R2:N*",
+                    "correction",
+                ),
+            ]
+            self.assertEqual(cur.fetchall(), expected)
+
+    def test_set_mask_short_reads(
+        self,
+    ):  # same-pattern-ok: per-public-function smoke test
+        with _open(self.db_path) as conn:
+            _add_illumina_run(conn, self.run_idx)
+
+        with _open(self.db_path) as conn:
+            set_mask_short_reads(conn, "R1:Y*N,R2:Y*N")
+        self.assertEqual(
+            (
+                self._read_column("mask_short_reads"),
+                self._read_column("override_cycles"),
+            ),
+            ("R1:Y*N,R2:Y*N", None),
+        )
+
+    def test_set_override_cycles(
+        self,
+    ):  # same-pattern-ok: per-public-function smoke test
+        with _open(self.db_path) as conn:
+            _add_illumina_run(conn, self.run_idx)
+
+        with _open(self.db_path) as conn:
+            set_override_cycles(conn, "Y151;I8;I8;Y151")
+        self.assertEqual(
+            (
+                self._read_column("mask_short_reads"),
+                self._read_column("override_cycles"),
+            ),
+            (None, "Y151;I8;I8;Y151"),
+        )
 
 
 class TestInputSampleCheck(_UpdatesTestBase):

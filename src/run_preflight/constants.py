@@ -203,11 +203,14 @@ CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA = "check_has_extracted_sample_surface_ar
 TABLE_INPUT_SAMPLE = "input_sample"
 TABLE_ILLUMINA_SAMPLE = "illumina_sample"
 TABLE_TELLSEQ_SAMPLE = "tellseq_sample"
+TABLE_ILLUMINA_RUN = "illumina_run"
 TABLE_CHANGE_LOG = "change_log"
 
 # Columns updated by updates.py
 DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
 DB_COL_LANE = "lane"
+DB_COL_MASK_SHORT_READS = "mask_short_reads"
+DB_COL_OVERRIDE_CYCLES = "override_cycles"
 
 # Update-platform identifiers (caller-supplied platform string)
 UPDATE_PLATFORM_ILLUMINA = "illumina"
