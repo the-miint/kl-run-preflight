@@ -1,7 +1,7 @@
 """run_preflight — SQLite-backed representation of a sequencing run preflight."""
 
 from .db import create_db
-from .file_io import open_file
+from .file_io import open_file, save_bclconvert_v1_csv
 from .legacy.api import (
     load_legacy_csv,
     migrate_legacy_csv_to_db_file,
@@ -14,6 +14,7 @@ __all__ = [
     "create_db",
     "open_db_file",
     "open_file",
+    "save_bclconvert_v1_csv",
     "save_db_file",
     "load_legacy_csv",
     "save_legacy_csv",

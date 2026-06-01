@@ -63,6 +63,7 @@ EXPECTED_ILLUMINA_HEADER_CONSTANTS: dict[str, str] = {
 FIELD_REVERSE_COMPLEMENT = "ReverseComplement"
 FIELD_MASK_SHORT_READS = "MaskShortReads"
 FIELD_OVERRIDE_CYCLES = "OverrideCycles"
+FIELD_FILE_FORMAT_VERSION = "FileFormatVersion"
 
 
 # ---------------------------------------------------------------------------
