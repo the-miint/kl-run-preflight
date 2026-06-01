@@ -204,6 +204,7 @@ TABLE_INPUT_SAMPLE = "input_sample"
 TABLE_ILLUMINA_SAMPLE = "illumina_sample"
 TABLE_TELLSEQ_SAMPLE = "tellseq_sample"
 TABLE_ILLUMINA_RUN = "illumina_run"
+TABLE_PROJECT = "project"
 TABLE_CHANGE_LOG = "change_log"
 
 # Columns updated by updates.py
@@ -211,6 +212,7 @@ DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
 DB_COL_LANE = "lane"
 DB_COL_MASK_SHORT_READS = "mask_short_reads"
 DB_COL_OVERRIDE_CYCLES = "override_cycles"
+DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
 
 # Update-platform identifiers (caller-supplied platform string)
 UPDATE_PLATFORM_ILLUMINA = "illumina"

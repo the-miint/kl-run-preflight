@@ -330,12 +330,15 @@ CREATE TABLE legacy_extra_column (
 CREATE TABLE project (
     project_idx                      INTEGER PRIMARY KEY AUTOINCREMENT,
     project_name                    TEXT NOT NULL UNIQUE,
-    qiita_id                        TEXT NOT NULL,
+    external_project_id             TEXT,
     contact_email                   TEXT,
     human_filtering                 BOOLEAN NOT NULL DEFAULT 1,
     library_construction_protocol   TEXT NOT NULL,
     experiment_design_description   TEXT NOT NULL,
-    bioproject_accession            TEXT
+    bioproject_accession            TEXT,
+        -- NCBI BioProject accession
+    -- A project is identified by external_project_id, bioproject_accession, or both
+    CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)
 );
 
 CREATE TABLE input_plate (
@@ -648,7 +651,7 @@ CREATE VIEW input_plate_projects AS
 -- Maps each control sample to every project on its plate
 CREATE VIEW control_project_associations AS
     SELECT s.input_sample_idx, s.sample_name, st.name AS control_type,
-           pp.project_idx, p.project_name, p.qiita_id
+           pp.project_idx, p.project_name, p.external_project_id
     FROM input_sample s
     JOIN sample_type st ON s.sample_type_idx = st.sample_type_idx
     JOIN input_plate_projects pp ON s.input_plate_idx = pp.input_plate_idx
@@ -684,10 +687,10 @@ CREATE VIEW omnibus_sample_context AS
             WHEN 'katharoseq_cells_positive_control' THEN 'control katharoseq'
             ELSE 'control ' || st.name
         END AS "sample_type",
-        pp.qiita_id AS "primary_qiita_study",
+        pp.external_project_id AS "primary_qiita_study",
         GROUP_CONCAT(
             CASE WHEN op.project_idx != ip.primary_project_idx
-                 THEN op.qiita_id END
+                 THEN op.external_project_id END
         ) AS "secondary_qiita_studies"
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
@@ -700,7 +703,7 @@ CREATE VIEW omnibus_sample_context AS
     WHERE ins.project_idx IS NULL
     GROUP BY cs.run_idx, prs.prepped_sample_idx,
              COALESCE(prs.sample_name, ins.sample_name),
-             st.name, pp.qiita_id;
+             st.name, pp.external_project_id;
 
 -- ============================================================
 -- Omnibus Reconstruction Views — PacBio AbsQuant v11
@@ -801,7 +804,7 @@ CREATE VIEW omnibus_pacbio_absquant_v12_data AS
 CREATE VIEW omnibus_pacbio_absquant_v11_bioinformatics AS
     SELECT DISTINCT cs.run_idx,
         p.project_name AS "Sample_Project",
-        p.qiita_id AS "QiitaID",
+        p.external_project_id AS "QiitaID",
         p.human_filtering AS "HumanFiltering",
         p.library_construction_protocol AS "library_construction_protocol",
         p.experiment_design_description AS "experiment_design_description",
@@ -811,7 +814,7 @@ CREATE VIEW omnibus_pacbio_absquant_v11_bioinformatics AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
     JOIN project p ON ins.project_idx = p.project_idx
-    GROUP BY cs.run_idx, p.project_idx, p.project_name, p.qiita_id,
+    GROUP BY cs.run_idx, p.project_idx, p.project_name, p.external_project_id,
              p.human_filtering, p.library_construction_protocol,
              p.experiment_design_description;
 
@@ -939,7 +942,7 @@ CREATE VIEW omnibus_standard_metag_v90_data AS
 CREATE VIEW omnibus_standard_metag_v90_bioinformatics AS
     SELECT DISTINCT cs.run_idx,
         p.project_name AS "Sample_Project",
-        p.qiita_id AS "QiitaID",
+        p.external_project_id AS "QiitaID",
         ir.barcodes_are_rc AS "BarcodesAreRC",
         ir.forward_adapter AS "ForwardAdapter",
         ir.reverse_adapter AS "ReverseAdapter",
@@ -952,7 +955,7 @@ CREATE VIEW omnibus_standard_metag_v90_bioinformatics AS
     JOIN project p ON ins.project_idx = p.project_idx
     JOIN processing_run sr ON cs.run_idx = sr.run_idx
     JOIN illumina_run ir ON sr.run_idx = ir.run_idx
-    GROUP BY cs.run_idx, p.project_idx, p.project_name, p.qiita_id,
+    GROUP BY cs.run_idx, p.project_idx, p.project_name, p.external_project_id,
              ir.barcodes_are_rc, ir.forward_adapter, ir.reverse_adapter,
              p.human_filtering, p.library_construction_protocol,
              p.experiment_design_description;

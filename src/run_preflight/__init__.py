@@ -9,6 +9,7 @@ from .legacy.api import (
 )
 from .migrate import open_db_file, save_db_file
 from .updates import (
+    set_bioproject_accession,
     set_biosample_accession,
     set_mask_short_reads,
     set_override_cycles,
@@ -24,6 +25,7 @@ __all__ = [
     "load_legacy_csv",
     "save_legacy_csv",
     "migrate_legacy_csv_to_db_file",
+    "set_bioproject_accession",
     "set_biosample_accession",
     "set_mask_short_reads",
     "set_override_cycles",

@@ -348,8 +348,7 @@ def _merge_extra_columns(
     )
 
     extra_values: dict[tuple[int, str], str | None] = {
-        (prs_idx, col_name): col_value
-        for prs_idx, col_name, col_value in extra_rows
+        (prs_idx, col_name): col_value for prs_idx, col_name, col_value in extra_rows
     }
 
     # Sample_ID is the prepped_sample_idx; find its index in active_cols

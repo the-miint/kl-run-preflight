@@ -330,12 +330,15 @@ CREATE TABLE legacy_extra_column (
 CREATE TABLE project (
     project_idx                      INTEGER PRIMARY KEY AUTOINCREMENT,
     project_name                    TEXT NOT NULL UNIQUE,
-    external_project_id                        TEXT NOT NULL,
+    external_project_id             TEXT,
     contact_email                   TEXT,
     human_filtering                 BOOLEAN NOT NULL DEFAULT 1,
     library_construction_protocol   TEXT NOT NULL,
     experiment_design_description   TEXT NOT NULL,
-    bioproject_accession            TEXT
+    bioproject_accession            TEXT,
+        -- NCBI BioProject accession
+    -- A project is identified by external_project_id, bioproject_accession, or both
+    CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)
 );
 
 CREATE TABLE input_plate (

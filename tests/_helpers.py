@@ -134,9 +134,7 @@ def seed_sample_chain(
 
     Returns (input_sample_idx, compression_sample_idx, prepped_sample_idx).
     """
-    ins_idx = seed_input_sample(
-        conn, plate_idx, project_idx, sample_name=sample_name
-    )
+    ins_idx = seed_input_sample(conn, plate_idx, project_idx, sample_name=sample_name)
     cs_idx = seed_compression_sample(conn, run_idx, ins_idx, well=well)
     prs_idx = seed_prepped_sample(conn, cs_idx, well=well, sample_name=prs_name)
     return ins_idx, cs_idx, prs_idx

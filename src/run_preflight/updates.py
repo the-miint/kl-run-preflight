@@ -10,6 +10,7 @@ from __future__ import annotations
 import sqlite3
 
 from .constants import (
+    DB_COL_BIOPROJECT_ACCESSION,
     DB_COL_BIOSAMPLE_ACCESSION,
     DB_COL_LANE,
     DB_COL_MASK_SHORT_READS,
@@ -18,6 +19,7 @@ from .constants import (
     TABLE_ILLUMINA_RUN,
     TABLE_ILLUMINA_SAMPLE,
     TABLE_INPUT_SAMPLE,
+    TABLE_PROJECT,
     TABLE_TELLSEQ_SAMPLE,
     UPDATE_PLATFORM_ILLUMINA,
     UPDATE_PLATFORM_TELLSEQ,
@@ -66,6 +68,35 @@ def _log_change(
     )
 
 
+def _apply_single_row_update(
+    conn: sqlite3.Connection,
+    table: str,
+    pk_col: str,
+    pk_value: int,
+    column: str,
+    old_value: object,
+    new_value: object,
+    reason: str | None,
+) -> None:
+    """Apply a single-column update to one row and log it in change_log.
+
+    *table*, *pk_col*, and *column* must come from a closed set of
+    constants — they are interpolated into the SQL statement. The
+    update and audit-log insert run inside one transaction: a failure
+    in either rolls back both.
+    """
+    try:
+        conn.execute(
+            f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
+            (new_value, pk_value),
+        )
+        _log_change(conn, table, pk_value, column, old_value, new_value, reason)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def set_biosample_accession(
     conn: sqlite3.Connection,
     sample_name: str,
@@ -108,27 +139,16 @@ def set_biosample_accession(
         )
 
     input_sample_idx, old_accession = matches[0]
-
-    # Apply the update and write the audit row in a single transaction.
-    try:
-        cur.execute(
-            f"UPDATE {TABLE_INPUT_SAMPLE} "
-            f"SET {DB_COL_BIOSAMPLE_ACCESSION} = ? WHERE input_sample_idx = ?",
-            (accession, input_sample_idx),
-        )
-        _log_change(
-            conn,
-            TABLE_INPUT_SAMPLE,
-            input_sample_idx,
-            DB_COL_BIOSAMPLE_ACCESSION,
-            old_accession,
-            accession,
-            reason,
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+    _apply_single_row_update(
+        conn,
+        TABLE_INPUT_SAMPLE,
+        "input_sample_idx",
+        input_sample_idx,
+        DB_COL_BIOSAMPLE_ACCESSION,
+        old_accession,
+        accession,
+        reason,
+    )
 
 
 def update_lane(
@@ -240,32 +260,21 @@ def _set_illumina_run_column(
     user input — it is interpolated into the SQL statement.
     """
     run_idx = get_single_run_idx(conn)
-    cur = conn.cursor()
-    cur.execute(
+    cur = conn.execute(
         f"SELECT {column} FROM {TABLE_ILLUMINA_RUN} WHERE run_idx = ?",
         (run_idx,),
     )
     (old_value,) = cur.fetchone()
-
-    # Apply the update and write the audit row in a single transaction.
-    try:
-        cur.execute(
-            f"UPDATE {TABLE_ILLUMINA_RUN} SET {column} = ? WHERE run_idx = ?",
-            (value, run_idx),
-        )
-        _log_change(
-            conn,
-            TABLE_ILLUMINA_RUN,
-            run_idx,
-            column,
-            old_value,
-            value,
-            reason,
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+    _apply_single_row_update(
+        conn,
+        TABLE_ILLUMINA_RUN,
+        "run_idx",
+        run_idx,
+        column,
+        old_value,
+        value,
+        reason,
+    )
 
 
 def set_mask_short_reads(
@@ -284,3 +293,64 @@ def set_override_cycles(
 ) -> None:
     """Set illumina_run.override_cycles to *value*; None clears it."""
     _set_illumina_run_column(conn, DB_COL_OVERRIDE_CYCLES, value, reason)
+
+
+def set_bioproject_accession(
+    conn: sqlite3.Connection,
+    accession: str | None,
+    *,
+    project_name: str | None = None,
+    external_project_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Set bioproject_accession on the project matching the given key.
+
+    Exactly one of *project_name* or *external_project_id* must be
+    non-None. *accession* may be None to clear; doing so raises
+    IntegrityError if it would leave both accession identifiers NULL.
+
+    Raises:
+        ValueError: If zero or two key arguments are supplied, if no
+            project matches the supplied key, or if *external_project_id*
+            matches multiple projects (the column is not unique).
+    """
+    # Require exactly one of the two lookup keys.
+    supplied = {
+        "project_name": project_name,
+        "external_project_id": external_project_id,
+    }
+    keys = [k for k, v in supplied.items() if v is not None]
+    if len(keys) != 1:
+        raise ValueError(
+            "Exactly one of project_name or external_project_id must be "
+            f"supplied; got {keys}"
+        )
+    key_col = keys[0]
+    key_value = supplied[key_col]
+
+    # Resolve the chosen key to project_idx and capture the prior value.
+    # key_col is one of two whitelisted column names — safe to interpolate.
+    cur = conn.execute(
+        f"SELECT project_idx, {DB_COL_BIOPROJECT_ACCESSION} "
+        f"FROM {TABLE_PROJECT} WHERE {key_col} = ?",
+        (key_value,),
+    )
+    matches = cur.fetchall()
+    if not matches:
+        raise ValueError(f"No project matches {key_col} {key_value!r}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"{key_col} {key_value!r} is ambiguous; resolves to {len(matches)} projects"
+        )
+
+    project_idx, old_accession = matches[0]
+    _apply_single_row_update(
+        conn,
+        TABLE_PROJECT,
+        "project_idx",
+        project_idx,
+        DB_COL_BIOPROJECT_ACCESSION,
+        old_accession,
+        accession,
+        reason,
+    )

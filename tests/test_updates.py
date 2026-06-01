@@ -1,5 +1,5 @@
-"""Tests for updates.py: set_biosample_accession, update_lane,
-set_mask_short_reads, set_override_cycles."""
+"""Tests for updates.py: set_biosample_accession, set_bioproject_accession,
+update_lane, set_mask_short_reads, set_override_cycles."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import pytest
 from run_preflight.db import create_db
 from run_preflight.updates import (
     _set_illumina_run_column,
+    set_bioproject_accession,
     set_biosample_accession,
     set_mask_short_reads,
     set_override_cycles,
@@ -259,6 +260,135 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
                     "biosample_accession",
                     "SAMN006",
                     "SAMN007",
+                    "correction",
+                ),
+            ]
+            self.assertEqual(cur.fetchall(), expected)
+
+
+class TestSetBioprojectAccession(_UpdatesTestBase):
+    # The shared setUp seeds proj1 with external_project_id='1';
+    # tests below use that default project unless noted otherwise.
+
+    def _read_bioproject(self) -> str | None:
+        """Return project.bioproject_accession for the default test project."""
+        with _open(self.db_path) as conn:
+            (val,) = conn.execute(
+                "SELECT bioproject_accession FROM project WHERE project_idx = ?",
+                (self.project_idx,),
+            ).fetchone()
+            return val
+
+    def test_set_bioproject_accession_by_project_name(self):
+        with _open(self.db_path) as conn:
+            set_bioproject_accession(
+                conn, "PRJNA001", project_name="proj1", reason="initial"
+            )
+        self.assertEqual(self._read_bioproject(), "PRJNA001")
+
+    def test_set_bioproject_accession_by_external_project_id(self):
+        with _open(self.db_path) as conn:
+            set_bioproject_accession(conn, "PRJNA002", external_project_id="1")
+        self.assertEqual(self._read_bioproject(), "PRJNA002")
+
+    def test_set_bioproject_accession_clear_when_external_present(self):
+        # external_project_id='1' keeps an identifier on the project; clearing is allowed
+        with _open(self.db_path) as conn:
+            set_bioproject_accession(conn, "PRJNA003", project_name="proj1")
+            set_bioproject_accession(conn, None, project_name="proj1")
+        self.assertIsNone(self._read_bioproject())
+
+    def test_set_bioproject_accession_clear_rejected_without_other_identifier(self):
+        # Drop external_project_id so clearing bioproject_accession would leave no identifier
+        with _open(self.db_path) as conn:
+            conn.execute(
+                "UPDATE project SET bioproject_accession = 'PRJNA004', "
+                "external_project_id = NULL WHERE project_idx = ?",
+                (self.project_idx,),
+            )
+            conn.commit()
+
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(sqlite3.IntegrityError, match="CHECK"),
+        ):
+            set_bioproject_accession(conn, None, project_name="proj1")
+
+    def test_set_bioproject_accession_no_key(self):
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one"),
+        ):
+            set_bioproject_accession(conn, "PRJNA005")
+
+    def test_set_bioproject_accession_both_keys(self):
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one"),
+        ):
+            set_bioproject_accession(
+                conn,
+                "PRJNA006",
+                project_name="proj1",
+                external_project_id="1",
+            )
+
+    def test_set_bioproject_accession_missing(self):
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="No project matches"),
+        ):
+            set_bioproject_accession(conn, "PRJNA007", project_name="nonexistent")
+
+    def test_set_bioproject_accession_ambiguous_external_id(self):
+        # Insert a second project sharing external_project_id with proj1
+        with _open(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO project "
+                "(project_name, external_project_id, human_filtering, "
+                " library_construction_protocol, experiment_design_description) "
+                "VALUES ('proj2', '1', 1, 'proto', 'desc')"
+            )
+            conn.commit()
+
+        with (
+            _open(self.db_path) as conn,
+            pytest.raises(ValueError, match="ambiguous"),
+        ):
+            set_bioproject_accession(conn, "PRJNA008", external_project_id="1")
+
+    def test_set_bioproject_accession_audit(self):
+        # Two successive sets so the second log entry captures the
+        # first call's value as old_value
+        with _open(self.db_path) as conn:
+            set_bioproject_accession(
+                conn, "PRJNA009", project_name="proj1", reason="initial"
+            )
+            set_bioproject_accession(
+                conn, "PRJNA010", project_name="proj1", reason="correction"
+            )
+
+        with _open(self.db_path) as conn:
+            cur = conn.execute(
+                "SELECT table_name, row_idx, column_name, "
+                " old_value, new_value, reason "
+                "FROM change_log ORDER BY change_idx"
+            )
+            expected = [
+                (
+                    "project",
+                    self.project_idx,
+                    "bioproject_accession",
+                    None,
+                    "PRJNA009",
+                    "initial",
+                ),
+                (
+                    "project",
+                    self.project_idx,
+                    "bioproject_accession",
+                    "PRJNA009",
+                    "PRJNA010",
                     "correction",
                 ),
             ]
