@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from ..db import create_db, get_section_formats, populate_db
+from ..db import create_db, get_section_formats, get_single_run_idx, populate_db
 from ..migrate import save_db_file
 from .parser import parse_omnibus
 from .reconstruct import reconstruct_omnibus
@@ -51,11 +51,8 @@ def save_legacy_csv(conn: sqlite3.Connection, csv_path: str) -> None:
         ValueError: If *conn* contains zero or multiple processing runs.
     """
     # Confirm exactly one processing run before reconstructing
-    run_idxs = [row[0] for row in conn.execute("SELECT run_idx FROM processing_run")]
-    if len(run_idxs) != 1:
-        raise ValueError(f"Expected exactly one processing run, found {len(run_idxs)}")
-
-    csv_text = reconstruct_omnibus(conn, run_idxs[0])
+    run_idx = get_single_run_idx(conn)
+    csv_text = reconstruct_omnibus(conn, run_idx)
 
     # Write reconstructed text to the requested path
     Path(csv_path).write_text(csv_text)

@@ -19,6 +19,7 @@ from .constants import (
     SECTION_HEADER,
     SECTION_SETTINGS,
 )
+from .db import get_single_run_idx
 from .legacy.api import load_legacy_csv
 from .migrate import open_db_file
 
@@ -42,7 +43,7 @@ def save_bclconvert_v1_csv(conn: sqlite3.Connection, csv_path: str) -> None:
             or if the run has no illumina_sample rows.
     """
     # Resolve the one run and pull all needed data before any formatting
-    run_idx = _get_single_run_idx(conn)
+    run_idx = get_single_run_idx(conn)
     data_rows = _fetch_illumina_sample_rows(conn, run_idx)
     if not data_rows:
         raise ValueError(
@@ -58,18 +59,6 @@ def save_bclconvert_v1_csv(conn: sqlite3.Connection, csv_path: str) -> None:
 # ---------------------------------------------------------------------------
 # Data fetchers (DB-only)
 # ---------------------------------------------------------------------------
-
-
-def _get_single_run_idx(conn: sqlite3.Connection) -> int:
-    """Return the run_idx of the sole processing_run in *conn*.
-
-    Raises:
-        ValueError: If zero or multiple processing_run rows exist.
-    """
-    run_idxs = [row[0] for row in conn.execute("SELECT run_idx FROM processing_run")]
-    if len(run_idxs) != 1:
-        raise ValueError(f"Expected exactly one processing run, found {len(run_idxs)}")
-    return run_idxs[0]
 
 
 def _fetch_illumina_sample_rows(
@@ -144,15 +133,12 @@ def _format_bclconvert_v1(
 
     # [Data] — Lane column included only when illumina_sample.lane is non-null
     include_lane = data_rows[0][1] is not None
+    lane_prefix: list = [COL_LANE] if include_lane else []
     writer.writerow([f"[{SECTION_DATA}]"])
-    if include_lane:
-        writer.writerow([COL_LANE, COL_SAMPLE_ID, COL_INDEX, COL_INDEX2])
-        for ils_idx, lane, i7_seq, i5_seq in data_rows:
-            writer.writerow([lane, ils_idx, i7_seq, i5_seq])
-    else:
-        writer.writerow([COL_SAMPLE_ID, COL_INDEX, COL_INDEX2])
-        for ils_idx, _lane, i7_seq, i5_seq in data_rows:
-            writer.writerow([ils_idx, i7_seq, i5_seq])
+    writer.writerow(lane_prefix + [COL_SAMPLE_ID, COL_INDEX, COL_INDEX2])
+    for ils_idx, lane, i7_seq, i5_seq in data_rows:
+        row_prefix: list = [lane] if include_lane else []
+        writer.writerow(row_prefix + [ils_idx, i7_seq, i5_seq])
 
     return output.getvalue()
 

@@ -7,6 +7,8 @@ import unittest
 
 from run_preflight.db import create_db
 
+from . import _helpers
+
 
 def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
     """Create minimal prerequisite rows and return (run_idx, prs_idx).
@@ -16,66 +18,11 @@ def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
     metagenomic_absquant_sample can reference a valid
     prepped_sample_idx.
     """
-    cur = conn.cursor()
-
-    # Insert a project
-    cur.execute(
-        "INSERT INTO project "
-        "(project_name, external_project_id, human_filtering, "
-        " library_construction_protocol, experiment_design_description) "
-        "VALUES ('proj1', '1', 1, 'proto', 'desc')"
-    )
-    assert cur.lastrowid is not None
-    project_idx = cur.lastrowid
-
-    # Insert an input plate
-    cur.execute(
-        "INSERT INTO input_plate (plate_name, primary_project_idx) VALUES ('plate1', ?)",
-        (project_idx,),
-    )
-    assert cur.lastrowid is not None
-    plate_idx = cur.lastrowid
-
-    # Insert an input sample
-    cur.execute(
-        "INSERT INTO input_sample "
-        "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
-        "VALUES ('sample1', ?, ?, 1)",
-        (plate_idx, project_idx),
-    )
-    assert cur.lastrowid is not None
-    input_sample_idx = cur.lastrowid
-
-    # Insert a processing run
-    cur.execute(
-        "INSERT INTO processing_run "
-        "(experiment_name, run_date, instrument_type, "
-        " assay_type_idx, platform_idx) "
-        "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
-    )
-    assert cur.lastrowid is not None
-    run_idx = cur.lastrowid
-
-    # Insert a compression_sample
-    cur.execute(
-        "INSERT INTO compression_sample "
-        "(run_idx, input_sample_idx, compression_well) "
-        "VALUES (?, ?, 'A1')",
-        (run_idx, input_sample_idx),
-    )
-    assert cur.lastrowid is not None
-    cs_idx = cur.lastrowid
-
-    # Insert a compression sample
-    cur.execute(
-        "INSERT INTO prepped_sample "
-        "(compression_sample_idx, prepped_well) "
-        "VALUES (?, 'A1')",
-        (cs_idx,),
-    )
-    assert cur.lastrowid is not None
-    prs_idx = cur.lastrowid
-
+    project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
+    run_idx = _helpers.seed_processing_run(conn)
+    input_sample_idx = _helpers.seed_input_sample(conn, plate_idx, project_idx)
+    cs_idx = _helpers.seed_compression_sample(conn, run_idx, input_sample_idx)
+    prs_idx = _helpers.seed_prepped_sample(conn, cs_idx)
     conn.commit()
     return run_idx, prs_idx
 
@@ -231,34 +178,11 @@ class TestRunCapabilityViews(unittest.TestCase):
 
     def _add_second_sample(self) -> int:
         """Add a second compression sample to the same run."""
-        cur = self.conn.cursor()
-
-        # Reuse existing plate and project
-        cur.execute(
-            "INSERT INTO input_sample "
-            "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
-            "VALUES ('sample2', 1, 1, 1)"
+        # Reuse existing plate (1) and project (1)
+        _ins, _cs, prs_idx = _helpers.seed_sample_chain(
+            self.conn, 1, 1, self.run_idx, sample_name="sample2", well="B1"
         )
-        assert cur.lastrowid is not None
-        input_sample_idx = cur.lastrowid
-
-        cur.execute(
-            "INSERT INTO compression_sample "
-            "(run_idx, input_sample_idx, compression_well) "
-            "VALUES (?, ?, 'B1')",
-            (self.run_idx, input_sample_idx),
-        )
-        assert cur.lastrowid is not None
-        cs_idx = cur.lastrowid
-
-        cur.execute(
-            "INSERT INTO prepped_sample "
-            "(compression_sample_idx, prepped_well) "
-            "VALUES (?, 'B1')",
-            (cs_idx,),
-        )
-        assert cur.lastrowid is not None
-        return cur.lastrowid
+        return prs_idx
 
 
 class TestRunDerivedCapability(unittest.TestCase):

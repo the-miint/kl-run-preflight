@@ -196,6 +196,18 @@ def get_view_columns(cur, view_name: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def get_single_run_idx(conn: sqlite3.Connection) -> int:
+    """Return the run_idx of the sole processing_run in *conn*.
+
+    Raises:
+        ValueError: If zero or multiple processing_run rows exist.
+    """
+    run_idxs = [row[0] for row in conn.execute("SELECT run_idx FROM processing_run")]
+    if len(run_idxs) != 1:
+        raise ValueError(f"Expected exactly one processing run, found {len(run_idxs)}")
+    return run_idxs[0]
+
+
 def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
     """Return a mapping of section name to section format from the DB.
 
@@ -263,6 +275,18 @@ def _check_per_tube_consistency(
                 f"{col!r}: first row has {first_val!r}, this row has "
                 f"{current_val!r}"
             )
+
+
+def _opt_float(row: dict, col: str) -> float | None:
+    """Return ``float(row[col])`` or None if the column is absent/empty."""
+    val = row.get(col)
+    return float(val) if val else None
+
+
+def _opt_int(row: dict, col: str) -> int | None:
+    """Return ``int(row[col])`` or None if the column is absent/empty."""
+    val = row.get(col)
+    return int(val) if val else None
 
 
 def _parse_bool_str(value: str | None, *, nullable: bool = False) -> int | None:
@@ -666,37 +690,6 @@ def _populate_absquant_sample(cur, prs_idx: int, row: dict):
     if COL_MASS_SYNDNA_INPUT not in row:
         return
 
-    mass = float(row[COL_MASS_SYNDNA_INPUT]) if row.get(COL_MASS_SYNDNA_INPUT) else None
-    conc = (
-        float(row[COL_EXTRACTED_GDNA_CONC])
-        if row.get(COL_EXTRACTED_GDNA_CONC)
-        else None
-    )
-
-    # Parse sequenced sample gDNA mass (shared across all absquant capabilities)
-    gdna_mass = (
-        float(row[COL_SEQUENCED_SAMPLE_GDNA_MASS])
-        if row.get(COL_SEQUENCED_SAMPLE_GDNA_MASS)
-        else None
-    )
-
-    # Parse optional total-sample-input metric columns
-    sample_mass = (
-        float(row[COL_EXTRACTED_SAMPLE_MASS])
-        if row.get(COL_EXTRACTED_SAMPLE_MASS)
-        else None
-    )
-    sample_vol = (
-        float(row[COL_EXTRACTED_SAMPLE_VOLUME])
-        if row.get(COL_EXTRACTED_SAMPLE_VOLUME)
-        else None
-    )
-    sample_sa = (
-        float(row[COL_EXTRACTED_SAMPLE_SURFACE_AREA])
-        if row.get(COL_EXTRACTED_SAMPLE_SURFACE_AREA)
-        else None
-    )
-
     cur.execute(
         "INSERT INTO metagenomic_absquant_sample "
         "(prepped_sample_idx, syndna_pool_mass_ng, "
@@ -707,13 +700,13 @@ def _populate_absquant_sample(cur, prs_idx: int, row: dict):
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             prs_idx,
-            mass,
-            conc,
+            _opt_float(row, COL_MASS_SYNDNA_INPUT),
+            _opt_float(row, COL_EXTRACTED_GDNA_CONC),
             row.get(COL_SYNDNA_POOL_NUMBER) or None,
-            gdna_mass,
-            sample_mass,
-            sample_vol,
-            sample_sa,
+            _opt_float(row, COL_SEQUENCED_SAMPLE_GDNA_MASS),
+            _opt_float(row, COL_EXTRACTED_SAMPLE_MASS),
+            _opt_float(row, COL_EXTRACTED_SAMPLE_VOLUME),
+            _opt_float(row, COL_EXTRACTED_SAMPLE_SURFACE_AREA),
         ),
     )
 
@@ -732,13 +725,11 @@ def _populate_metatranscriptomic_sample(cur, prs_idx: int, row: dict):
     if COL_TOTAL_RNA_CONC not in row:
         return
 
-    conc = float(row[COL_TOTAL_RNA_CONC]) if row.get(COL_TOTAL_RNA_CONC) else None
-
     cur.execute(
         "INSERT INTO metatranscriptomic_sample "
         "(prepped_sample_idx, total_rna_concentration_ng_ul) "
         "VALUES (?, ?)",
-        (prs_idx, conc),
+        (prs_idx, _opt_float(row, COL_TOTAL_RNA_CONC)),
     )
 
 
@@ -776,15 +767,11 @@ def _populate_tellseq_sample(cur, prs_idx: int, row: dict):
         row: A single Data-section row dict containing TellSeq-specific
             columns (barcode_id, and optionally Lane).
     """
-    # Parse lane as integer if present
-    lane_val = row.get(COL_LANE)
-    lane = int(lane_val) if lane_val else None
-
     cur.execute(
         "INSERT INTO tellseq_sample "
         "(prepped_sample_idx, barcode_id, lane) "
         "VALUES (?, ?, ?)",
-        (prs_idx, row.get(COL_BARCODE_ID, ""), lane),
+        (prs_idx, row.get(COL_BARCODE_ID, ""), _opt_int(row, COL_LANE)),
     )
 
 
@@ -797,10 +784,6 @@ def _populate_illumina_sample(cur, prs_idx: int, row: dict):
         row: A single Data-section row dict containing Illumina index
             columns (I7_Index_ID, index, I5_Index_ID, index2).
     """
-    # Parse lane as integer if present
-    lane_val = row.get(COL_LANE)
-    lane = int(lane_val) if lane_val else None
-
     cur.execute(
         "INSERT INTO illumina_sample "
         "(prepped_sample_idx, i7_index_id, i7_sequence, "
@@ -812,7 +795,7 @@ def _populate_illumina_sample(cur, prs_idx: int, row: dict):
             row.get(COL_INDEX, ""),
             row.get(COL_I5_INDEX_ID, ""),
             row.get(COL_INDEX2, ""),
-            lane,
+            _opt_int(row, COL_LANE),
         ),
     )
 

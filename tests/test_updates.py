@@ -13,6 +13,8 @@ import pytest
 from run_preflight.db import create_db
 from run_preflight.updates import set_biosample_accession, update_lane
 
+from . import _helpers
+
 
 @contextlib.contextmanager
 def _open(db_path: str):
@@ -27,25 +29,8 @@ def _open(db_path: str):
 
 def _setup_run(conn: sqlite3.Connection) -> tuple[int, int, int]:
     """Insert a project, plate, and run; return (project_idx, plate_idx, run_idx)."""
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO project "
-        "(project_name, external_project_id, human_filtering, "
-        " library_construction_protocol, experiment_design_description) "
-        "VALUES ('proj1', '1', 1, 'proto', 'desc')"
-    )
-    project_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO input_plate (plate_name, primary_project_idx) VALUES ('plate1', ?)",
-        (project_idx,),
-    )
-    plate_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO processing_run "
-        "(experiment_name, run_date, instrument_type, assay_type_idx, platform_idx) "
-        "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
-    )
-    run_idx = cur.lastrowid
+    project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
+    run_idx = _helpers.seed_processing_run(conn)
     conn.commit()
     return project_idx, plate_idx, run_idx
 
@@ -60,28 +45,15 @@ def _add_sample(
     prs_name: str | None = None,
 ) -> tuple[int, int]:
     """Insert input + compression + prepped sample; return (ins_idx, prs_idx)."""
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO input_sample "
-        "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
-        "VALUES (?, ?, ?, 1)",
-        (sample_name, plate_idx, project_idx),
+    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+        conn,
+        plate_idx,
+        project_idx,
+        run_idx,
+        sample_name=sample_name,
+        well=well,
+        prs_name=prs_name,
     )
-    ins_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO compression_sample "
-        "(run_idx, input_sample_idx, compression_well) "
-        "VALUES (?, ?, ?)",
-        (run_idx, ins_idx, well),
-    )
-    cs_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO prepped_sample "
-        "(compression_sample_idx, prepped_well, sample_name) "
-        "VALUES (?, ?, ?)",
-        (cs_idx, well, prs_name),
-    )
-    prs_idx = cur.lastrowid
     conn.commit()
     return ins_idx, prs_idx
 
@@ -92,16 +64,9 @@ def _add_illumina_row(
     lane: int | None = None,
 ) -> int:
     """Insert one illumina_sample row; return its surrogate id."""
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO illumina_sample "
-        "(prepped_sample_idx, i7_index_id, i7_sequence, "
-        " i5_index_id, i5_sequence, lane) "
-        "VALUES (?, 'i7', 'AAAA', 'i5', 'CCCC', ?)",
-        (prs_idx, lane),
-    )
+    ils_idx = _helpers.seed_illumina_sample(conn, prs_idx, lane=lane)
     conn.commit()
-    return cur.lastrowid
+    return ils_idx
 
 
 class _UpdatesTestBase(unittest.TestCase):

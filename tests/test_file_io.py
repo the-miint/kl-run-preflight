@@ -18,6 +18,8 @@ from run_preflight import (
 from run_preflight.db import create_db
 from run_preflight.legacy import LegacyExtraColumnWarning
 
+from . import _helpers
+
 DATA_DIR = Path(__file__).parent / "data"
 GOOD_CSV = DATA_DIR / "good_standard_metagv90.csv"
 
@@ -25,24 +27,6 @@ GOOD_CSV = DATA_DIR / "good_standard_metagv90.csv"
 # ---------------------------------------------------------------------------
 # Fixture helpers — minimal in-memory DB shaped for the bcl-convert v1 writer
 # ---------------------------------------------------------------------------
-
-
-def _seed_project_and_plate(conn: sqlite3.Connection) -> tuple[int, int]:
-    """Insert a single project and input_plate; return (project_idx, plate_idx)."""
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO project "
-        "(project_name, external_project_id, human_filtering, "
-        " library_construction_protocol, experiment_design_description) "
-        "VALUES ('proj1', '1', 1, 'proto', 'desc')"
-    )
-    project_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO input_plate (plate_name, primary_project_idx) VALUES ('plate1', ?)",
-        (project_idx,),
-    )
-    plate_idx = cur.lastrowid
-    return project_idx, plate_idx
 
 
 def _seed_illumina_run(
@@ -55,31 +39,24 @@ def _seed_illumina_run(
 
     Returns the run_idx.
     """
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO processing_run "
-        "(experiment_name, run_date, instrument_type, assay_type_idx, platform_idx) "
-        "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
-    )
-    run_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO illumina_run "
-        "(run_idx, read1_length, read2_length, mask_short_reads, override_cycles) "
-        "VALUES (?, 151, 151, ?, ?)",
-        (run_idx, mask_short_reads, override_cycles),
+    run_idx = _helpers.seed_processing_run(conn)
+    _helpers.seed_illumina_run_config(
+        conn,
+        run_idx,
+        mask_short_reads=mask_short_reads,
+        override_cycles=override_cycles,
     )
     return run_idx
 
 
 def _seed_pacbio_run(conn: sqlite3.Connection) -> int:
     """Insert a processing_run on the PacBio platform with no illumina_run row."""
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO processing_run "
-        "(experiment_name, run_date, instrument_type, assay_type_idx, platform_idx) "
-        "VALUES ('exp_pb', '2025-01-01', 'Revio', 1, 2)"
+    return _helpers.seed_processing_run(
+        conn,
+        experiment_name="exp_pb",
+        instrument_type="Revio",
+        platform_idx=2,
     )
-    return cur.lastrowid
 
 
 def _seed_prepped_sample(
@@ -91,47 +68,15 @@ def _seed_prepped_sample(
     well: str,
 ) -> int:
     """Insert input_sample + compression_sample + prepped_sample; return prs_idx."""
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO input_sample "
-        "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
-        "VALUES (?, ?, ?, 1)",
-        (sample_name, plate_idx, project_idx),
+    _ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+        conn,
+        plate_idx,
+        project_idx,
+        run_idx,
+        sample_name=sample_name,
+        well=well,
     )
-    ins_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO compression_sample "
-        "(run_idx, input_sample_idx, compression_well) "
-        "VALUES (?, ?, ?)",
-        (run_idx, ins_idx, well),
-    )
-    cs_idx = cur.lastrowid
-    cur.execute(
-        "INSERT INTO prepped_sample "
-        "(compression_sample_idx, prepped_well, sample_name) "
-        "VALUES (?, ?, NULL)",
-        (cs_idx, well),
-    )
-    return cur.lastrowid
-
-
-def _add_illumina_sample(
-    conn: sqlite3.Connection,
-    prs_idx: int,
-    i7_seq: str,
-    i5_seq: str,
-    lane: int | None = None,
-) -> int:
-    """Insert one illumina_sample row; return its surrogate id."""
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO illumina_sample "
-        "(prepped_sample_idx, i7_index_id, i7_sequence, "
-        " i5_index_id, i5_sequence, lane) "
-        "VALUES (?, 'i7', ?, 'i5', ?, ?)",
-        (prs_idx, i7_seq, i5_seq, lane),
-    )
-    return cur.lastrowid
+    return prs_idx
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +159,7 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
     def test_save_bclconvert_v1_csv(self):
         # Single-lane run with both [Settings] keys populated produces the
         # full four-section file
-        project_idx, plate_idx = _seed_project_and_plate(self.conn)
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(
             self.conn, mask_short_reads="22", override_cycles="Y151;I8;I8;Y151"
         )
@@ -224,8 +169,12 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         prs2 = _seed_prepped_sample(
             self.conn, plate_idx, project_idx, run_idx, "S2", "A2"
         )
-        _add_illumina_sample(self.conn, prs1, "ATCACGAT", "CGATGTAC", lane=1)
-        _add_illumina_sample(self.conn, prs2, "TTAGGCAT", "GGCTACTG", lane=1)
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=1
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs2, i7_seq="TTAGGCAT", i5_seq="GGCTACTG", lane=1
+        )
         self.conn.commit()
 
         save_bclconvert_v1_csv(self.conn, str(self.out_path))
@@ -249,14 +198,16 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         # When illumina_sample.lane is uniformly NULL, the Lane column
         # is omitted from [Data]. Settings are populated here so this
         # test isolates the no-lane behavior from the no-settings path.
-        project_idx, plate_idx = _seed_project_and_plate(self.conn)
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(
             self.conn, mask_short_reads="22", override_cycles="Y151;I8;I8;Y151"
         )
         prs1 = _seed_prepped_sample(
             self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
         )
-        _add_illumina_sample(self.conn, prs1, "ATCACGAT", "CGATGTAC", lane=None)
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=None
+        )
         self.conn.commit()
 
         save_bclconvert_v1_csv(self.conn, str(self.out_path))
@@ -277,12 +228,14 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
 
     def test_save_bclconvert_v1_csv_no_settings(self):
         # When both setting columns are NULL, [Settings] is omitted entirely
-        project_idx, plate_idx = _seed_project_and_plate(self.conn)
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(self.conn)
         prs1 = _seed_prepped_sample(
             self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
         )
-        _add_illumina_sample(self.conn, prs1, "ATCACGAT", "CGATGTAC", lane=1)
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=1
+        )
         self.conn.commit()
 
         save_bclconvert_v1_csv(self.conn, str(self.out_path))
@@ -300,12 +253,14 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
     def test_save_bclconvert_v1_csv_only_mask_short_reads(self):
         # When only mask_short_reads is non-null, [Settings] contains
         # only that line
-        project_idx, plate_idx = _seed_project_and_plate(self.conn)
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(self.conn, mask_short_reads="22")
         prs1 = _seed_prepped_sample(
             self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
         )
-        _add_illumina_sample(self.conn, prs1, "ATCACGAT", "CGATGTAC", lane=1)
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=1
+        )
         self.conn.commit()
 
         save_bclconvert_v1_csv(self.conn, str(self.out_path))
@@ -326,12 +281,14 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
     def test_save_bclconvert_v1_csv_only_override_cycles(self):
         # When only override_cycles is non-null, [Settings] contains
         # only that line
-        project_idx, plate_idx = _seed_project_and_plate(self.conn)
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(self.conn, override_cycles="Y151;I8;I8;Y151")
         prs1 = _seed_prepped_sample(
             self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
         )
-        _add_illumina_sample(self.conn, prs1, "ATCACGAT", "CGATGTAC", lane=1)
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=1
+        )
         self.conn.commit()
 
         save_bclconvert_v1_csv(self.conn, str(self.out_path))
@@ -354,13 +311,17 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         # data rows ordered by illumina_sample_idx. Lane values 3 and 7
         # are deliberately distinct from the illumina_sample_idx values
         # (1 and 2) so a swap between the two columns would be visible.
-        project_idx, plate_idx = _seed_project_and_plate(self.conn)
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(self.conn)
         prs1 = _seed_prepped_sample(
             self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
         )
-        _add_illumina_sample(self.conn, prs1, "ATCACGAT", "CGATGTAC", lane=3)
-        _add_illumina_sample(self.conn, prs1, "ATCACGAT", "CGATGTAC", lane=7)
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=3
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=7
+        )
         self.conn.commit()
 
         save_bclconvert_v1_csv(self.conn, str(self.out_path))
@@ -430,7 +391,7 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         # A PacBio run (no illumina_run, no illumina_sample) must be
         # rejected with a ValueError naming the missing illumina_sample
         # rows, not a generic failure
-        _seed_project_and_plate(self.conn)
+        _helpers.seed_project_and_plate(self.conn)
         _seed_pacbio_run(self.conn)
         self.conn.commit()
 
@@ -441,7 +402,7 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         # A TellSeq run has an illumina_run row but uses tellseq_sample
         # instead of illumina_sample, so the writer must reject it with
         # the same no-illumina_sample-rows error as PacBio
-        project_idx, plate_idx = _seed_project_and_plate(self.conn)
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
         run_idx = _seed_illumina_run(self.conn)
         prs1 = _seed_prepped_sample(
             self.conn, plate_idx, project_idx, run_idx, "S1", "A1"

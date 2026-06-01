@@ -10,62 +10,19 @@ from pathlib import Path
 from run_preflight.db import create_db, get_section_formats, populate_db
 from run_preflight.legacy.parser import parse_omnibus
 
+from . import _helpers
+
 DATA_DIR = Path(__file__).parent / "data"
 
 
 def _setup_run_and_prs(conn: sqlite3.Connection) -> tuple[int, int]:
     """Insert minimal prerequisite rows and return (run_idx, prs_idx)."""
-    cur = conn.cursor()
-
-    # Project, plate, input_sample, run, compression_sample, prepped_sample
-    cur.execute(
-        "INSERT INTO project "
-        "(project_name, external_project_id, human_filtering, "
-        " library_construction_protocol, experiment_design_description) "
-        "VALUES ('proj1', '1', 1, 'proto', 'desc')"
-    )
-    project_idx = cur.lastrowid
-
-    cur.execute(
-        "INSERT INTO input_plate (plate_name, primary_project_idx) VALUES ('plate1', ?)",
-        (project_idx,),
-    )
-    plate_idx = cur.lastrowid
-
-    cur.execute(
-        "INSERT INTO input_sample "
-        "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
-        "VALUES ('sample1', ?, ?, 1)",
-        (plate_idx, project_idx),
-    )
-    input_sample_idx = cur.lastrowid
-
-    cur.execute(
-        "INSERT INTO processing_run "
-        "(experiment_name, run_date, instrument_type, "
-        " assay_type_idx, platform_idx) "
-        "VALUES ('exp1', '2025-01-01', 'Unknown', 1, 1)"
-    )
-    run_idx = cur.lastrowid
-
-    cur.execute(
-        "INSERT INTO compression_sample "
-        "(run_idx, input_sample_idx, compression_well) "
-        "VALUES (?, ?, 'A1')",
-        (run_idx, input_sample_idx),
-    )
-    cs_idx = cur.lastrowid
-
-    cur.execute(
-        "INSERT INTO prepped_sample "
-        "(compression_sample_idx, prepped_well) "
-        "VALUES (?, 'A1')",
-        (cs_idx,),
-    )
-    prs_idx = cur.lastrowid
-
+    project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
+    input_sample_idx = _helpers.seed_input_sample(conn, plate_idx, project_idx)
+    run_idx = _helpers.seed_processing_run(conn)
+    cs_idx = _helpers.seed_compression_sample(conn, run_idx, input_sample_idx)
+    prs_idx = _helpers.seed_prepped_sample(conn, cs_idx)
     conn.commit()
-    assert run_idx is not None and prs_idx is not None
     return run_idx, prs_idx
 
 
@@ -81,20 +38,19 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
 
     def _insert_illumina(self, lane, *, i7_seq="GATTACA", i5_seq="TGCATGC"):
         # Helper that inserts one illumina_sample row with controllable lane and indexes
-        self.conn.execute(
-            "INSERT INTO illumina_sample "
-            "(prepped_sample_idx, i7_index_id, i7_sequence, "
-            " i5_index_id, i5_sequence, lane) "
-            "VALUES (?, 'I7A', ?, 'I5A', ?, ?)",
-            (self.prs_idx, i7_seq, i5_seq, lane),
+        _helpers.seed_illumina_sample(
+            self.conn,
+            self.prs_idx,
+            i7_index_id="I7A",
+            i7_seq=i7_seq,
+            i5_index_id="I5A",
+            i5_seq=i5_seq,
+            lane=lane,
         )
 
     def _insert_tellseq(self, lane, *, barcode_id="C501"):
-        self.conn.execute(
-            "INSERT INTO tellseq_sample "
-            "(prepped_sample_idx, barcode_id, lane) "
-            "VALUES (?, ?, ?)",
-            (self.prs_idx, barcode_id, lane),
+        _helpers.seed_tellseq_sample(
+            self.conn, self.prs_idx, barcode_id=barcode_id, lane=lane
         )
 
     def test_multi_lane_insert_succeeds(self):

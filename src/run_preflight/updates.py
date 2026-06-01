@@ -155,37 +155,25 @@ def update_lane(
     cur = conn.cursor()
 
     # Verify post-update lane uniformity: the platform table must be
-    # uniformly NULL or uniformly non-NULL after the update.
+    # uniformly NULL or uniformly non-NULL after the update.  The
+    # update touches only rows whose current lane equals from_lane;
+    # any other row keeps its current lane value and so violates
+    # uniformity if its null-ness differs from to_lane's.
     if to_lane is None:
-        # Rows not at from_lane that are currently non-NULL would
-        # remain non-NULL while rows at from_lane become NULL — mixed.
-        cur.execute(
-            f"SELECT COUNT(*) FROM {table} "
-            "WHERE COALESCE(lane, -1) != COALESCE(?, -1) "
-            "AND lane IS NOT NULL",
-            (from_lane,),
-        )
-        offending = cur.fetchone()[0]
-        if offending > 0:
-            raise ValueError(
-                f"Setting {table}.lane to NULL would leave {offending} "
-                f"rows with non-NULL lane (uniformity violation)"
-            )
+        null_filter, would_state, target = "lane IS NOT NULL", "non-NULL", "NULL"
     else:
-        # Rows not at from_lane that are currently NULL would remain
-        # NULL while rows at from_lane become non-NULL — mixed.
-        cur.execute(
-            f"SELECT COUNT(*) FROM {table} "
-            "WHERE COALESCE(lane, -1) != COALESCE(?, -1) "
-            "AND lane IS NULL",
-            (from_lane,),
+        null_filter, would_state, target = "lane IS NULL", "NULL", repr(to_lane)
+    cur.execute(
+        f"SELECT COUNT(*) FROM {table} "
+        f"WHERE COALESCE(lane, -1) != COALESCE(?, -1) AND {null_filter}",
+        (from_lane,),
+    )
+    offending = cur.fetchone()[0]
+    if offending > 0:
+        raise ValueError(
+            f"Setting {table}.lane to {target} would leave {offending} "
+            f"rows with {would_state} lane (uniformity violation)"
         )
-        offending = cur.fetchone()[0]
-        if offending > 0:
-            raise ValueError(
-                f"Setting {table}.lane to {to_lane!r} would leave "
-                f"{offending} rows with NULL lane (uniformity violation)"
-            )
 
     # Verify the unique (prepped_sample_idx, lane) index will not
     # collide.  When from_lane == to_lane there is no logical change.

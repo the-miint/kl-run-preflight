@@ -194,6 +194,22 @@ def _write_tabular(writer, section_name, col_names, rows):
 # Optional column detection
 # ---------------------------------------------------------------------------
 
+# Per-capability views gated by absquant metric columns.  Each view returns
+# the run_idx iff at least one sample has a non-null value in the
+# corresponding metric column.
+_CAPABILITY_VIEWS: dict[str, str] = {
+    CHECK_HAS_EXTRACTED_SAMPLE_MASS: "run_capability_absquant_mass",
+    CHECK_HAS_EXTRACTED_SAMPLE_VOLUME: "run_capability_absquant_volume",
+    CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA: "run_capability_absquant_surface_area",
+}
+
+
+def _capability_check(view: str):
+    """Build a check_function lambda that probes a per-capability view."""
+    sql = f'SELECT 1 FROM "{view}" WHERE run_idx = ? LIMIT 1'
+    return lambda cur, run_idx: _db_has_rows(cur, sql, (run_idx,))
+
+
 # Map check_function names → callables that inspect the DB for a given run.
 # Each returns True if the optional column group should be included.
 _CHECK_FUNCTIONS = {
@@ -207,9 +223,6 @@ _CHECK_FUNCTIONS = {
         "SELECT 1 FROM katharoseq_sample LIMIT 1",
         (),
     ),
-    # Each absquant metric column is gated by its per-capability view:
-    # the view returns the run_idx iff at least one sample has a non-null
-    # value in the corresponding metric column.
     CHECK_HAS_SEQUENCED_GDNA_MASS: lambda cur, run_idx: _db_has_rows(
         cur,
         "SELECT 1 FROM metagenomic_absquant_sample ma "
@@ -221,21 +234,7 @@ _CHECK_FUNCTIONS = {
         "AND ma.sequenced_sample_gdna_mass_ng IS NOT NULL LIMIT 1",
         (run_idx,),
     ),
-    CHECK_HAS_EXTRACTED_SAMPLE_MASS: lambda cur, run_idx: _db_has_rows(
-        cur,
-        "SELECT 1 FROM run_capability_absquant_mass WHERE run_idx = ? LIMIT 1",
-        (run_idx,),
-    ),
-    CHECK_HAS_EXTRACTED_SAMPLE_VOLUME: lambda cur, run_idx: _db_has_rows(
-        cur,
-        "SELECT 1 FROM run_capability_absquant_volume WHERE run_idx = ? LIMIT 1",
-        (run_idx,),
-    ),
-    CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA: lambda cur, run_idx: _db_has_rows(
-        cur,
-        "SELECT 1 FROM run_capability_absquant_surface_area WHERE run_idx = ? LIMIT 1",
-        (run_idx,),
-    ),
+    **{name: _capability_check(view) for name, view in _CAPABILITY_VIEWS.items()},
 }
 
 
@@ -324,18 +323,20 @@ def _merge_extra_columns(
         tuple[list[str], list[tuple]]: Updated (columns, rows) with extra
         columns appended.
     """
-    # Find distinct extra column names for this run
+    # Pull every extra-column row for this run in one query; derive the
+    # sorted distinct column list and the (prs_idx, col_name) → value
+    # lookup from the same result set.
     cur.execute(
-        "SELECT DISTINCT lec.column_name "
+        "SELECT lec.prepped_sample_idx, lec.column_name, lec.column_value "
         "FROM legacy_extra_column lec "
         "JOIN prepped_sample prs "
         "ON lec.prepped_sample_idx = prs.prepped_sample_idx "
         "JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx "
-        "WHERE cs.run_idx = ? "
-        "ORDER BY lec.column_name",
+        "WHERE cs.run_idx = ?",
         (run_idx,),
     )
-    extra_col_names = [r[0] for r in cur.fetchall()]
+    extra_rows = cur.fetchall()
+    extra_col_names = sorted({col_name for _, col_name, _ in extra_rows})
     if not extra_col_names:
         return active_cols, rows
 
@@ -348,19 +349,10 @@ def _merge_extra_columns(
         stacklevel=2,
     )
 
-    # Build a lookup: (prepped_sample_idx, column_name) → value
-    cur.execute(
-        "SELECT lec.prepped_sample_idx, lec.column_name, lec.column_value "
-        "FROM legacy_extra_column lec "
-        "JOIN prepped_sample prs "
-        "ON lec.prepped_sample_idx = prs.prepped_sample_idx "
-        "JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx "
-        "WHERE cs.run_idx = ?",
-        (run_idx,),
-    )
-    extra_values: dict[tuple[int, str], str | None] = {}
-    for prs_idx, col_name, col_value in cur.fetchall():
-        extra_values[(prs_idx, col_name)] = col_value
+    extra_values: dict[tuple[int, str], str | None] = {
+        (prs_idx, col_name): col_value
+        for prs_idx, col_name, col_value in extra_rows
+    }
 
     # Sample_ID is the prepped_sample_idx; find its index in active_cols
     sample_id_idx = active_cols.index(COL_SAMPLE_ID)
