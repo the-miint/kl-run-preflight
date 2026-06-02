@@ -3,7 +3,6 @@ update_lane, set_mask_short_reads, set_override_cycles."""
 
 from __future__ import annotations
 
-import contextlib
 import os
 import sqlite3
 import tempfile
@@ -22,17 +21,7 @@ from run_preflight.updates import (
 )
 
 from . import _helpers
-
-
-@contextlib.contextmanager
-def _open(db_path: str):
-    """Open a raw connection to *db_path* with foreign keys enabled."""
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        yield conn
-    finally:
-        conn.close()
+from ._helpers import open_db
 
 
 def _setup_run(conn: sqlite3.Connection) -> tuple[int, int, int]:
@@ -100,9 +89,8 @@ class _UpdatesTestBase(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.tmpdir.name, "test.db")
-        # Build the DB via create_db so it is stamped at the latest
-        # user_version; seed the run, then close so each test reopens
-        # via _open for its arrange / act / assert phases.
+        # Seed the run and close the connection so each test reopens
+        # a fresh one against a DB at the latest schema version.
         conn = create_db(self.db_path)
         try:
             self.project_idx, self.plate_idx, self.run_idx = _setup_run(conn)
@@ -115,15 +103,15 @@ class _UpdatesTestBase(unittest.TestCase):
 
 class TestSetBiosampleAccession(_UpdatesTestBase):
     def test_set_biosample_accession_non_replicate(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             ins_idx, _ = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_biosample_accession(conn, "S1", "SAMN001", reason="initial")
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT biosample_accession FROM input_sample "
                 "WHERE input_sample_idx = ?",
@@ -134,7 +122,7 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
     def test_set_biosample_accession_replicate_alias(self):
         # Replicate alias resolves through prs.sample_name to the
         # underlying input_sample
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             ins_idx, _ = _add_sample(
                 conn,
                 self.plate_idx,
@@ -145,10 +133,10 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
                 prs_name="S1.A1",
             )
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_biosample_accession(conn, "S1.A1", "SAMN002")
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT biosample_accession FROM input_sample "
                 "WHERE input_sample_idx = ?",
@@ -159,7 +147,7 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
     def test_set_biosample_accession_replicates_share_one_accession(self):
         # Two prepped_samples (replicates) of one input_sample share
         # the input_sample's accession
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.cursor()
             cur.execute(
                 "INSERT INTO input_sample "
@@ -190,10 +178,10 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             conn.commit()
 
         # Update via one alias, the other alias shows the same accession
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_biosample_accession(conn, "S1.B2", "SAMN003")
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT biosample_accession FROM input_sample "
                 "WHERE input_sample_idx = ?",
@@ -203,7 +191,7 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
 
     def test_set_biosample_accession_ambiguous(self):
         # Two distinct input_samples produce the same effective Sample_Name
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
@@ -217,29 +205,32 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
                 prs_name="S1",
             )
 
-        with _open(self.db_path) as conn, pytest.raises(ValueError, match="ambiguous"):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="ambiguous"),
+        ):
             set_biosample_accession(conn, "S1", "SAMN004")
 
     def test_set_biosample_accession_missing(self):
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="No input_sample matches"),
         ):
             set_biosample_accession(conn, "nonexistent", "SAMN005")
 
     def test_set_biosample_accession_audit(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             ins_idx, _ = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
 
         # Two successive sets so the second log entry captures the
         # first call's value as old_value
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_biosample_accession(conn, "S1", "SAMN006", reason="initial")
             set_biosample_accession(conn, "S1", "SAMN007", reason="correction")
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT table_name, row_idx, column_name, "
                 " old_value, new_value, reason "
@@ -272,7 +263,7 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
 
     def _read_bioproject(self) -> str | None:
         """Return project.bioproject_accession for the default test project."""
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             (val,) = conn.execute(
                 "SELECT bioproject_accession FROM project WHERE project_idx = ?",
                 (self.project_idx,),
@@ -280,27 +271,27 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
             return val
 
     def test_set_bioproject_accession_by_project_name(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_bioproject_accession(
                 conn, "PRJNA001", project_name="proj1", reason="initial"
             )
         self.assertEqual(self._read_bioproject(), "PRJNA001")
 
     def test_set_bioproject_accession_by_external_project_id(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_bioproject_accession(conn, "PRJNA002", external_project_id="1")
         self.assertEqual(self._read_bioproject(), "PRJNA002")
 
     def test_set_bioproject_accession_clear_when_external_present(self):
         # external_project_id='1' keeps an identifier on the project; clearing is allowed
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_bioproject_accession(conn, "PRJNA003", project_name="proj1")
             set_bioproject_accession(conn, None, project_name="proj1")
         self.assertIsNone(self._read_bioproject())
 
     def test_set_bioproject_accession_clear_rejected_without_other_identifier(self):
         # Drop external_project_id so clearing bioproject_accession would leave no identifier
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             conn.execute(
                 "UPDATE project SET bioproject_accession = 'PRJNA004', "
                 "external_project_id = NULL WHERE project_idx = ?",
@@ -309,21 +300,21 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
             conn.commit()
 
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(sqlite3.IntegrityError, match="CHECK"),
         ):
             set_bioproject_accession(conn, None, project_name="proj1")
 
     def test_set_bioproject_accession_no_key(self):
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Exactly one"),
         ):
             set_bioproject_accession(conn, "PRJNA005")
 
     def test_set_bioproject_accession_both_keys(self):
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Exactly one"),
         ):
             set_bioproject_accession(
@@ -335,24 +326,19 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
 
     def test_set_bioproject_accession_missing(self):
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="No project matches"),
         ):
             set_bioproject_accession(conn, "PRJNA007", project_name="nonexistent")
 
     def test_set_bioproject_accession_ambiguous_external_id(self):
         # Insert a second project sharing external_project_id with proj1
-        with _open(self.db_path) as conn:
-            conn.execute(
-                "INSERT INTO project "
-                "(project_name, external_project_id, human_filtering, "
-                " library_construction_protocol, experiment_design_description) "
-                "VALUES ('proj2', '1', 1, 'proto', 'desc')"
-            )
+        with open_db(self.db_path) as conn:
+            _helpers.seed_project(conn, project_name="proj2", external_project_id="1")
             conn.commit()
 
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="ambiguous"),
         ):
             set_bioproject_accession(conn, "PRJNA008", external_project_id="1")
@@ -360,7 +346,7 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
     def test_set_bioproject_accession_audit(self):
         # Two successive sets so the second log entry captures the
         # first call's value as old_value
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_bioproject_accession(
                 conn, "PRJNA009", project_name="proj1", reason="initial"
             )
@@ -368,7 +354,7 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
                 conn, "PRJNA010", project_name="proj1", reason="correction"
             )
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT table_name, row_idx, column_name, "
                 " old_value, new_value, reason "
@@ -398,7 +384,7 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
 class TestUpdateLane(_UpdatesTestBase):
     def test_update_lane_null_to_value(self):
         # All rows uniformly NULL, then assigned a lane
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _, prs1 = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
@@ -408,17 +394,17 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=None)
             _add_illumina_row(conn, prs2, lane=None)
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             n = update_lane(conn, "illumina", from_lane=None, to_lane=2)
         self.assertEqual(n, 2)
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT lane FROM illumina_sample ORDER BY illumina_sample_idx"
             )
             self.assertEqual([r[0] for r in cur.fetchall()], [2, 2])
 
     def test_update_lane_value_to_value(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _, prs1 = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
@@ -428,10 +414,10 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=1)
             _add_illumina_row(conn, prs2, lane=1)
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             n = update_lane(conn, "illumina", from_lane=1, to_lane=3)
         self.assertEqual(n, 2)
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT lane FROM illumina_sample ORDER BY illumina_sample_idx"
             )
@@ -439,7 +425,7 @@ class TestUpdateLane(_UpdatesTestBase):
 
     def test_update_lane_collision(self):
         # Multi-lane fan-out: one prepped_sample at both lane 1 and lane 2
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _, prs1 = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
@@ -447,14 +433,14 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs1, lane=2)
 
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="already have a row at"),
         ):
             update_lane(conn, "illumina", from_lane=1, to_lane=2)
 
     def test_update_lane_uniformity_violation(self):
         # Setting some rows to NULL while others remain non-NULL is mixed
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _, prs1 = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
@@ -465,20 +451,20 @@ class TestUpdateLane(_UpdatesTestBase):
             _add_illumina_row(conn, prs2, lane=2)
 
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="uniformity violation"),
         ):
             update_lane(conn, "illumina", from_lane=1, to_lane=None)
 
     def test_update_lane_unsupported_platform(self):
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Unsupported platform"),
         ):
             update_lane(conn, "pacbio", from_lane=1, to_lane=2)
 
     def test_update_lane_audit(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _, prs1 = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
@@ -488,10 +474,10 @@ class TestUpdateLane(_UpdatesTestBase):
             i1 = _add_illumina_row(conn, prs1, lane=1)
             i2 = _add_illumina_row(conn, prs2, lane=1)
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             update_lane(conn, "illumina", from_lane=1, to_lane=4, reason="reload")
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT table_name, row_idx, column_name, "
                 " old_value, new_value, reason "
@@ -504,7 +490,7 @@ class TestUpdateLane(_UpdatesTestBase):
             self.assertEqual(cur.fetchall(), expected)
 
     def test_update_lane_tellseq(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _, prs1 = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
@@ -516,10 +502,10 @@ class TestUpdateLane(_UpdatesTestBase):
             )
             conn.commit()
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             n = update_lane(conn, "tellseq", from_lane=None, to_lane=1)
         self.assertEqual(n, 1)
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute("SELECT lane FROM tellseq_sample")
             self.assertEqual(cur.fetchone(), (1,))
 
@@ -533,7 +519,7 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
 
     def _read_column(self, column: str) -> str | None:
         """Return illumina_run.<column> for the test's processing_run."""
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             (val,) = conn.execute(
                 f"SELECT {column} FROM illumina_run WHERE run_idx = ?",
                 (self.run_idx,),
@@ -541,35 +527,35 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
             return val
 
     def test__set_illumina_run_column_from_null(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx)
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _set_illumina_run_column(conn, "mask_short_reads", "R1:Y*N,R2:Y*N", None)
         self.assertEqual(self._read_column("mask_short_reads"), "R1:Y*N,R2:Y*N")
 
     def test__set_illumina_run_column_overwrite(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx, mask_short_reads="R1:Y*N,R2:Y*N")
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _set_illumina_run_column(conn, "mask_short_reads", "R1:N*,R2:N*", None)
         self.assertEqual(self._read_column("mask_short_reads"), "R1:N*,R2:N*")
 
     def test__set_illumina_run_column_clear(self):
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx, mask_short_reads="R1:Y*N,R2:Y*N")
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _set_illumina_run_column(conn, "mask_short_reads", None, None)
         self.assertIsNone(self._read_column("mask_short_reads"))
 
     def test__set_illumina_run_column_audit(self):
         # Two successive sets so the second captures the first as old_value
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx)
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _set_illumina_run_column(
                 conn, "mask_short_reads", "R1:Y*N,R2:Y*N", "initial"
             )
@@ -577,7 +563,7 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
                 conn, "mask_short_reads", "R1:N*,R2:N*", "correction"
             )
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             cur = conn.execute(
                 "SELECT table_name, row_idx, column_name, "
                 " old_value, new_value, reason "
@@ -606,10 +592,10 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
     def test_set_mask_short_reads(
         self,
     ):  # same-pattern-ok: per-public-function smoke test
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx)
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_mask_short_reads(conn, "R1:Y*N,R2:Y*N")
         self.assertEqual(
             (
@@ -622,10 +608,10 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
     def test_set_override_cycles(
         self,
     ):  # same-pattern-ok: per-public-function smoke test
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx)
 
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             set_override_cycles(conn, "Y151;I8;I8;Y151")
         self.assertEqual(
             (
@@ -668,25 +654,103 @@ class TestInputSampleCheck(_UpdatesTestBase):
     def test_input_sample_check_rejects_both_null(self):
         # Both identity columns NULL must violate the CHECK
         with (
-            _open(self.db_path) as conn,
+            open_db(self.db_path) as conn,
             pytest.raises(sqlite3.IntegrityError, match="CHECK"),
         ):
             self._insert(conn, None, None)
 
     def test_input_sample_check_accepts_sample_name_only(self):
         # sample_name alone satisfies the CHECK
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             ins_idx = self._insert(conn, "S1", None)
             self.assertEqual(self._read_identity(conn, ins_idx), ("S1", None))
 
     def test_input_sample_check_accepts_biosample_accession_only(self):
         # biosample_accession alone satisfies the CHECK
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             ins_idx = self._insert(conn, None, "SAMN100")
             self.assertEqual(self._read_identity(conn, ins_idx), (None, "SAMN100"))
 
     def test_input_sample_check_accepts_both_non_null(self):
         # Both non-null satisfies the CHECK
-        with _open(self.db_path) as conn:
+        with open_db(self.db_path) as conn:
             ins_idx = self._insert(conn, "S1", "SAMN101")
             self.assertEqual(self._read_identity(conn, ins_idx), ("S1", "SAMN101"))
+
+
+class TestEmptyStringRejection(_UpdatesTestBase):
+    """Every update function rejects an empty-string argument.
+
+    None remains the explicit "clear" path; empty strings (a common
+    silent-no-match hazard from upstream CSV parsing or shell expansion)
+    are rejected with a ValueError naming the offending parameter so
+    callers can distinguish "no value supplied" from "value is empty."
+    """
+
+    def _seed_sample(self, conn):
+        """Insert one input_sample with sample_name 'S1'."""
+        ins_idx, _ = _add_sample(
+            conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+        )
+        return ins_idx
+
+    def _seed_illumina_run(self, conn):
+        """Insert the matching illumina_run config row."""
+        _add_illumina_run(conn, self.run_idx)
+
+    def test_set_biosample_accession_rejects_empty_sample_name(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="sample_name must be a non-empty string"),
+        ):
+            self._seed_sample(conn)
+            set_biosample_accession(conn, "", "SAMN001")
+
+    def test_set_biosample_accession_rejects_empty_accession(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="accession must not be empty"),
+        ):
+            self._seed_sample(conn)
+            set_biosample_accession(conn, "S1", "")
+
+    def test_set_bioproject_accession_rejects_empty_project_name(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one of"),
+        ):
+            set_bioproject_accession(conn, "PRJNA001", project_name="")
+
+    def test_set_bioproject_accession_rejects_empty_external_project_id(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one of"),
+        ):
+            set_bioproject_accession(conn, "PRJNA001", external_project_id="")
+
+    def test_set_bioproject_accession_rejects_empty_accession(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="accession must not be empty"),
+        ):
+            set_bioproject_accession(conn, "", project_name="proj1")
+
+    def test_set_mask_short_reads_rejects_empty_value(self):
+        with open_db(self.db_path) as conn:
+            self._seed_illumina_run(conn)
+
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="value must not be empty"),
+        ):
+            set_mask_short_reads(conn, "")
+
+    def test_set_override_cycles_rejects_empty_value(self):
+        with open_db(self.db_path) as conn:
+            self._seed_illumina_run(conn)
+
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="value must not be empty"),
+        ):
+            set_override_cycles(conn, "")

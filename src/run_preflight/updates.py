@@ -12,9 +12,16 @@ import sqlite3
 from .constants import (
     DB_COL_BIOPROJECT_ACCESSION,
     DB_COL_BIOSAMPLE_ACCESSION,
+    DB_COL_EXTERNAL_PROJECT_ID,
+    DB_COL_ILLUMINA_SAMPLE_IDX,
+    DB_COL_INPUT_SAMPLE_IDX,
     DB_COL_LANE,
     DB_COL_MASK_SHORT_READS,
     DB_COL_OVERRIDE_CYCLES,
+    DB_COL_PROJECT_IDX,
+    DB_COL_PROJECT_NAME,
+    DB_COL_RUN_IDX,
+    DB_COL_TELLSEQ_SAMPLE_IDX,
     TABLE_CHANGE_LOG,
     TABLE_ILLUMINA_RUN,
     TABLE_ILLUMINA_SAMPLE,
@@ -26,12 +33,31 @@ from .constants import (
 )
 from .db import get_single_run_idx
 
-# Map platform strings to (table_name, primary_key_column).  Used to
-# dispatch update_lane to the correct platform-specific sample table.
+# Map platform strings to (table_name, primary_key_column) for the
+# platform-specific sample tables targeted by lane updates.
 _PLATFORM_TABLES = {
-    UPDATE_PLATFORM_ILLUMINA: (TABLE_ILLUMINA_SAMPLE, "illumina_sample_idx"),
-    UPDATE_PLATFORM_TELLSEQ: (TABLE_TELLSEQ_SAMPLE, "tellseq_sample_idx"),
+    UPDATE_PLATFORM_ILLUMINA: (TABLE_ILLUMINA_SAMPLE, DB_COL_ILLUMINA_SAMPLE_IDX),
+    UPDATE_PLATFORM_TELLSEQ: (TABLE_TELLSEQ_SAMPLE, DB_COL_TELLSEQ_SAMPLE_IDX),
 }
+
+
+def _require_nonempty_or_none(value: str | None, param_name: str) -> str | None:
+    """Reject empty-string *value*; allow None (clear) and non-empty strings.
+
+    Returned unchanged on the allowed paths so call sites can chain.
+    """
+    if value == "":
+        raise ValueError(
+            f"{param_name} must not be empty; pass None to clear, or supply a non-empty value"
+        )
+    return value
+
+
+def _require_nonempty(value: str, param_name: str) -> str:
+    """Reject empty-string or None *value*; allow only non-empty strings."""
+    if value is None or value == "":
+        raise ValueError(f"{param_name} must be a non-empty string")
+    return value
 
 
 def _to_audit_value(value: object) -> str | None:
@@ -112,9 +138,14 @@ def set_biosample_accession(
     update the shared accession. *accession* may be None to clear.
 
     Raises:
-        ValueError: If no input_sample matches *sample_name*, or if
-            multiple distinct input_samples match (ambiguous).
+        ValueError: If *sample_name* or *accession* is an empty string,
+            if no input_sample matches *sample_name*, or if multiple
+            distinct input_samples match (ambiguous).
     """
+    # Reject empty strings for both the lookup key and the value
+    _require_nonempty(sample_name, "sample_name")
+    _require_nonempty_or_none(accession, "accession")
+
     cur = conn.cursor()
 
     # Resolve effective Sample_Name to a unique input_sample.  DISTINCT
@@ -142,7 +173,7 @@ def set_biosample_accession(
     _apply_single_row_update(
         conn,
         TABLE_INPUT_SAMPLE,
-        "input_sample_idx",
+        DB_COL_INPUT_SAMPLE_IDX,
         input_sample_idx,
         DB_COL_BIOSAMPLE_ACCESSION,
         old_accession,
@@ -268,7 +299,7 @@ def _set_illumina_run_column(
     _apply_single_row_update(
         conn,
         TABLE_ILLUMINA_RUN,
-        "run_idx",
+        DB_COL_RUN_IDX,
         run_idx,
         column,
         old_value,
@@ -282,7 +313,12 @@ def set_mask_short_reads(
     value: str | None,
     reason: str | None = None,
 ) -> None:
-    """Set illumina_run.mask_short_reads to *value*; None clears it."""
+    """Set illumina_run.mask_short_reads to *value*; None clears it.
+
+    Raises:
+        ValueError: If *value* is an empty string.
+    """
+    _require_nonempty_or_none(value, "value")
     _set_illumina_run_column(conn, DB_COL_MASK_SHORT_READS, value, reason)
 
 
@@ -291,7 +327,12 @@ def set_override_cycles(
     value: str | None,
     reason: str | None = None,
 ) -> None:
-    """Set illumina_run.override_cycles to *value*; None clears it."""
+    """Set illumina_run.override_cycles to *value*; None clears it.
+
+    Raises:
+        ValueError: If *value* is an empty string.
+    """
+    _require_nonempty_or_none(value, "value")
     _set_illumina_run_column(conn, DB_COL_OVERRIDE_CYCLES, value, reason)
 
 
@@ -310,28 +351,33 @@ def set_bioproject_accession(
     IntegrityError if it would leave both accession identifiers NULL.
 
     Raises:
-        ValueError: If zero or two key arguments are supplied, if no
+        ValueError: If zero or two key arguments are supplied with
+            non-empty values, if *accession* is an empty string, if no
             project matches the supplied key, or if *external_project_id*
             matches multiple projects (the column is not unique).
     """
-    # Require exactly one of the two lookup keys.
+    # Reject empty-string accession; None remains the clear path
+    _require_nonempty_or_none(accession, "accession")
+
+    # Require exactly one non-empty key.  Empty strings count as
+    # "not supplied" to avoid a silent no-match or unintended SELECT.
     supplied = {
-        "project_name": project_name,
-        "external_project_id": external_project_id,
+        DB_COL_PROJECT_NAME: project_name,
+        DB_COL_EXTERNAL_PROJECT_ID: external_project_id,
     }
-    keys = [k for k, v in supplied.items() if v is not None]
+    keys = [k for k, v in supplied.items() if v]
     if len(keys) != 1:
         raise ValueError(
             "Exactly one of project_name or external_project_id must be "
-            f"supplied; got {keys}"
+            f"supplied as a non-empty string; got {keys}"
         )
     key_col = keys[0]
     key_value = supplied[key_col]
 
     # Resolve the chosen key to project_idx and capture the prior value.
-    # key_col is one of two whitelisted column names — safe to interpolate.
+    # key_col is one of two whitelisted column-name constants — safe to interpolate.
     cur = conn.execute(
-        f"SELECT project_idx, {DB_COL_BIOPROJECT_ACCESSION} "
+        f"SELECT {DB_COL_PROJECT_IDX}, {DB_COL_BIOPROJECT_ACCESSION} "
         f"FROM {TABLE_PROJECT} WHERE {key_col} = ?",
         (key_value,),
     )
@@ -347,7 +393,7 @@ def set_bioproject_accession(
     _apply_single_row_update(
         conn,
         TABLE_PROJECT,
-        "project_idx",
+        DB_COL_PROJECT_IDX,
         project_idx,
         DB_COL_BIOPROJECT_ACCESSION,
         old_accession,

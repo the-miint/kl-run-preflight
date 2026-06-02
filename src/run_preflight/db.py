@@ -209,6 +209,40 @@ def get_single_run_idx(conn: sqlite3.Connection) -> int:
     return run_idxs[0]
 
 
+def get_projects_missing_external_id(
+    conn: sqlite3.Connection,
+    run_idx: int,
+) -> list[str]:
+    """Return the names of projects reachable from *run_idx* that have NULL
+    external_project_id.
+
+    Both the primary plate project and any per-sample (secondary)
+    project are in scope.  The list is sorted by project_name; the
+    list is empty when every reachable project has a non-NULL value.
+    """
+    # Primary projects: reachable via input_plate.primary_project_idx.
+    # Secondary projects: reachable via input_sample.project_idx.
+    cur = conn.execute(
+        """
+        SELECT DISTINCT p.project_name
+        FROM project p
+        JOIN input_plate ip ON ip.primary_project_idx = p.project_idx
+        JOIN input_sample ins ON ins.input_plate_idx = ip.input_plate_idx
+        JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx
+        WHERE cs.run_idx = ? AND p.external_project_id IS NULL
+        UNION
+        SELECT DISTINCT p.project_name
+        FROM project p
+        JOIN input_sample ins ON ins.project_idx = p.project_idx
+        JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx
+        WHERE cs.run_idx = ? AND p.external_project_id IS NULL
+        ORDER BY project_name
+        """,
+        (run_idx, run_idx),
+    )
+    return [name for (name,) in cur.fetchall()]
+
+
 def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
     """Return a mapping of section name to section format from the DB.
 
@@ -229,6 +263,13 @@ def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
         "SELECT DISTINCT section_name, section_format FROM legacy_samplesheet_view"
     )
     return {name: fmt for name, fmt in cur.fetchall()}
+
+
+# Error categories and per-row labels for invariant/accession violations.
+ERR_CATEGORY_INVARIANT = "control / project_idx invariant violation"
+ERR_CATEGORY_MISSING_ACCESSION = "missing required accession"
+LABEL_STANDARD_NO_PROJECT = "standard sample_type with NULL project_idx"
+LABEL_NONSTANDARD_WITH_PROJECT = "non-standard sample_type with non-NULL project_idx"
 
 
 def _raise_violations(
@@ -256,7 +297,10 @@ def get_illumina_sample_info(
     Resolves the sole processing_run via get_single_run_idx and returns
     one tuple per illumina_sample row, ordered by illumina_sample_idx:
     (illumina_sample_idx, biosample_accession,
-    primary_bioproject_accession, _).
+    primary_bioproject_accession, secondary_bioproject_accessions),
+    where secondary_bioproject_accessions is a list of accessions for
+    every non-primary plate project (populated only for controls;
+    empty for non-control samples), sorted by accession value.
 
     Raises:
         ValueError: If the control / project_idx pairing is violated
@@ -269,6 +313,8 @@ def get_illumina_sample_info(
 
     # One row per (illumina_sample x non-primary plate project); LEFT
     # JOINs keep a single row for non-controls / single-project plates.
+    # The leading ORDER BY illumina_sample_idx is load-bearing: the
+    # groupby() below relies on adjacent same-key rows.
     cur.execute(
         """
         SELECT
@@ -316,14 +362,10 @@ def get_illumina_sample_info(
         is_standard = st_name == SAMPLE_TYPE_STANDARD
         has_project = project_idx is not None
         if is_standard and not has_project:
-            invariant_offenders.append(
-                (ils_idx, "standard sample_type with NULL project_idx")
-            )
+            invariant_offenders.append((ils_idx, LABEL_STANDARD_NO_PROJECT))
             continue
         if not is_standard and has_project:
-            invariant_offenders.append(
-                (ils_idx, "non-standard sample_type with non-NULL project_idx")
-            )
+            invariant_offenders.append((ils_idx, LABEL_NONSTANDARD_WITH_PROJECT))
             continue
 
         # Collect non-primary plate projects' bioproject_accessions
@@ -340,8 +382,8 @@ def get_illumina_sample_info(
         results.append((ils_idx, biosample, primary_bp, secondary))
 
     # Invariant violations indicate corrupt data; raise before accession checks
-    _raise_violations("control / project_idx invariant violation", invariant_offenders)
-    _raise_violations("missing required accession", accession_offenders)
+    _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders)
+    _raise_violations(ERR_CATEGORY_MISSING_ACCESSION, accession_offenders)
     return results
 
 

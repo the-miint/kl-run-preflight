@@ -207,12 +207,21 @@ TABLE_ILLUMINA_RUN = "illumina_run"
 TABLE_PROJECT = "project"
 TABLE_CHANGE_LOG = "change_log"
 
-# Columns updated by updates.py
+# Columns mutated by UPDATE statements
 DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
 DB_COL_LANE = "lane"
 DB_COL_MASK_SHORT_READS = "mask_short_reads"
 DB_COL_OVERRIDE_CYCLES = "override_cycles"
 DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
+DB_COL_PROJECT_NAME = "project_name"
+DB_COL_EXTERNAL_PROJECT_ID = "external_project_id"
+
+# Primary-key index column names referenced by UPDATE statements
+DB_COL_INPUT_SAMPLE_IDX = "input_sample_idx"
+DB_COL_ILLUMINA_SAMPLE_IDX = "illumina_sample_idx"
+DB_COL_TELLSEQ_SAMPLE_IDX = "tellseq_sample_idx"
+DB_COL_RUN_IDX = "run_idx"
+DB_COL_PROJECT_IDX = "project_idx"
 
 # Update-platform identifiers (caller-supplied platform string)
 UPDATE_PLATFORM_ILLUMINA = "illumina"

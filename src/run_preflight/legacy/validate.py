@@ -20,12 +20,14 @@ contract:
 from __future__ import annotations
 
 from ..constants import (
+    COL_QIITA_ID,
     EXPECTED_ILLUMINA_HEADER_CONSTANTS,
     FIELD_SHEET_TYPE,
     FIELD_SHEET_VERSION,
     FORMAT_HEADER_KV,
     FORMAT_TABULAR,
     FORMAT_VALUES_ONLY,
+    SECTION_BIOINFORMATICS,
     SECTION_DATA,
     SECTION_HEADER,
     SECTION_SETTINGS,
@@ -198,6 +200,17 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
                     section_optional,
                     allow_unrecognized=allow_unrecognized,
                 )
+
+                # An empty QiitaID would pass the CHECK constraint but
+                # leave external_project_id semantically meaningless.
+                if section_name == SECTION_BIOINFORMATICS:
+                    for row in file_section:
+                        if row.get(COL_QIITA_ID) == "":
+                            errors.append(
+                                f"[{section_name}] {COL_QIITA_ID} cell is "
+                                "empty; every project requires a non-empty value"
+                            )
+                            break
 
     return errors
 

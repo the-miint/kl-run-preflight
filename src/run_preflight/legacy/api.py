@@ -5,7 +5,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from ..db import create_db, get_section_formats, get_single_run_idx, populate_db
+from ..db import (
+    create_db,
+    get_projects_missing_external_id,
+    get_section_formats,
+    get_single_run_idx,
+    populate_db,
+)
 from ..migrate import save_db_file
 from .parser import parse_omnibus
 from .reconstruct import reconstruct_omnibus
@@ -48,10 +54,25 @@ def save_legacy_csv(conn: sqlite3.Connection, csv_path: str) -> None:
     files describe exactly one run). Caller retains ownership of *conn*.
 
     Raises:
-        ValueError: If *conn* contains zero or multiple processing runs.
+        ValueError: If *conn* contains zero or multiple processing runs,
+            or if any project reachable from the run has NULL
+            external_project_id (legacy CSVs require a QiitaID column
+            value for every project, so such a DB cannot be losslessly
+            reconstructed).
     """
     # Confirm exactly one processing run before reconstructing
     run_idx = get_single_run_idx(conn)
+
+    # Legacy CSV's QiitaID column has no NULL representation; a NULL
+    # external_project_id would silently round-trip as a blank cell.
+    missing = get_projects_missing_external_id(conn, run_idx)
+    if missing:
+        raise ValueError(
+            "Cannot reconstruct legacy CSV: project(s) "
+            f"{missing} have NULL external_project_id "
+            "(legacy CSVs require a QiitaID for every project)"
+        )
+
     csv_text = reconstruct_omnibus(conn, run_idx)
 
     # Write reconstructed text to the requested path

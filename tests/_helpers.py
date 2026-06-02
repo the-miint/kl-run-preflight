@@ -8,7 +8,19 @@ and returns the surrogate id of the row it inserted.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
+
+
+@contextlib.contextmanager
+def open_db(db_path: str):
+    """Open a raw connection to *db_path* with foreign keys enabled."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def seed_project_and_plate(conn: sqlite3.Connection) -> tuple[int, int]:
@@ -22,10 +34,14 @@ def seed_project(
     conn: sqlite3.Connection,
     *,
     project_name: str = "proj1",
-    external_project_id: str = "1",
+    external_project_id: str | None = "1",
     bioproject_accession: str | None = None,
 ) -> int:
-    """Insert one project (optionally with bioproject_accession)."""
+    """Insert one project.
+
+    Either *external_project_id* or *bioproject_accession* may be None,
+    but the row is rejected if both are NULL.
+    """
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO project "

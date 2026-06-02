@@ -18,6 +18,9 @@ from run_preflight.legacy import LegacyExtraColumnWarning
 from run_preflight.legacy.roundtrip import roundtrip_via_api
 from run_preflight.legacy.validate import validate_omnibus
 
+from . import _helpers
+from ._helpers import open_db
+
 DATA_DIR = Path(__file__).parent / "data"
 GOOD_CSV = DATA_DIR / "good_pacbio_metagv11.csv"
 
@@ -228,6 +231,57 @@ class TestLegacyApi(unittest.TestCase):
                 "[Header] missing required field: SheetVersion",
             ],
         )
+
+    def test_save_legacy_csv_rejects_project_with_null_external_project_id(self):
+        # Seed a project with NULL external_project_id; legacy CSV's
+        # QiitaID column cannot represent NULL, so save must reject.
+        db_path = self.tmp_dir / "no_qid.db"
+        conn = create_db(str(db_path))
+        try:
+            project_idx = _helpers.seed_project(
+                conn,
+                project_name="proj_no_qid",
+                external_project_id=None,
+                bioproject_accession="PRJNA001",
+            )
+            plate_idx = _helpers.seed_plate(conn, project_idx)
+            run_idx = _helpers.seed_processing_run(conn)
+            _helpers.seed_sample_chain(
+                conn, plate_idx, project_idx, run_idx, sample_name="S1"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # The error names every offending project so the caller can
+        # fix the missing identifier(s) in one pass.
+        out_path = self.tmp_dir / "out.csv"
+        with open_db(str(db_path)) as conn:
+            with self.assertRaisesRegex(
+                ValueError, r"proj_no_qid.*NULL external_project_id"
+            ):
+                save_legacy_csv(conn, str(out_path))
+        self.assertFalse(out_path.exists())
+
+    def test_load_legacy_csv_rejects_empty_qiita_id_cell(self):
+        # An empty QiitaID would silently become external_project_id=''
+        # in the DB; validation rejects at load time instead.
+        src = (DATA_DIR / "Test1_Skin_replicates_15459_novaseq.csv").read_text()
+        # Replace the (only) Bioinformatics QiitaID value with an empty
+        # field; the surrounding row layout is preserved verbatim.
+        corrupted = src.replace(
+            "Test1_Skin_Round_2_15459,15459,False,",
+            "Test1_Skin_Round_2_15459,,False,",
+        )
+        bad_csv = self.tmp_dir / "empty_qid.csv"
+        bad_csv.write_text(corrupted)
+
+        # Validation must name the column and section so the user can
+        # locate the offending cell in a multi-section file.
+        db_path = self.tmp_dir / "empty_qid.db"
+        with self.assertRaisesRegex(ValueError, r"Bioinformatics.*QiitaID.*empty"):
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
+        self.assertFalse(db_path.exists())
 
     def test_validate_omnibus_skips_constant_check_for_pacbio(self):
         # PacBio uses a different Header view with no hardcoded literals,
