@@ -665,6 +665,21 @@ CREATE VIEW replicated_samples AS
     JOIN prepped_sample prs ON cs.compression_sample_idx = prs.compression_sample_idx
     GROUP BY cs.run_idx, cs.compression_sample_idx HAVING COUNT(*) > 1;
 
+-- Joins illumina_sample to its scoping run and input_sample so callers can
+-- filter by run_idx without re-deriving the prepped/compression chain.
+CREATE VIEW run_illumina_sample AS
+    SELECT
+        ils.illumina_sample_idx,
+        ils.prepped_sample_idx,
+        ils.lane,
+        ils.i7_index_id, ils.i7_sequence,
+        ils.i5_index_id, ils.i5_sequence,
+        cs.run_idx,
+        cs.input_sample_idx
+    FROM illumina_sample ils
+    JOIN prepped_sample prs ON ils.prepped_sample_idx = prs.prepped_sample_idx
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx;
+
 -- ============================================================
 -- Omnibus Reconstruction Views — Shared
 -- ============================================================

@@ -13,21 +13,44 @@ import sqlite3
 
 def seed_project_and_plate(conn: sqlite3.Connection) -> tuple[int, int]:
     """Insert one project and one input_plate; return (project_idx, plate_idx)."""
+    project_idx = seed_project(conn)
+    plate_idx = seed_plate(conn, project_idx)
+    return project_idx, plate_idx
+
+
+def seed_project(
+    conn: sqlite3.Connection,
+    *,
+    project_name: str = "proj1",
+    external_project_id: str = "1",
+    bioproject_accession: str | None = None,
+) -> int:
+    """Insert one project (optionally with bioproject_accession)."""
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO project "
         "(project_name, external_project_id, human_filtering, "
-        " library_construction_protocol, experiment_design_description) "
-        "VALUES ('proj1', '1', 1, 'proto', 'desc')"
+        " library_construction_protocol, experiment_design_description, "
+        " bioproject_accession) "
+        "VALUES (?, ?, 1, 'proto', 'desc', ?)",
+        (project_name, external_project_id, bioproject_accession),
     )
-    project_idx = cur.lastrowid
+    return cur.lastrowid
+
+
+def seed_plate(
+    conn: sqlite3.Connection,
+    primary_project_idx: int,
+    *,
+    plate_name: str = "plate1",
+) -> int:
+    """Insert one input_plate; return plate_idx."""
+    cur = conn.cursor()
     cur.execute(
-        "INSERT INTO input_plate (plate_name, primary_project_idx) "
-        "VALUES ('plate1', ?)",
-        (project_idx,),
+        "INSERT INTO input_plate (plate_name, primary_project_idx) VALUES (?, ?)",
+        (plate_name, primary_project_idx),
     )
-    plate_idx = cur.lastrowid
-    return project_idx, plate_idx
+    return cur.lastrowid
 
 
 def seed_processing_run(
@@ -69,17 +92,28 @@ def seed_illumina_run_config(
 def seed_input_sample(
     conn: sqlite3.Connection,
     plate_idx: int,
-    project_idx: int,
+    project_idx: int | None,
     *,
     sample_name: str = "sample1",
+    sample_type_name: str = "standard",
 ) -> int:
-    """Insert one input_sample row; return input_sample_idx."""
+    """Insert one input_sample row; return input_sample_idx.
+
+    Controls are seeded by passing ``project_idx=None`` together with a
+    control *sample_type_name* (``extraction_blank`` or
+    ``katharoseq_cells_positive_control``).
+    """
     cur = conn.cursor()
+    cur.execute(
+        "SELECT sample_type_idx FROM sample_type WHERE name = ?",
+        (sample_type_name,),
+    )
+    (st_idx,) = cur.fetchone()
     cur.execute(
         "INSERT INTO input_sample "
         "(sample_name, input_plate_idx, project_idx, sample_type_idx) "
-        "VALUES (?, ?, ?, 1)",
-        (sample_name, plate_idx, project_idx),
+        "VALUES (?, ?, ?, ?)",
+        (sample_name, plate_idx, project_idx, st_idx),
     )
     return cur.lastrowid
 
@@ -123,18 +157,27 @@ def seed_prepped_sample(
 def seed_sample_chain(
     conn: sqlite3.Connection,
     plate_idx: int,
-    project_idx: int,
+    project_idx: int | None,
     run_idx: int,
     *,
     sample_name: str = "sample1",
+    sample_type_name: str = "standard",
     well: str = "A1",
     prs_name: str | None = None,
 ) -> tuple[int, int, int]:
     """Insert input_sample + compression_sample + prepped_sample.
 
     Returns (input_sample_idx, compression_sample_idx, prepped_sample_idx).
+    Pass ``project_idx=None`` with a control *sample_type_name* to seed
+    a control chain.
     """
-    ins_idx = seed_input_sample(conn, plate_idx, project_idx, sample_name=sample_name)
+    ins_idx = seed_input_sample(
+        conn,
+        plate_idx,
+        project_idx,
+        sample_name=sample_name,
+        sample_type_name=sample_type_name,
+    )
     cs_idx = seed_compression_sample(conn, run_idx, ins_idx, well=well)
     prs_idx = seed_prepped_sample(conn, cs_idx, well=well, sample_name=prs_name)
     return ins_idx, cs_idx, prs_idx

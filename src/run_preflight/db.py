@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 import warnings
+from itertools import groupby
 from pathlib import Path
 
 from .legacy import LegacyExtraColumnWarning
@@ -228,6 +229,120 @@ def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
         "SELECT DISTINCT section_name, section_format FROM legacy_samplesheet_view"
     )
     return {name: fmt for name, fmt in cur.fetchall()}
+
+
+def _raise_violations(
+    category: str,
+    offenders: list[tuple[int, str]],
+) -> None:
+    """Raise ValueError summarizing per-row violations, if any.
+
+    Each offender is (illumina_sample_idx, label) describing what is
+    wrong on that row; no-op when *offenders* is empty.
+    """
+    if not offenders:
+        return
+    items = ", ".join(
+        f"illumina_sample_idx={idx} ({label})" for idx, label in offenders
+    )
+    raise ValueError(f"{category}: {items}")
+
+
+def get_illumina_sample_info(
+    conn: sqlite3.Connection,
+) -> list[tuple[int, str, str, list[str]]]:
+    """Return per-illumina_sample biosample + bioproject info for the run.
+
+    Resolves the sole processing_run via get_single_run_idx and returns
+    one tuple per illumina_sample row, ordered by illumina_sample_idx:
+    (illumina_sample_idx, biosample_accession,
+    primary_bioproject_accession, _).
+
+    Raises:
+        ValueError: If the control / project_idx pairing is violated
+            on any row (raised before any accession check), or if any
+            required accession (biosample, primary bioproject, or any
+            secondary bioproject) is None on any row.
+    """
+    run_idx = get_single_run_idx(conn)
+    cur = conn.cursor()
+
+    # One row per (illumina_sample x non-primary plate project); LEFT
+    # JOINs keep a single row for non-controls / single-project plates.
+    cur.execute(
+        """
+        SELECT
+            ris.illumina_sample_idx,
+            ins.project_idx,
+            ins.biosample_accession,
+            st.name,
+            COALESCE(own_proj.bioproject_accession,
+                     primary_proj.bioproject_accession),
+            ipp.project_idx,
+            secondary_proj.bioproject_accession
+        FROM run_illumina_sample ris
+        JOIN input_sample ins
+            ON ris.input_sample_idx = ins.input_sample_idx
+        JOIN sample_type st
+            ON ins.sample_type_idx = st.sample_type_idx
+        JOIN input_plate ip
+            ON ins.input_plate_idx = ip.input_plate_idx
+        JOIN project primary_proj
+            ON ip.primary_project_idx = primary_proj.project_idx
+        LEFT JOIN project own_proj
+            ON ins.project_idx = own_proj.project_idx
+        LEFT JOIN input_plate_projects ipp
+            ON ipp.input_plate_idx = ins.input_plate_idx
+            AND ins.project_idx IS NULL
+            AND ipp.project_idx != ip.primary_project_idx
+        LEFT JOIN project secondary_proj
+            ON ipp.project_idx = secondary_proj.project_idx
+        WHERE ris.run_idx = ?
+        ORDER BY ris.illumina_sample_idx, secondary_proj.bioproject_accession
+        """,
+        (run_idx,),
+    )
+    rows = cur.fetchall()
+
+    # Group result rows by illumina_sample_idx and validate per-group.
+    invariant_offenders: list[tuple[int, str]] = []
+    accession_offenders: list[tuple[int, str]] = []
+    results: list[tuple[int, str, str, list[str]]] = []
+    for ils_idx, group in groupby(rows, key=lambda r: r[0]):
+        group_rows = list(group)
+        _, project_idx, biosample, st_name, primary_bp, _, _ = group_rows[0]
+
+        # Enforce control / project_idx pairing before reading accessions
+        is_standard = st_name == SAMPLE_TYPE_STANDARD
+        has_project = project_idx is not None
+        if is_standard and not has_project:
+            invariant_offenders.append(
+                (ils_idx, "standard sample_type with NULL project_idx")
+            )
+            continue
+        if not is_standard and has_project:
+            invariant_offenders.append(
+                (ils_idx, "non-standard sample_type with non-NULL project_idx")
+            )
+            continue
+
+        # Collect non-primary plate projects' bioproject_accessions
+        secondary = [r[6] for r in group_rows if r[5] is not None]
+
+        # Record any missing accession for the summary report
+        if biosample is None:
+            accession_offenders.append((ils_idx, "biosample_accession"))
+        if primary_bp is None:
+            accession_offenders.append((ils_idx, "primary_bioproject_accession"))
+        if any(b is None for b in secondary):
+            accession_offenders.append((ils_idx, "secondary_bioproject_accessions"))
+
+        results.append((ils_idx, biosample, primary_bp, secondary))
+
+    # Invariant violations indicate corrupt data; raise before accession checks
+    _raise_violations("control / project_idx invariant violation", invariant_offenders)
+    _raise_violations("missing required accession", accession_offenders)
+    return results
 
 
 # ---------------------------------------------------------------------------

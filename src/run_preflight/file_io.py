@@ -71,15 +71,10 @@ def _fetch_illumina_sample_rows(
     """
     cur = conn.cursor()
     cur.execute(
-        "SELECT ils.illumina_sample_idx, ils.lane, "
-        "       ils.i7_sequence, ils.i5_sequence "
-        "FROM illumina_sample ils "
-        "JOIN prepped_sample prs "
-        "  ON ils.prepped_sample_idx = prs.prepped_sample_idx "
-        "JOIN compression_sample cs "
-        "  ON prs.compression_sample_idx = cs.compression_sample_idx "
-        "WHERE cs.run_idx = ? "
-        "ORDER BY ils.illumina_sample_idx",
+        "SELECT illumina_sample_idx, lane, i7_sequence, i5_sequence "
+        "FROM run_illumina_sample "
+        "WHERE run_idx = ? "
+        "ORDER BY illumina_sample_idx",
         (run_idx,),
     )
     return cur.fetchall()
