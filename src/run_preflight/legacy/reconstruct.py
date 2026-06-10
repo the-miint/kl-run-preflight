@@ -30,7 +30,12 @@ from ..constants import (
     FORMAT_VALUES_ONLY,
     SECTION_DATA,
 )
-from ..db import introspect_view
+from ..db import (
+    get_format_sections,
+    get_optional_column_groups,
+    get_run_legacy_format,
+    introspect_view,
+)
 from .formatting import bcl_scrub_name, format_value
 
 
@@ -276,13 +281,7 @@ def _get_active_columns(
         list[str]: The filtered column list with inactive optional columns
         removed.
     """
-    cur.execute(
-        "SELECT group_name, column_names, check_function "
-        "FROM legacy_samplesheet_optional_columns "
-        "WHERE legacy_format_idx = ? AND section_name = ?",
-        (legacy_format_idx, section_name),
-    )
-    optional_groups = cur.fetchall()
+    optional_groups = get_optional_column_groups(cur, legacy_format_idx, section_name)
     if not optional_groups:
         # No optional columns defined — use everything.
         return all_cols
@@ -374,13 +373,6 @@ def _merge_extra_columns(
 def reconstruct_omnibus(conn, run_idx: int) -> str:
     """Rebuild the full omnibus CSV for a processing run.
 
-    Steps:
-      1. Look up which legacy format this run uses.
-      2. Query the view registry for the ordered list of sections.
-      3. For tabular sections, determine which optional columns are active.
-      4. Delegate each section to the appropriate writer based on its
-         section_format.
-
     Args:
         conn: An open SQLite connection with a fully populated database.
         run_idx: The processing_run.run_idx to reconstruct the CSV for.
@@ -394,28 +386,13 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
     cur = conn.cursor()
 
     # Resolve the legacy format for this run.
-    cur.execute(
-        """SELECT lf.legacy_format_idx, lf.legacy_sheet_type, lf.legacy_version
-           FROM processing_run sr
-           JOIN legacy_samplesheet_format lf
-             ON sr.legacy_format_idx = lf.legacy_format_idx
-           WHERE sr.run_idx = ?""",
-        (run_idx,),
-    )
-    fmt = cur.fetchone()
-    if not fmt:
+    fmt = get_run_legacy_format(cur, run_idx)
+    if fmt is None:
         raise ValueError(f"Run {run_idx} has no legacy format assigned")
     legacy_format_idx = fmt[0]
 
     # Fetch the ordered list of sections for this format.
-    cur.execute(
-        """SELECT section_name, view_name, section_format
-           FROM legacy_samplesheet_view
-           WHERE legacy_format_idx = ?
-           ORDER BY section_order""",
-        (legacy_format_idx,),
-    )
-    section_views = cur.fetchall()
+    section_views = get_format_sections(cur, legacy_format_idx)
 
     # Write each section to the output buffer.
     output = io.StringIO()

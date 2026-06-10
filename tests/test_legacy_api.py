@@ -13,6 +13,7 @@ from run_preflight import (
     migrate_legacy_csv_to_db_file,
     open_db_file,
     save_legacy_csv,
+    save_legacy_sample_id_map_csv,
 )
 from run_preflight.legacy import LegacyExtraColumnWarning
 from run_preflight.legacy.roundtrip import roundtrip_via_api
@@ -304,6 +305,132 @@ class TestLegacyApi(unittest.TestCase):
         # No error should mention the constant-preservation message
         constant_errors = [e for e in errors if "cannot be preserved" in e]
         self.assertEqual(constant_errors, [])
+
+
+class TestSaveLegacySampleIdMapCsv(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self._tmp.name)
+        self.out_path = self.tmp_dir / "out.csv"
+        self.conn = create_db(":memory:")
+
+    def tearDown(self):
+        self.conn.close()
+        self._tmp.cleanup()
+
+    def _seed_illumina_run(self) -> tuple[int, int, int]:
+        """Return (project_idx, plate_idx, run_idx) with illumina_run config."""
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
+        run_idx = _helpers.seed_processing_run(self.conn)
+        _helpers.seed_illumina_run_config(self.conn, run_idx)
+        return project_idx, plate_idx, run_idx
+
+    def test_save_legacy_sample_id_map_csv(self):
+        # Non-replicates: prepped_sample.sample_name is NULL so Sample_Name
+        # falls through to input_sample.sample_name
+        project_idx, plate_idx, run_idx = self._seed_illumina_run()
+        _, _, prs1 = _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx,
+            run_idx,
+            sample_name="S1",
+            well="A1",
+        )
+        _, _, prs2 = _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx,
+            run_idx,
+            sample_name="S2",
+            well="A2",
+        )
+        _helpers.seed_illumina_sample(self.conn, prs1)
+        _helpers.seed_illumina_sample(self.conn, prs2)
+        self.conn.commit()
+
+        save_legacy_sample_id_map_csv(self.conn, str(self.out_path))
+
+        expected = "illumina_sample_idx,Sample_Name\n1,S1\n2,S2\n"
+        self.assertEqual(self.out_path.read_text(), expected)
+
+    def test_save_legacy_sample_id_map_csv_replicates(self):
+        # Replicates: prepped_sample.sample_name populated, so the per-
+        # replicate alias appears as Sample_Name instead of orig_name
+        project_idx, plate_idx, run_idx = self._seed_illumina_run()
+        _, _, prs1 = _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx,
+            run_idx,
+            sample_name="origA",
+            well="A1",
+            prs_name="origA.A1",
+        )
+        _, _, prs2 = _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx,
+            run_idx,
+            sample_name="origB",
+            well="A2",
+            prs_name="origB.A2",
+        )
+        _helpers.seed_illumina_sample(self.conn, prs1)
+        _helpers.seed_illumina_sample(self.conn, prs2)
+        self.conn.commit()
+
+        save_legacy_sample_id_map_csv(self.conn, str(self.out_path))
+
+        expected = "illumina_sample_idx,Sample_Name\n1,origA.A1\n2,origB.A2\n"
+        self.assertEqual(self.out_path.read_text(), expected)
+
+    def test_save_legacy_sample_id_map_csv_ordering(self):
+        # Output rows are ordered by illumina_sample_idx independent of
+        # the underlying prepped_sample insertion order
+        project_idx, plate_idx, run_idx = self._seed_illumina_run()
+        _, _, prs_alpha = _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx,
+            run_idx,
+            sample_name="alpha",
+            well="A1",
+        )
+        _, _, prs_beta = _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx,
+            run_idx,
+            sample_name="beta",
+            well="A2",
+        )
+        # Insert illumina_sample for beta first so idx=1 is beta, idx=2 is alpha
+        ils_first = _helpers.seed_illumina_sample(self.conn, prs_beta)
+        ils_second = _helpers.seed_illumina_sample(self.conn, prs_alpha)
+        self.conn.commit()
+        self.assertEqual((ils_first, ils_second), (1, 2))
+
+        save_legacy_sample_id_map_csv(self.conn, str(self.out_path))
+
+        expected = "illumina_sample_idx,Sample_Name\n1,beta\n2,alpha\n"
+        self.assertEqual(self.out_path.read_text(), expected)
+
+    def test_save_legacy_sample_id_map_csv_no_illumina_samples(self):
+        # A run with no illumina_sample rows must raise ValueError
+        project_idx, plate_idx, run_idx = self._seed_illumina_run()
+        _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx,
+            run_idx,
+            sample_name="S1",
+            well="A1",
+        )
+        self.conn.commit()
+
+        with self.assertRaisesRegex(ValueError, r"no illumina_sample rows"):
+            save_legacy_sample_id_map_csv(self.conn, str(self.out_path))
 
 
 if __name__ == "__main__":

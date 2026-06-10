@@ -665,6 +665,34 @@ CREATE VIEW replicated_samples AS
     JOIN prepped_sample prs ON cs.compression_sample_idx = prs.compression_sample_idx
     GROUP BY cs.run_idx, cs.compression_sample_idx HAVING COUNT(*) > 1;
 
+-- Resolves each prepped_sample to its effective project: the input_sample's
+-- project_idx when set, else the plate's primary_project_idx (controls).
+-- Provides one shared definition reused by run_illumina_sample and by the
+-- omnibus reconstruction Data views.
+CREATE VIEW prepped_sample_project AS
+    SELECT prs.prepped_sample_idx,
+           COALESCE(ins.project_idx, ip.primary_project_idx) AS project_idx,
+           COALESCE(p.project_name,
+               (SELECT p2.project_name FROM project p2
+                WHERE p2.project_idx = ip.primary_project_idx)
+           ) AS project_name
+    FROM prepped_sample prs
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
+    LEFT JOIN project p ON ins.project_idx = p.project_idx;
+
+-- Resolves each prepped_sample to its effective sample_name:
+-- prepped_sample.sample_name when populated (replicates) else
+-- input_sample.sample_name. Provides one shared definition reused by
+-- run_illumina_sample and by the omnibus reconstruction Data views.
+CREATE VIEW prepped_sample_name AS
+    SELECT prs.prepped_sample_idx,
+           COALESCE(prs.sample_name, ins.sample_name) AS sample_name
+    FROM prepped_sample prs
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx;
+
 -- Joins illumina_sample to its scoping run and input_sample so callers can
 -- filter by run_idx without re-deriving the prepped/compression chain.
 CREATE VIEW run_illumina_sample AS
@@ -675,10 +703,14 @@ CREATE VIEW run_illumina_sample AS
         ils.i7_index_id, ils.i7_sequence,
         ils.i5_index_id, ils.i5_sequence,
         cs.run_idx,
-        cs.input_sample_idx
+        cs.input_sample_idx,
+        psn.sample_name,
+        psp.project_name
     FROM illumina_sample ils
     JOIN prepped_sample prs ON ils.prepped_sample_idx = prs.prepped_sample_idx
-    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx;
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN prepped_sample_name psn ON ils.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON ils.prepped_sample_idx = psp.prepped_sample_idx;
 
 -- ============================================================
 -- Omnibus Reconstruction Views — Shared
@@ -696,7 +728,7 @@ CREATE VIEW omnibus_contact AS
 
 CREATE VIEW omnibus_sample_context AS
     SELECT cs.run_idx AS run_idx,
-        COALESCE(prs.sample_name, ins.sample_name) AS "sample_name",
+        psn.sample_name AS "sample_name",
         CASE st.name
             WHEN 'extraction_blank' THEN 'control blank'
             WHEN 'katharoseq_cells_positive_control' THEN 'control katharoseq'
@@ -710,6 +742,7 @@ CREATE VIEW omnibus_sample_context AS
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
+    JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx
     JOIN sample_type st ON ins.sample_type_idx = st.sample_type_idx
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     JOIN project pp ON ip.primary_project_idx = pp.project_idx
@@ -717,7 +750,7 @@ CREATE VIEW omnibus_sample_context AS
     LEFT JOIN project op ON ipp.project_idx = op.project_idx
     WHERE ins.project_idx IS NULL
     GROUP BY cs.run_idx, prs.prepped_sample_idx,
-             COALESCE(prs.sample_name, ins.sample_name),
+             psn.sample_name,
              st.name, pp.external_project_id;
 
 -- ============================================================
@@ -742,14 +775,11 @@ CREATE VIEW omnibus_pacbio_absquant_v11_header AS
 CREATE VIEW omnibus_pacbio_absquant_v10_data AS
     SELECT cs.run_idx,
         prs.prepped_sample_idx AS "Sample_ID",
-        COALESCE(prs.sample_name, ins.sample_name) AS "Sample_Name",
+        psn.sample_name AS "Sample_Name",
         ip.plate_name AS "Sample_Plate",
         prs.prepped_well AS "Sample_Well",
         ps.barcode_id AS "barcode_id",
-        COALESCE(p.project_name,
-            (SELECT p2.project_name FROM project p2
-             WHERE p2.project_idx = ip.primary_project_idx)
-        ) AS "Sample_Project",
+        psp.project_name AS "Sample_Project",
         prs.well_description AS "Well_description",
         ma.syndna_pool_mass_ng AS "mass_syndna_input_ng",
         ma.extracted_gdna_concentration AS "extracted_gdna_concentration_ng_ul",
@@ -761,7 +791,8 @@ CREATE VIEW omnibus_pacbio_absquant_v10_data AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
-    LEFT JOIN project p ON ins.project_idx = p.project_idx
+    JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx
     JOIN pacbio_sample ps ON prs.prepped_sample_idx = ps.prepped_sample_idx
     LEFT JOIN metagenomic_absquant_sample ma
         ON prs.prepped_sample_idx = ma.prepped_sample_idx;
@@ -842,14 +873,11 @@ CREATE VIEW omnibus_pacbio_absquant_v11_bioinformatics AS
 CREATE VIEW omnibus_pacbio_metag_v10_data AS
     SELECT cs.run_idx,
         prs.prepped_sample_idx AS "Sample_ID",
-        COALESCE(prs.sample_name, ins.sample_name) AS "Sample_Name",
+        psn.sample_name AS "Sample_Name",
         ip.plate_name AS "Sample_Plate",
         prs.prepped_well AS "Sample_Well",
         ps.barcode_id AS "barcode_id",
-        COALESCE(p.project_name,
-            (SELECT p2.project_name FROM project p2
-             WHERE p2.project_idx = ip.primary_project_idx)
-        ) AS "Sample_Project",
+        psp.project_name AS "Sample_Project",
         prs.well_description AS "Well_description",
         ins.sample_name AS "orig_name",
         prs.prepped_well AS "destination_well_384"
@@ -857,7 +885,8 @@ CREATE VIEW omnibus_pacbio_metag_v10_data AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
-    LEFT JOIN project p ON ins.project_idx = p.project_idx
+    JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx
     JOIN pacbio_sample ps ON prs.prepped_sample_idx = ps.prepped_sample_idx;
 
 -- ============================================================
@@ -931,24 +960,22 @@ CREATE VIEW omnibus_illumina_settings AS
 CREATE VIEW omnibus_standard_metag_v90_data AS
     SELECT cs.run_idx,
         prs.prepped_sample_idx AS "Sample_ID",
-        COALESCE(prs.sample_name, ins.sample_name) AS "Sample_Name",
+        psn.sample_name AS "Sample_Name",
         ip.plate_name AS "Sample_Plate",
         prs.prepped_well AS "Sample_Well",
         ils.i7_index_id AS "I7_Index_ID",
         ils.i7_sequence AS "index",
         ils.i5_index_id AS "I5_Index_ID",
         ils.i5_sequence AS "index2",
-        COALESCE(p.project_name,
-            (SELECT p2.project_name FROM project p2
-             WHERE p2.project_idx = ip.primary_project_idx)
-        ) AS "Sample_Project",
+        psp.project_name AS "Sample_Project",
         prs.well_description AS "Well_description",
         ils.lane AS "Lane"
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
-    LEFT JOIN project p ON ins.project_idx = p.project_idx
+    JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx
     JOIN illumina_sample ils
         ON prs.prepped_sample_idx = ils.prepped_sample_idx;
 
@@ -1100,14 +1127,11 @@ CREATE VIEW omnibus_standard_metat_v10_data AS
 CREATE VIEW omnibus_tellseq_metag_v10_data AS
     SELECT cs.run_idx,
         prs.prepped_sample_idx AS "Sample_ID",
-        COALESCE(prs.sample_name, ins.sample_name) AS "Sample_Name",
+        psn.sample_name AS "Sample_Name",
         ip.plate_name AS "Sample_Plate",
         cs.compression_well AS "well_id_384",
         ts.barcode_id AS "barcode_id",
-        COALESCE(p.project_name,
-            (SELECT p2.project_name FROM project p2
-             WHERE p2.project_idx = ip.primary_project_idx)
-        ) AS "Sample_Project",
+        psp.project_name AS "Sample_Project",
         prs.well_description AS "Well_description",
         ins.sample_name AS "orig_name",
         prs.prepped_well AS "destination_well_384",
@@ -1116,7 +1140,8 @@ CREATE VIEW omnibus_tellseq_metag_v10_data AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
-    LEFT JOIN project p ON ins.project_idx = p.project_idx
+    JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx
     JOIN tellseq_sample ts ON prs.prepped_sample_idx = ts.prepped_sample_idx;
 
 -- ============================================================

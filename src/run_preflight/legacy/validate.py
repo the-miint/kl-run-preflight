@@ -1,20 +1,8 @@
 """Validate a parsed omnibus file against the view registry.
 
-Reports any structural problems that would prevent a clean round-trip or
-result in silent data corruption.  Returns a list of human-readable error
-strings (empty if valid).
-
-The per-section column checks are scoped to match the de-facto round-trip
-contract:
-
-  - [Settings] keys are all treated as optional, since the reconstructor's
-    _write_header_kv skips NULL values on output.
-  - [Data] unexpected columns are accepted because they are routed through
-    the legacy_extra_column carry-through mechanism at populate time.
-  - All other tabular sections (Bioinformatics, Contact, SampleContext)
-    require an exact column-name match against the view definition.
-  - Optional column groups (legacy_samplesheet_optional_columns) are
-    allowed to be absent in any section.
+Reports any structural problems that would prevent a clean round-trip
+or result in silent data corruption. Returns a list of human-readable
+error strings (empty if valid).
 """
 
 from __future__ import annotations
@@ -32,47 +20,26 @@ from ..constants import (
     SECTION_HEADER,
     SECTION_SETTINGS,
 )
-from ..db import get_view_columns
+from ..db import (
+    get_format_sections,
+    get_legacy_format_idx,
+    get_optional_columns_by_section,
+    get_view_columns,
+)
 
 
 def validate_omnibus(conn, sections: dict) -> list[str]:
     """Validate a parsed omnibus file against the view registry.
 
-    Checks performed:
-      1. SheetType and SheetVersion are present in [Header].
-      2. SheetVersion parses as an integer.
-      3. SheetType + SheetVersion map to a known legacy format.
-      4. For non-PacBio formats, the four hardcoded Illumina header
-         constants (IEMFileVersion, Workflow, Application, Chemistry),
-         if present in the file, match the literals the reconstructor
-         emits.  Deviating values would be silently replaced on
-         round-trip and so are rejected here.
-      5. All expected sections are present; no unexpected sections
-         exist.
-      6. Per-section column checks, with section-specific contracts:
-           * [Header] (header_kv): all required view columns present;
-             unexpected keys flagged.
-           * [Settings] (header_kv): missing keys are allowed (the
-             reconstructor NULL-skips on output); unexpected keys
-             flagged.
-           * [Data] (tabular): all required view columns present;
-             unrecognized columns accepted as legacy_extra_column
-             carry-throughs.
-           * Other tabular sections (Bioinformatics, Contact,
-             SampleContext): exact match required.
-           * Values-only sections (e.g. [Reads]): value count matches
-             the view's column count.
-
     Args:
-        conn: An open SQLite connection with the schema (including
-            legacy_samplesheet_format and legacy_samplesheet_view tables)
-            already populated.
+        conn: An open SQLite connection with the legacy format registry
+            tables populated.
         sections: The dict returned by parse_omnibus(), keyed by section
             name.
 
     Returns:
-        list[str]: A list of human-readable error messages. An empty list
-        means the file is valid.
+        list[str]: Human-readable error messages, one per problem found.
+        An empty list means the file is valid.
     """
     cur = conn.cursor()
     errors: list[str] = []
@@ -98,16 +65,10 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
         return errors
 
     # -- Resolve the legacy format ------------------------------------------
-    cur.execute(
-        "SELECT legacy_format_idx FROM legacy_samplesheet_format "
-        "WHERE legacy_sheet_type = ? AND legacy_version = ?",
-        (sheet_type, sheet_version),
-    )
-    fmt = cur.fetchone()
-    if not fmt:
+    legacy_format_idx = get_legacy_format_idx(cur, sheet_type, sheet_version)
+    if legacy_format_idx is None:
         errors.append(f"Unknown format: {sheet_type} v{sheet_version}")
         return errors
-    legacy_format_idx = fmt[0]
 
     # -- Reject deviations from Illumina header constants -------------------
     # The omnibus_illumina_header view emits IEMFileVersion, Workflow,
@@ -126,16 +87,10 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
                 )
 
     # -- Load optional column groups for this format ------------------------
-    optional_cols = _load_optional_columns(cur, legacy_format_idx)
+    optional_cols = get_optional_columns_by_section(cur, legacy_format_idx)
 
     # -- Check section presence ---------------------------------------------
-    cur.execute(
-        "SELECT section_name, view_name, section_format "
-        "FROM legacy_samplesheet_view "
-        "WHERE legacy_format_idx = ? ORDER BY section_order",
-        (legacy_format_idx,),
-    )
-    expected_sections = cur.fetchall()
+    expected_sections = get_format_sections(cur, legacy_format_idx)
     expected_names = {name for name, _, _ in expected_sections}
     file_names = set(sections.keys())
 
@@ -157,10 +112,10 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
         file_section = sections[section_name]
 
         if section_format == FORMAT_HEADER_KV:
-            # Settings keys may legitimately be absent: the reconstructor's
-            # _write_header_kv drops keys whose DB value is NULL on output,
-            # so missing Settings keys round-trip cleanly. Header keys back
-            # NOT NULL DB fields and remain required.
+            # Settings keys may legitimately be absent: NULL DB values
+            # are dropped on output, so missing Settings keys round-trip
+            # cleanly. Header keys back NOT NULL DB fields and remain
+            # required.
             allow_missing = section_name == SECTION_SETTINGS
             actual_cols = (
                 list(file_section.keys()) if isinstance(file_section, dict) else []
@@ -215,31 +170,6 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
     return errors
 
 
-def _load_optional_columns(cur, legacy_format_idx: int) -> dict[str, set[str]]:
-    """Load optional column groups for a legacy format from the database.
-
-    Args:
-        cur: An open SQLite cursor.
-        legacy_format_idx: The primary key of the legacy_samplesheet_format
-            row to look up.
-
-    Returns:
-        dict[str, set[str]]: Mapping of section name to the set of column
-        names that are optional for that section.
-    """
-    cur.execute(
-        "SELECT section_name, column_names "
-        "FROM legacy_samplesheet_optional_columns "
-        "WHERE legacy_format_idx = ?",
-        (legacy_format_idx,),
-    )
-    result: dict[str, set[str]] = {}
-    for section_name, col_names_csv in cur.fetchall():
-        cols = {c.strip() for c in col_names_csv.split(",")}
-        result.setdefault(section_name, set()).update(cols)
-    return result
-
-
 def _check_columns(
     errors: list[str],
     section_name: str,
@@ -259,20 +189,15 @@ def _check_columns(
     Args:
         errors: The accumulating list of error strings; new errors are
             appended in place.
-        section_name: Name of the section being checked (used in error
-            messages).
+        section_name: Name of the section being checked.
         required: Column names that must appear in the section.
         actual: Column names that were found in the parsed file.
         optional: Column names that may appear but are not required.
             Defaults to an empty set.
         allow_unrecognized: When True, suppress the "unexpected columns"
-            error for this section. Callers should set this only for
-            sections that support the extras carry-through pattern
-            (currently the Data section).
+            error (for sections supporting extras carry-through).
         allow_missing: When True, suppress the "missing columns" error
-            for this section. Callers should set this only for sections
-            whose reconstructor tolerates absent columns (currently the
-            Settings section, where _write_header_kv NULL-skips).
+            (for sections whose downstream consumer tolerates absence).
     """
     optional = optional or set()
     required_set = set(required)

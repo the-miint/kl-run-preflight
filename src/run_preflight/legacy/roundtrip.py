@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ..constants import FORMAT_TABULAR
 from ..db import get_section_formats
-from ..migrate import open_db_file, save_db_file
+from ..file_io import open_db_file, save_db_file
 from .api import load_legacy_csv, save_legacy_csv
 from .parser import (
     extract_section_name,

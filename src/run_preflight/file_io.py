@@ -1,4 +1,4 @@
-"""File-level read and write entry points for run preflights (legacy CSV, SQLite DB, bcl-convert v1)."""
+"""File-level read and write entry points for native (SQLite DB) and bcl-convert run preflight files."""
 
 from __future__ import annotations
 
@@ -12,101 +12,55 @@ from .constants import (
     COL_INDEX2,
     COL_LANE,
     COL_SAMPLE_ID,
+    COL_SAMPLE_NAME,
+    COL_SAMPLE_PROJECT,
     FIELD_FILE_FORMAT_VERSION,
-    FIELD_MASK_SHORT_READS,
-    FIELD_OVERRIDE_CYCLES,
     SECTION_DATA,
     SECTION_HEADER,
     SECTION_SETTINGS,
 )
-from .db import get_single_run_idx
-from .legacy.api import load_legacy_csv
-from .migrate import open_db_file
-
-# SQLite database files begin with this 16-byte magic header (see https://sqlite.org/fileformat.html)
-_SQLITE_MAGIC = b"SQLite format 3\x00"
+from .db import get_illumina_sample_rows, get_illumina_settings
+from .migrate import apply_patches
 
 
-def save_bclconvert_v1_csv(conn: sqlite3.Connection, csv_path: str) -> None:
+def save_bclconvert_v1_csv(
+    conn: sqlite3.Connection,
+    csv_path: str,
+    include_sample_name: bool = False,
+) -> None:
     """Write a minimal bcl-convert v1 sample sheet from the run in *conn*.
 
     *conn* must describe exactly one Illumina processing run with at
     least one illumina_sample row. Sample_ID is emitted as the integer
     illumina_sample_idx; index/index2 are emitted exactly as stored.
-    Lane is included in [Data] only when illumina_sample.lane is
-    non-null; Settings keys appear only when their illumina_run column
-    is non-null.
+    Sample_Project resolves to the input_sample's project name (or the
+    plate's primary project for controls). Lane is included in [Data]
+    only when illumina_sample.lane is non-null; Settings keys appear
+    only when their illumina_run column is non-null. When
+    *include_sample_name* is True, the raw effective sample_name is
+    emitted as a Sample_Name column immediately after Sample_ID.
 
     Raises:
         ValueError: If *conn* lacks exactly one processing run, or has
             no illumina_sample rows.
     """
-    # Resolve the one run and pull all needed data before any formatting
-    run_idx = get_single_run_idx(conn)
-    data_rows = _fetch_illumina_sample_rows(conn, run_idx)
+    # Pull all needed data before any formatting
+    data_rows = get_illumina_sample_rows(conn)
     if not data_rows:
         raise ValueError(
             "run has no illumina_sample rows; cannot write bcl-convert sample sheet"
         )
-    settings = _fetch_illumina_settings(conn, run_idx)
+    settings = get_illumina_settings(conn)
 
     # Format the CSV text in a DB-free path, then write it out
-    text = _format_bclconvert_v1(settings, data_rows)
+    text = _format_bclconvert_v1(settings, data_rows, include_sample_name)
     Path(csv_path).write_text(text)
-
-
-# ---------------------------------------------------------------------------
-# Data fetchers (DB-only)
-# ---------------------------------------------------------------------------
-
-
-def _fetch_illumina_sample_rows(
-    conn: sqlite3.Connection, run_idx: int
-) -> list[tuple[int, int | None, str, str]]:
-    """Return illumina_sample data tuples for the run, in deterministic order.
-
-    Each tuple is (illumina_sample_idx, lane, i7_sequence, i5_sequence).
-    Rows are ordered by illumina_sample_idx so that legacy-loaded
-    databases emit Sample_ID values matching the source CSV row order.
-    """
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT illumina_sample_idx, lane, i7_sequence, i5_sequence "
-        "FROM run_illumina_sample "
-        "WHERE run_idx = ? "
-        "ORDER BY illumina_sample_idx",
-        (run_idx,),
-    )
-    return cur.fetchall()
-
-
-def _fetch_illumina_settings(
-    conn: sqlite3.Connection, run_idx: int
-) -> dict[str, str | None]:
-    """Return a settings_dict for the run keyed by [Settings] key name.
-
-    Values are None for any column that is NULL on illumina_run.
-    """
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT mask_short_reads, override_cycles FROM illumina_run WHERE run_idx = ?",
-        (run_idx,),
-    )
-    mask_short_reads, override_cycles = cur.fetchone()
-    return {
-        FIELD_MASK_SHORT_READS: mask_short_reads,
-        FIELD_OVERRIDE_CYCLES: override_cycles,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Pure formatter (no DB access)
-# ---------------------------------------------------------------------------
 
 
 def _format_bclconvert_v1(
     settings: dict[str, str | None],
-    data_rows: list[tuple[int, int | None, str, str]],
+    data_rows: list[tuple[int, int | None, str, str, str, str]],
+    include_sample_name: bool,
 ) -> str:
     """Build a bcl-convert v1 sample sheet from pre-fetched data."""
     output = io.StringIO()
@@ -125,39 +79,67 @@ def _format_bclconvert_v1(
             writer.writerow([key, value])
         writer.writerow([])
 
-    # [Data] — Lane column included only when illumina_sample.lane is non-null
+    # [Data] — Lane column included only when illumina_sample.lane is non-null;
+    # Sample_Name column included only when caller opted in; Sample_Project is
+    # always the final column.  Optional columns are spliced into both header
+    # and data rows via parallel segment lists keyed off the same flags.
     include_lane = data_rows[0][1] is not None
     lane_prefix: list = [COL_LANE] if include_lane else []
+    name_header: list = [COL_SAMPLE_NAME] if include_sample_name else []
     writer.writerow([f"[{SECTION_DATA}]"])
-    writer.writerow(lane_prefix + [COL_SAMPLE_ID, COL_INDEX, COL_INDEX2])
-    for ils_idx, lane, i7_seq, i5_seq in data_rows:
+    writer.writerow(
+        lane_prefix
+        + [COL_SAMPLE_ID]
+        + name_header
+        + [COL_INDEX, COL_INDEX2, COL_SAMPLE_PROJECT]
+    )
+    for ils_idx, lane, i7_seq, i5_seq, project_name, sample_name in data_rows:
         row_prefix: list = [lane] if include_lane else []
-        writer.writerow(row_prefix + [ils_idx, i7_seq, i5_seq])
+        name_cell: list = [sample_name] if include_sample_name else []
+        writer.writerow(
+            row_prefix + [ils_idx] + name_cell + [i7_seq, i5_seq, project_name]
+        )
 
     return output.getvalue()
 
 
-def open_file(path: str) -> sqlite3.Connection:
-    """Open a run preflight from either a legacy omnibus CSV or a SQLite DB file.
+def open_db_file(
+    db_path: str,
+    patches_dir: Path | None = None,
+) -> sqlite3.Connection:
+    """Open an existing SQLite database file and apply any pending patches.
 
-    Detects the format from the file's first 16 bytes (SQLite magic
-    header). Caller owns and must close the returned connection.
+    Enables foreign-key enforcement, checks the schema version, and
+    applies patches as needed.
 
-    Raises:
-        FileNotFoundError: If *path* does not exist.
-        ValueError: If the file is detected as legacy CSV but fails
-            parsing or validation.
+    Args:
+        db_path: Filesystem path to the SQLite database file.
+        patches_dir: Directory to scan for patches.  Defaults to the
+            built-in ``sql/patches/`` directory.
+
+    Returns:
+        sqlite3.Connection: An open connection at the latest schema
+        version with foreign-key enforcement enabled.
     """
-    # Confirm the file exists before any read attempt so the error is unambiguous
-    p = Path(path)
-    if not p.is_file():
-        raise FileNotFoundError(f"No such file: {path}")
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    apply_patches(conn, patches_dir)
+    return conn
 
-    # Read just enough bytes to identify the SQLite magic header
-    with p.open("rb") as fh:
-        head = fh.read(len(_SQLITE_MAGIC))
 
-    # Dispatch on detected format
-    if head == _SQLITE_MAGIC:
-        return open_db_file(path)
-    return load_legacy_csv(path)
+def save_db_file(conn: sqlite3.Connection, db_path: str) -> None:
+    """Serialize a live SQLite connection to a database file.
+
+    Works for both in-memory and file-backed source connections. The
+    caller retains ownership of *conn*.
+
+    Args:
+        conn: An open SQLite source connection.
+        db_path: Filesystem path at which the database file will be
+            created. Any existing file is overwritten.
+    """
+    target = sqlite3.connect(db_path)
+    try:
+        conn.backup(target)
+    finally:
+        target.close()

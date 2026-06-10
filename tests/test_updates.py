@@ -1,5 +1,5 @@
 """Tests for updates.py: set_biosample_accession, set_bioproject_accession,
-update_lane, set_mask_short_reads, set_override_cycles."""
+update_lane, set_illumina_run_setting."""
 
 from __future__ import annotations
 
@@ -15,8 +15,7 @@ from run_preflight.updates import (
     _set_illumina_run_column,
     set_bioproject_accession,
     set_biosample_accession,
-    set_mask_short_reads,
-    set_override_cycles,
+    set_illumina_run_setting,
     update_lane,
 )
 
@@ -511,11 +510,11 @@ class TestUpdateLane(_UpdatesTestBase):
 
 
 class TestSetIlluminaSettings(_UpdatesTestBase):
-    """set_mask_short_reads / set_override_cycles on illumina_run."""
+    """set_illumina_run_setting on illumina_run."""
 
     # mask_short_reads is the chosen probe column for the behavior-matrix
-    # tests below; the per-wrapper tests then prove dispatch is correct
-    # for each public function (and that the other column is untouched).
+    # tests below; the per-setting tests then prove dispatch is correct
+    # for each Literal member (and that the other column is untouched).
 
     def _read_column(self, column: str) -> str | None:
         """Return illumina_run.<column> for the test's processing_run."""
@@ -589,14 +588,14 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
             ]
             self.assertEqual(cur.fetchall(), expected)
 
-    def test_set_mask_short_reads(
+    def test_set_illumina_run_setting_mask_short_reads(
         self,
-    ):  # same-pattern-ok: per-public-function smoke test
+    ):  # same-pattern-ok: per-setting smoke test
         with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx)
 
         with open_db(self.db_path) as conn:
-            set_mask_short_reads(conn, "R1:Y*N,R2:Y*N")
+            set_illumina_run_setting(conn, "mask_short_reads", "R1:Y*N,R2:Y*N")
         self.assertEqual(
             (
                 self._read_column("mask_short_reads"),
@@ -605,14 +604,14 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
             ("R1:Y*N,R2:Y*N", None),
         )
 
-    def test_set_override_cycles(
+    def test_set_illumina_run_setting_override_cycles(
         self,
-    ):  # same-pattern-ok: per-public-function smoke test
+    ):  # same-pattern-ok: per-setting smoke test
         with open_db(self.db_path) as conn:
             _add_illumina_run(conn, self.run_idx)
 
         with open_db(self.db_path) as conn:
-            set_override_cycles(conn, "Y151;I8;I8;Y151")
+            set_illumina_run_setting(conn, "override_cycles", "Y151;I8;I8;Y151")
         self.assertEqual(
             (
                 self._read_column("mask_short_reads"),
@@ -620,6 +619,13 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
             ),
             (None, "Y151;I8;I8;Y151"),
         )
+
+    def test_set_illumina_run_setting_rejects_unknown_setting(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Unsupported illumina_run setting"),
+        ):
+            set_illumina_run_setting(conn, "no_such_setting", "x")  # type: ignore[arg-type]
 
 
 class TestInputSampleCheck(_UpdatesTestBase):
@@ -735,7 +741,9 @@ class TestEmptyStringRejection(_UpdatesTestBase):
         ):
             set_bioproject_accession(conn, "", project_name="proj1")
 
-    def test_set_mask_short_reads_rejects_empty_value(self):
+    def test_set_illumina_run_setting_rejects_empty_value_mask_short_reads(
+        self,
+    ):  # same-pattern-ok: per-setting empty-value rejection
         with open_db(self.db_path) as conn:
             self._seed_illumina_run(conn)
 
@@ -743,9 +751,11 @@ class TestEmptyStringRejection(_UpdatesTestBase):
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="value must not be empty"),
         ):
-            set_mask_short_reads(conn, "")
+            set_illumina_run_setting(conn, "mask_short_reads", "")
 
-    def test_set_override_cycles_rejects_empty_value(self):
+    def test_set_illumina_run_setting_rejects_empty_value_override_cycles(
+        self,
+    ):  # same-pattern-ok: per-setting empty-value rejection
         with open_db(self.db_path) as conn:
             self._seed_illumina_run(conn)
 
@@ -753,4 +763,4 @@ class TestEmptyStringRejection(_UpdatesTestBase):
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="value must not be empty"),
         ):
-            set_override_cycles(conn, "")
+            set_illumina_run_setting(conn, "override_cycles", "")

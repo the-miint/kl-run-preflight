@@ -8,6 +8,7 @@ supplied reason.
 from __future__ import annotations
 
 import sqlite3
+from typing import Literal, get_args
 
 from .constants import (
     DB_COL_BIOPROJECT_ACCESSION,
@@ -16,8 +17,6 @@ from .constants import (
     DB_COL_ILLUMINA_SAMPLE_IDX,
     DB_COL_INPUT_SAMPLE_IDX,
     DB_COL_LANE,
-    DB_COL_MASK_SHORT_READS,
-    DB_COL_OVERRIDE_CYCLES,
     DB_COL_PROJECT_IDX,
     DB_COL_PROJECT_NAME,
     DB_COL_RUN_IDX,
@@ -31,7 +30,11 @@ from .constants import (
     UPDATE_PLATFORM_ILLUMINA,
     UPDATE_PLATFORM_TELLSEQ,
 )
-from .db import get_single_run_idx
+from .db import (
+    get_single_run_idx,
+    lookup_input_samples_by_name,
+    lookup_projects_by_key,
+)
 
 # Map platform strings to (table_name, primary_key_column) for the
 # platform-specific sample tables targeted by lane updates.
@@ -39,6 +42,8 @@ _PLATFORM_TABLES = {
     UPDATE_PLATFORM_ILLUMINA: (TABLE_ILLUMINA_SAMPLE, DB_COL_ILLUMINA_SAMPLE_IDX),
     UPDATE_PLATFORM_TELLSEQ: (TABLE_TELLSEQ_SAMPLE, DB_COL_TELLSEQ_SAMPLE_IDX),
 }
+
+IllumRunSetting = Literal["mask_short_reads", "override_cycles"]
 
 
 def _require_nonempty_or_none(value: str | None, param_name: str) -> str | None:
@@ -148,19 +153,8 @@ def set_biosample_accession(
 
     cur = conn.cursor()
 
-    # Resolve effective Sample_Name to a unique input_sample.  DISTINCT
-    # collapses replicate rows that share one input_sample.
-    cur.execute(
-        """
-        SELECT DISTINCT ins.input_sample_idx, ins.biosample_accession
-        FROM input_sample ins
-        JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx
-        JOIN prepped_sample prs ON prs.compression_sample_idx = cs.compression_sample_idx
-        WHERE COALESCE(prs.sample_name, ins.sample_name) = ?
-        """,
-        (sample_name,),
-    )
-    matches = cur.fetchall()
+    # Resolve effective Sample_Name to a unique input_sample
+    matches = lookup_input_samples_by_name(cur, sample_name)
     if not matches:
         raise ValueError(f"No input_sample matches Sample_Name {sample_name!r}")
     if len(matches) > 1:
@@ -308,32 +302,26 @@ def _set_illumina_run_column(
     )
 
 
-def set_mask_short_reads(
+def set_illumina_run_setting(
     conn: sqlite3.Connection,
+    setting: IllumRunSetting,
     value: str | None,
     reason: str | None = None,
 ) -> None:
-    """Set illumina_run.mask_short_reads to *value*; None clears it.
+    """Set a named illumina_run setting column to *value*; None clears it.
 
     Raises:
-        ValueError: If *value* is an empty string.
+        ValueError: If *value* is an empty string, or if *setting* is
+            not a supported illumina_run setting column.
     """
+    valid = get_args(IllumRunSetting)
+    if setting not in valid:
+        raise ValueError(
+            f"Unsupported illumina_run setting {setting!r}; "
+            f"supported: {sorted(valid)}"
+        )
     _require_nonempty_or_none(value, "value")
-    _set_illumina_run_column(conn, DB_COL_MASK_SHORT_READS, value, reason)
-
-
-def set_override_cycles(
-    conn: sqlite3.Connection,
-    value: str | None,
-    reason: str | None = None,
-) -> None:
-    """Set illumina_run.override_cycles to *value*; None clears it.
-
-    Raises:
-        ValueError: If *value* is an empty string.
-    """
-    _require_nonempty_or_none(value, "value")
-    _set_illumina_run_column(conn, DB_COL_OVERRIDE_CYCLES, value, reason)
+    _set_illumina_run_column(conn, setting, value, reason)
 
 
 def set_bioproject_accession(
@@ -374,14 +362,9 @@ def set_bioproject_accession(
     key_col = keys[0]
     key_value = supplied[key_col]
 
-    # Resolve the chosen key to project_idx and capture the prior value.
-    # key_col is one of two whitelisted column-name constants — safe to interpolate.
-    cur = conn.execute(
-        f"SELECT {DB_COL_PROJECT_IDX}, {DB_COL_BIOPROJECT_ACCESSION} "
-        f"FROM {TABLE_PROJECT} WHERE {key_col} = ?",
-        (key_value,),
-    )
-    matches = cur.fetchall()
+    # Resolve the chosen key to project_idx and capture the prior value
+    cur = conn.cursor()
+    matches = lookup_projects_by_key(cur, key_col, key_value)
     if not matches:
         raise ValueError(f"No project matches {key_col} {key_value!r}")
     if len(matches) > 1:

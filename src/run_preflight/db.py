@@ -157,9 +157,6 @@ def create_db(db_path: str) -> sqlite3.Connection:
 def introspect_view(cur, view_name: str) -> tuple[list[str], bool]:
     """Return column names (excluding run_idx) and whether run_idx exists.
 
-    Issues a single PRAGMA table_info call per view so callers never
-    need to re-query the view schema.
-
     Args:
         cur: An open SQLite cursor.
         view_name: Name of the SQL view to introspect.
@@ -176,9 +173,6 @@ def introspect_view(cur, view_name: str) -> tuple[list[str], bool]:
 
 def get_view_columns(cur, view_name: str) -> list[str]:
     """Return the column names of a SQL view, excluding run_idx.
-
-    Thin wrapper around introspect_view for callers that only need
-    the column list.
 
     Args:
         cur: An open SQLite cursor.
@@ -246,11 +240,6 @@ def get_projects_missing_external_id(
 def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
     """Return a mapping of section name to section format from the DB.
 
-    Queries the legacy_samplesheet_view table for all distinct
-    (section_name, section_format) pairs.  The result can be passed to
-    the parser so that section-format knowledge lives in one place
-    (the DB schema).
-
     Args:
         conn: An open SQLite connection with the schema already created.
 
@@ -263,6 +252,174 @@ def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
         "SELECT DISTINCT section_name, section_format FROM legacy_samplesheet_view"
     )
     return {name: fmt for name, fmt in cur.fetchall()}
+
+
+def get_legacy_format_idx(cur, sheet_type: str, sheet_version: int) -> int | None:
+    """Return the legacy_format_idx for (sheet_type, sheet_version), or None.
+
+    Args:
+        cur: An open SQLite cursor.
+        sheet_type: The legacy SheetType string.
+        sheet_version: The legacy SheetVersion integer.
+
+    Returns:
+        int | None: The matching legacy_format_idx, or None if no row
+        matches.
+    """
+    cur.execute(
+        "SELECT legacy_format_idx FROM legacy_samplesheet_format "
+        "WHERE legacy_sheet_type = ? AND legacy_version = ?",
+        (sheet_type, sheet_version),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def get_format_sections(cur, legacy_format_idx: int) -> list[tuple[str, str, str]]:
+    """Return ordered (section_name, view_name, section_format) tuples.
+
+    Args:
+        cur: An open SQLite cursor.
+        legacy_format_idx: The legacy format identifier.
+
+    Returns:
+        list[tuple[str, str, str]]: One tuple per section in
+        section_order, each (section_name, view_name, section_format).
+    """
+    cur.execute(
+        "SELECT section_name, view_name, section_format "
+        "FROM legacy_samplesheet_view "
+        "WHERE legacy_format_idx = ? ORDER BY section_order",
+        (legacy_format_idx,),
+    )
+    return cur.fetchall()
+
+
+def get_run_legacy_format(cur, run_idx: int) -> tuple[int, str, int] | None:
+    """Return (legacy_format_idx, sheet_type, version) for the run, or None.
+
+    Args:
+        cur: An open SQLite cursor.
+        run_idx: The processing_run.run_idx.
+
+    Returns:
+        tuple[int, str, int] | None: The format triple, or None if the
+        run has no legacy format assigned.
+    """
+    cur.execute(
+        "SELECT lf.legacy_format_idx, lf.legacy_sheet_type, lf.legacy_version "
+        "FROM processing_run sr "
+        "JOIN legacy_samplesheet_format lf "
+        "ON sr.legacy_format_idx = lf.legacy_format_idx "
+        "WHERE sr.run_idx = ?",
+        (run_idx,),
+    )
+    return cur.fetchone()
+
+
+def get_optional_columns_by_section(cur, legacy_format_idx: int) -> dict[str, set[str]]:
+    """Return {section_name: set of optional column names} for a format.
+
+    Columns from multiple groups targeting the same section accumulate
+    into a single set.
+
+    Args:
+        cur: An open SQLite cursor.
+        legacy_format_idx: The legacy format identifier.
+
+    Returns:
+        dict[str, set[str]]: Section name to the set of optional column
+        names declared for that section.
+    """
+    cur.execute(
+        "SELECT section_name, column_names "
+        "FROM legacy_samplesheet_optional_columns "
+        "WHERE legacy_format_idx = ?",
+        (legacy_format_idx,),
+    )
+    result: dict[str, set[str]] = {}
+    for section_name, col_names_csv in cur.fetchall():
+        cols = {c.strip() for c in col_names_csv.split(",")}
+        result.setdefault(section_name, set()).update(cols)
+    return result
+
+
+def get_optional_column_groups(
+    cur, legacy_format_idx: int, section_name: str
+) -> list[tuple[str, str, str]]:
+    """Return (group_name, column_names_csv, check_function) per group.
+
+    Args:
+        cur: An open SQLite cursor.
+        legacy_format_idx: The legacy format identifier.
+        section_name: The section whose optional groups to fetch.
+
+    Returns:
+        list[tuple[str, str, str]]: One row per optional column group
+        defined on the given section, in DB row order.
+    """
+    cur.execute(
+        "SELECT group_name, column_names, check_function "
+        "FROM legacy_samplesheet_optional_columns "
+        "WHERE legacy_format_idx = ? AND section_name = ?",
+        (legacy_format_idx, section_name),
+    )
+    return cur.fetchall()
+
+
+def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str | None]]:
+    """Return distinct (input_sample_idx, biosample_accession) rows by Sample_Name.
+
+    Resolves Sample_Name via the legacy rule (replicate aliases collapse
+    via DISTINCT to a single input_sample).
+
+    Args:
+        cur: An open SQLite cursor.
+        sample_name: The effective Sample_Name to match.
+
+    Returns:
+        list[tuple[int, str | None]]: Distinct matching rows. Empty list
+        means no match; multiple rows mean the name is ambiguous.
+    """
+    cur.execute(
+        "SELECT DISTINCT ins.input_sample_idx, ins.biosample_accession "
+        "FROM input_sample ins "
+        "JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx "
+        "JOIN prepped_sample prs ON prs.compression_sample_idx = cs.compression_sample_idx "
+        "JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx "
+        "WHERE psn.sample_name = ?",
+        (sample_name,),
+    )
+    return cur.fetchall()
+
+
+def lookup_projects_by_key(
+    cur, key_col: str, key_value: str
+) -> list[tuple[int, str | None]]:
+    """Return (project_idx, bioproject_accession) rows where key_col = key_value.
+
+    *key_col* must be "project_name" or "external_project_id" (closed
+    set; interpolated into SQL).
+
+    Args:
+        cur: An open SQLite cursor.
+        key_col: The project lookup key column.
+        key_value: The value to match in *key_col*.
+
+    Returns:
+        list[tuple[int, str | None]]: Matching rows. Empty list means
+        no match; multiple rows mean the key resolved ambiguously.
+
+    Raises:
+        ValueError: If *key_col* is not a supported lookup column.
+    """
+    if key_col not in ("project_name", "external_project_id"):
+        raise ValueError(f"Unsupported key_col {key_col!r}")
+    cur.execute(
+        f"SELECT project_idx, bioproject_accession FROM project WHERE {key_col} = ?",
+        (key_value,),
+    )
+    return cur.fetchall()
 
 
 # Error categories and per-row labels for invariant/accession violations.
@@ -385,6 +542,57 @@ def get_illumina_sample_info(
     _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders)
     _raise_violations(ERR_CATEGORY_MISSING_ACCESSION, accession_offenders)
     return results
+
+
+def get_illumina_sample_rows(
+    conn: sqlite3.Connection,
+) -> list[tuple[int, int | None, str, str, str, str]]:
+    """Return per-illumina_sample data tuples for the sole processing run.
+
+    Each tuple is (illumina_sample_idx, lane, i7_sequence, i5_sequence,
+    project_name, sample_name), ordered by illumina_sample_idx.
+    sample_name follows the legacy rule: prepped_sample.sample_name when
+    populated for a replicate, else input_sample.sample_name.
+
+    Raises:
+        ValueError: If *conn* lacks exactly one processing run.
+    """
+    run_idx = get_single_run_idx(conn)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT illumina_sample_idx, lane, i7_sequence, i5_sequence, "
+        "project_name, sample_name "
+        "FROM run_illumina_sample "
+        "WHERE run_idx = ? "
+        "ORDER BY illumina_sample_idx",
+        (run_idx,),
+    )
+    return cur.fetchall()
+
+
+def get_illumina_settings(
+    conn: sqlite3.Connection,
+) -> dict[str, str | None]:
+    """Return the [Settings] dict for the sole illumina_run.
+
+    Keys are the public [Settings] field names (MaskShortReads,
+    OverrideCycles); values are None for any column that is NULL on
+    illumina_run.
+
+    Raises:
+        ValueError: If *conn* lacks exactly one processing run.
+    """
+    run_idx = get_single_run_idx(conn)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT mask_short_reads, override_cycles FROM illumina_run WHERE run_idx = ?",
+        (run_idx,),
+    )
+    mask_short_reads, override_cycles = cur.fetchone()
+    return {
+        FIELD_MASK_SHORT_READS: mask_short_reads,
+        FIELD_OVERRIDE_CYCLES: override_cycles,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -577,13 +785,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 
     # -- Resolve legacy format ID (may be NULL for native runs) -------------
     sheet_version = int(header.get(FIELD_SHEET_VERSION, 0))
-    cur.execute(
-        "SELECT legacy_format_idx FROM legacy_samplesheet_format "
-        "WHERE legacy_sheet_type = ? AND legacy_version = ?",
-        (sheet_type, sheet_version),
-    )
-    fmt_row = cur.fetchone()
-    legacy_format_idx = fmt_row[0] if fmt_row else None
+    legacy_format_idx = get_legacy_format_idx(cur, sheet_type, sheet_version)
 
     # Reject pre-v101 files with replicates (unsupported well semantics)
     _reject_unsupported_replicates(sheet_version, data_rows, bio_rows)

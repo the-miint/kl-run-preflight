@@ -8,12 +8,12 @@ import textwrap
 import pytest
 
 from run_preflight.db import create_db
+from run_preflight.file_io import open_db_file
 from run_preflight.migrate import (
     apply_patches,
     get_latest_version,
     get_pending_patches,
     get_schema_version,
-    open_db_file,
 )
 
 

@@ -188,9 +188,9 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             "OverrideCycles,Y151;I8;I8;Y151\n"
             "\n"
             "[Data]\n"
-            "Lane,Sample_ID,index,index2\n"
-            "1,1,ATCACGAT,CGATGTAC\n"
-            "1,2,TTAGGCAT,GGCTACTG\n"
+            "Lane,Sample_ID,index,index2,Sample_Project\n"
+            "1,1,ATCACGAT,CGATGTAC,proj1\n"
+            "1,2,TTAGGCAT,GGCTACTG,proj1\n"
         )
         self.assertEqual(self.out_path.read_text(), expected)
 
@@ -220,8 +220,8 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             "OverrideCycles,Y151;I8;I8;Y151\n"
             "\n"
             "[Data]\n"
-            "Sample_ID,index,index2\n"
-            "1,ATCACGAT,CGATGTAC\n"
+            "Sample_ID,index,index2,Sample_Project\n"
+            "1,ATCACGAT,CGATGTAC,proj1\n"
         )
         self.assertEqual(self.out_path.read_text(), expected)
 
@@ -244,8 +244,8 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             "FileFormatVersion,1\n"
             "\n"
             "[Data]\n"
-            "Lane,Sample_ID,index,index2\n"
-            "1,1,ATCACGAT,CGATGTAC\n"
+            "Lane,Sample_ID,index,index2,Sample_Project\n"
+            "1,1,ATCACGAT,CGATGTAC,proj1\n"
         )
         self.assertEqual(self.out_path.read_text(), expected)
 
@@ -272,8 +272,8 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             "MaskShortReads,22\n"
             "\n"
             "[Data]\n"
-            "Lane,Sample_ID,index,index2\n"
-            "1,1,ATCACGAT,CGATGTAC\n"
+            "Lane,Sample_ID,index,index2,Sample_Project\n"
+            "1,1,ATCACGAT,CGATGTAC,proj1\n"
         )
         self.assertEqual(self.out_path.read_text(), expected)
 
@@ -300,8 +300,92 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             "OverrideCycles,Y151;I8;I8;Y151\n"
             "\n"
             "[Data]\n"
-            "Lane,Sample_ID,index,index2\n"
-            "1,1,ATCACGAT,CGATGTAC\n"
+            "Lane,Sample_ID,index,index2,Sample_Project\n"
+            "1,1,ATCACGAT,CGATGTAC,proj1\n"
+        )
+        self.assertEqual(self.out_path.read_text(), expected)
+
+    def test_save_bclconvert_v1_csv_include_sample_name(self):
+        # Sample_Names deliberately do not track sample_id ordering, and
+        # one sample has NULL sample_name (identified by biosample only)
+        # so its Sample_Name cell renders as empty string.
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
+        run_idx = _seed_illumina_run(
+            self.conn, mask_short_reads="22", override_cycles="Y151;I8;I8;Y151"
+        )
+        prs1 = _seed_prepped_sample(
+            self.conn, plate_idx, project_idx, run_idx, "zeta_001", "A1"
+        )
+        prs2 = _seed_prepped_sample(
+            self.conn, plate_idx, project_idx, run_idx, "alpha_042", "A2"
+        )
+        prs3 = _seed_prepped_sample(
+            self.conn, plate_idx, project_idx, run_idx, "to_be_nulled", "A3"
+        )
+
+        # Promote sample 3 to biosample-only identity (sample_name = NULL)
+        self.conn.execute(
+            "UPDATE input_sample SET sample_name = NULL, "
+            "biosample_accession = 'SAMN00000003' "
+            "WHERE input_sample_idx = ("
+            "    SELECT cs.input_sample_idx FROM prepped_sample prs "
+            "    JOIN compression_sample cs "
+            "      ON prs.compression_sample_idx = cs.compression_sample_idx "
+            "    WHERE prs.prepped_sample_idx = ?)",
+            (prs3,),
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=1
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs2, i7_seq="TTAGGCAT", i5_seq="GGCTACTG", lane=1
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs3, i7_seq="GCAATAAG", i5_seq="AATGCAGT", lane=1
+        )
+        self.conn.commit()
+
+        save_bclconvert_v1_csv(self.conn, str(self.out_path), include_sample_name=True)
+
+        expected = (
+            "[Header]\n"
+            "FileFormatVersion,1\n"
+            "\n"
+            "[Settings]\n"
+            "MaskShortReads,22\n"
+            "OverrideCycles,Y151;I8;I8;Y151\n"
+            "\n"
+            "[Data]\n"
+            "Lane,Sample_ID,Sample_Name,index,index2,Sample_Project\n"
+            "1,1,zeta_001,ATCACGAT,CGATGTAC,proj1\n"
+            "1,2,alpha_042,TTAGGCAT,GGCTACTG,proj1\n"
+            "1,3,,GCAATAAG,AATGCAGT,proj1\n"
+        )
+        self.assertEqual(self.out_path.read_text(), expected)
+
+    def test_save_bclconvert_v1_csv_include_sample_name_no_lane(self):
+        # Lane omission and Sample_Name inclusion must compose: header is
+        # Sample_ID,Sample_Name,index,index2,Sample_Project (no Lane).
+        # Sample_Name deliberately does not track sample_id ordering.
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
+        run_idx = _seed_illumina_run(self.conn)
+        prs1 = _seed_prepped_sample(
+            self.conn, plate_idx, project_idx, run_idx, "delta_777", "A1"
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=None
+        )
+        self.conn.commit()
+
+        save_bclconvert_v1_csv(self.conn, str(self.out_path), include_sample_name=True)
+
+        expected = (
+            "[Header]\n"
+            "FileFormatVersion,1\n"
+            "\n"
+            "[Data]\n"
+            "Sample_ID,Sample_Name,index,index2,Sample_Project\n"
+            "1,delta_777,ATCACGAT,CGATGTAC,proj1\n"
         )
         self.assertEqual(self.out_path.read_text(), expected)
 
@@ -328,9 +412,9 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             "FileFormatVersion,1\n"
             "\n"
             "[Data]\n"
-            "Lane,Sample_ID,index,index2\n"
-            "3,1,ATCACGAT,CGATGTAC\n"
-            "7,2,ATCACGAT,CGATGTAC\n"
+            "Lane,Sample_ID,index,index2,Sample_Project\n"
+            "3,1,ATCACGAT,CGATGTAC,proj1\n"
+            "7,2,ATCACGAT,CGATGTAC,proj1\n"
         )
         self.assertEqual(self.out_path.read_text(), expected)
 
@@ -374,6 +458,37 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
         self.assertEqual(sample_ids, expected_ids)
         # Determinism: ids must form a contiguous 1..N sequence
         self.assertEqual(sample_ids, list(range(1, len(sample_ids) + 1)))
+
+    def test_save_bclconvert_v1_csv_control_uses_plate_primary_project(self):
+        # A control row (input_sample.project_idx IS NULL) must resolve
+        # Sample_Project to the plate's primary project name
+        _project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
+        run_idx = _seed_illumina_run(self.conn)
+        _ins_idx, _cs_idx, prs_ctl = _helpers.seed_sample_chain(
+            self.conn,
+            plate_idx,
+            project_idx=None,
+            run_idx=run_idx,
+            sample_name="blank1",
+            sample_type_name="extraction_blank",
+            well="A1",
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs_ctl, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=1
+        )
+        self.conn.commit()
+
+        save_bclconvert_v1_csv(self.conn, str(self.out_path))
+
+        expected = (
+            "[Header]\n"
+            "FileFormatVersion,1\n"
+            "\n"
+            "[Data]\n"
+            "Lane,Sample_ID,index,index2,Sample_Project\n"
+            "1,1,ATCACGAT,CGATGTAC,proj1\n"
+        )
+        self.assertEqual(self.out_path.read_text(), expected)
 
     def test_save_bclconvert_v1_csv_zero_runs_raise_err(self):
         # Zero-run case raises naming the run-count problem; the >1 case is

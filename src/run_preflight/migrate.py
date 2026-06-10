@@ -134,10 +134,7 @@ def apply_patches(
 ) -> int:
     """Apply all pending patches to the database in order.
 
-    For ``.sql`` patches, executes via ``executescript``.  For ``.py``
-    patches, loads the module by file path and calls its
-    ``apply(conn)`` function.  After each patch succeeds, sets
-    ``PRAGMA user_version`` to the patch number.
+    A ``.py`` patch must define an ``apply(conn)`` entry point.
 
     Args:
         conn: An open SQLite connection.
@@ -173,47 +170,3 @@ def apply_patches(
 
     # Return final version without re-reading PRAGMA when patches were applied
     return pending[-1][0] if pending else get_schema_version(conn)
-
-
-def open_db_file(
-    db_path: str,
-    patches_dir: Path | None = None,
-) -> sqlite3.Connection:
-    """Open an existing SQLite database file and apply any pending patches.
-
-    Enables foreign-key enforcement, checks the schema version, and
-    applies patches as needed.
-
-    Args:
-        db_path: Filesystem path to the SQLite database file.
-        patches_dir: Directory to scan for patches.  Defaults to the
-            built-in ``sql/patches/`` directory.
-
-    Returns:
-        sqlite3.Connection: An open connection at the latest schema
-        version with foreign-key enforcement enabled.
-    """
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    apply_patches(conn, patches_dir)
-    return conn
-
-
-def save_db_file(conn: sqlite3.Connection, db_path: str) -> None:
-    """Serialize a live SQLite connection to a database file.
-
-    Uses ``sqlite3.Connection.backup`` to copy the source database
-    pages — including ``user_version`` — into a new file. Works for
-    both in-memory and file-backed source connections. The caller
-    retains ownership of *conn*.
-
-    Args:
-        conn: An open SQLite source connection.
-        db_path: Filesystem path at which the database file will be
-            created. Any existing file is overwritten.
-    """
-    target = sqlite3.connect(db_path)
-    try:
-        conn.backup(target)
-    finally:
-        target.close()

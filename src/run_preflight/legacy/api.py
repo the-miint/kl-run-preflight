@@ -2,20 +2,53 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import sqlite3
 from pathlib import Path
 
+from ..constants import COL_SAMPLE_NAME, DB_COL_ILLUMINA_SAMPLE_IDX
 from ..db import (
     create_db,
+    get_illumina_sample_rows,
     get_projects_missing_external_id,
     get_section_formats,
     get_single_run_idx,
     populate_db,
 )
-from ..migrate import save_db_file
+from ..file_io import open_db_file, save_db_file
 from .parser import parse_omnibus
 from .reconstruct import reconstruct_omnibus
 from .validate import validate_omnibus
+
+# SQLite database files begin with this 16-byte magic header (see https://sqlite.org/fileformat.html)
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def open_file(path: str) -> sqlite3.Connection:
+    """Open a run preflight from either a legacy omnibus CSV or a SQLite DB file.
+
+    Detects the format from the file's first 16 bytes (SQLite magic
+    header). Caller owns and must close the returned connection.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file is detected as legacy CSV but fails
+            parsing or validation.
+    """
+    # Confirm the file exists before any read attempt so the error is unambiguous
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"No such file: {path}")
+
+    # Read just enough bytes to identify the SQLite magic header
+    with p.open("rb") as fh:
+        head = fh.read(len(_SQLITE_MAGIC))
+
+    # Dispatch on detected format
+    if head == _SQLITE_MAGIC:
+        return open_db_file(path)
+    return load_legacy_csv(path)
 
 
 def load_legacy_csv(csv_path: str) -> sqlite3.Connection:
@@ -77,6 +110,31 @@ def save_legacy_csv(conn: sqlite3.Connection, csv_path: str) -> None:
 
     # Write reconstructed text to the requested path
     Path(csv_path).write_text(csv_text)
+
+
+def save_legacy_sample_id_map_csv(conn: sqlite3.Connection, csv_path: str) -> None:
+    """Write a CSV mapping illumina_sample_idx to legacy Sample_Name.
+
+    *conn* must describe exactly one processing run with at least one
+    illumina_sample row. Sample_Name follows the legacy CSV rule:
+    prepped_sample.sample_name when populated (replicates), else
+    input_sample.sample_name. Rows are ordered by illumina_sample_idx.
+
+    Raises:
+        ValueError: If *conn* lacks exactly one processing run, or has
+            no illumina_sample rows.
+    """
+    # Pull (illumina_sample_idx, sample_name) pairs from the run
+    rows = [(r[0], r[5]) for r in get_illumina_sample_rows(conn)]
+    if not rows:
+        raise ValueError("run has no illumina_sample rows; cannot write sample id map")
+
+    # Format the CSV text in a DB-free path, then write it out
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow([DB_COL_ILLUMINA_SAMPLE_IDX, COL_SAMPLE_NAME])
+    writer.writerows(rows)
+    Path(csv_path).write_text(output.getvalue())
 
 
 def migrate_legacy_csv_to_db_file(csv_path: str, db_path: str) -> None:
