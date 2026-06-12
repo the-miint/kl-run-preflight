@@ -335,10 +335,10 @@ CREATE TABLE project (
     human_filtering                 BOOLEAN NOT NULL DEFAULT 1,
     library_construction_protocol   TEXT NOT NULL,
     experiment_design_description   TEXT NOT NULL,
-    bioproject_accession            TEXT,
-        -- NCBI BioProject accession
-    -- A project is identified by external_project_id, bioproject_accession, or both
-    CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)
+    ena_study_accession            TEXT,
+        -- ENA Study accession
+    -- A project is identified by external_project_id, ena_study_accession, or both
+    CHECK (external_project_id IS NOT NULL OR ena_study_accession IS NOT NULL)
 );
 
 CREATE TABLE input_plate (

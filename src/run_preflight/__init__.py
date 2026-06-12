@@ -10,7 +10,7 @@ from .legacy.api import (
     save_legacy_sample_id_map_csv,
 )
 from .updates import (
-    set_bioproject_accession,
+    set_ena_study_accession,
     set_biosample_accession,
     set_illumina_run_setting,
     update_lane,
@@ -27,7 +27,7 @@ __all__ = [
     "save_legacy_csv",
     "save_legacy_sample_id_map_csv",
     "migrate_legacy_csv_to_db_file",
-    "set_bioproject_accession",
+    "set_ena_study_accession",
     "set_biosample_accession",
     "set_illumina_run_setting",
     "update_lane",

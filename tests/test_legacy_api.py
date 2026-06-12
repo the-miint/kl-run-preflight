@@ -243,7 +243,7 @@ class TestLegacyApi(unittest.TestCase):
                 conn,
                 project_name="proj_no_qid",
                 external_project_id=None,
-                bioproject_accession="PRJNA001",
+                ena_study_accession="ERP001",
             )
             plate_idx = _helpers.seed_plate(conn, project_idx)
             run_idx = _helpers.seed_processing_run(conn)

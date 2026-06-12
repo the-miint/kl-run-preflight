@@ -1,4 +1,4 @@
-"""Tests for updates.py: set_biosample_accession, set_bioproject_accession,
+"""Tests for updates.py: set_biosample_accession, set_ena_study_accession,
 update_lane, set_illumina_run_setting."""
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pytest
 from run_preflight.db import create_db
 from run_preflight.updates import (
     _set_illumina_run_column,
-    set_bioproject_accession,
+    set_ena_study_accession,
     set_biosample_accession,
     set_illumina_run_setting,
     update_lane,
@@ -256,43 +256,43 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             self.assertEqual(cur.fetchall(), expected)
 
 
-class TestSetBioprojectAccession(_UpdatesTestBase):
+class TestSetEnaStudyAccession(_UpdatesTestBase):
     # The shared setUp seeds proj1 with external_project_id='1';
     # tests below use that default project unless noted otherwise.
 
-    def _read_bioproject(self) -> str | None:
-        """Return project.bioproject_accession for the default test project."""
+    def _read_ena_study_accession(self) -> str | None:
+        """Return project.ena_study_accession for the default test project."""
         with open_db(self.db_path) as conn:
             (val,) = conn.execute(
-                "SELECT bioproject_accession FROM project WHERE project_idx = ?",
+                "SELECT ena_study_accession FROM project WHERE project_idx = ?",
                 (self.project_idx,),
             ).fetchone()
             return val
 
-    def test_set_bioproject_accession_by_project_name(self):
+    def test_set_ena_study_accession_by_project_name(self):
         with open_db(self.db_path) as conn:
-            set_bioproject_accession(
-                conn, "PRJNA001", project_name="proj1", reason="initial"
+            set_ena_study_accession(
+                conn, "ERP001", project_name="proj1", reason="initial"
             )
-        self.assertEqual(self._read_bioproject(), "PRJNA001")
+        self.assertEqual(self._read_ena_study_accession(), "ERP001")
 
-    def test_set_bioproject_accession_by_external_project_id(self):
+    def test_set_ena_study_accession_by_external_project_id(self):
         with open_db(self.db_path) as conn:
-            set_bioproject_accession(conn, "PRJNA002", external_project_id="1")
-        self.assertEqual(self._read_bioproject(), "PRJNA002")
+            set_ena_study_accession(conn, "ERP002", external_project_id="1")
+        self.assertEqual(self._read_ena_study_accession(), "ERP002")
 
-    def test_set_bioproject_accession_clear_when_external_present(self):
+    def test_set_ena_study_accession_clear_when_external_present(self):
         # external_project_id='1' keeps an identifier on the project; clearing is allowed
         with open_db(self.db_path) as conn:
-            set_bioproject_accession(conn, "PRJNA003", project_name="proj1")
-            set_bioproject_accession(conn, None, project_name="proj1")
-        self.assertIsNone(self._read_bioproject())
+            set_ena_study_accession(conn, "ERP003", project_name="proj1")
+            set_ena_study_accession(conn, None, project_name="proj1")
+        self.assertIsNone(self._read_ena_study_accession())
 
-    def test_set_bioproject_accession_clear_rejected_without_other_identifier(self):
-        # Drop external_project_id so clearing bioproject_accession would leave no identifier
+    def test_set_ena_study_accession_clear_rejected_without_other_identifier(self):
+        # Drop external_project_id so clearing ena_study_accession would leave no identifier
         with open_db(self.db_path) as conn:
             conn.execute(
-                "UPDATE project SET bioproject_accession = 'PRJNA004', "
+                "UPDATE project SET ena_study_accession = 'ERP004', "
                 "external_project_id = NULL WHERE project_idx = ?",
                 (self.project_idx,),
             )
@@ -302,35 +302,35 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
             open_db(self.db_path) as conn,
             pytest.raises(sqlite3.IntegrityError, match="CHECK"),
         ):
-            set_bioproject_accession(conn, None, project_name="proj1")
+            set_ena_study_accession(conn, None, project_name="proj1")
 
-    def test_set_bioproject_accession_no_key(self):
+    def test_set_ena_study_accession_no_key(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Exactly one"),
         ):
-            set_bioproject_accession(conn, "PRJNA005")
+            set_ena_study_accession(conn, "ERP005")
 
-    def test_set_bioproject_accession_both_keys(self):
+    def test_set_ena_study_accession_both_keys(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Exactly one"),
         ):
-            set_bioproject_accession(
+            set_ena_study_accession(
                 conn,
-                "PRJNA006",
+                "ERP006",
                 project_name="proj1",
                 external_project_id="1",
             )
 
-    def test_set_bioproject_accession_missing(self):
+    def test_set_ena_study_accession_missing(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="No project matches"),
         ):
-            set_bioproject_accession(conn, "PRJNA007", project_name="nonexistent")
+            set_ena_study_accession(conn, "ERP007", project_name="nonexistent")
 
-    def test_set_bioproject_accession_ambiguous_external_id(self):
+    def test_set_ena_study_accession_ambiguous_external_id(self):
         # Insert a second project sharing external_project_id with proj1
         with open_db(self.db_path) as conn:
             _helpers.seed_project(conn, project_name="proj2", external_project_id="1")
@@ -340,17 +340,17 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="ambiguous"),
         ):
-            set_bioproject_accession(conn, "PRJNA008", external_project_id="1")
+            set_ena_study_accession(conn, "ERP008", external_project_id="1")
 
-    def test_set_bioproject_accession_audit(self):
+    def test_set_ena_study_accession_audit(self):
         # Two successive sets so the second log entry captures the
         # first call's value as old_value
         with open_db(self.db_path) as conn:
-            set_bioproject_accession(
-                conn, "PRJNA009", project_name="proj1", reason="initial"
+            set_ena_study_accession(
+                conn, "ERP009", project_name="proj1", reason="initial"
             )
-            set_bioproject_accession(
-                conn, "PRJNA010", project_name="proj1", reason="correction"
+            set_ena_study_accession(
+                conn, "ERP010", project_name="proj1", reason="correction"
             )
 
         with open_db(self.db_path) as conn:
@@ -363,17 +363,17 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
                 (
                     "project",
                     self.project_idx,
-                    "bioproject_accession",
+                    "ena_study_accession",
                     None,
-                    "PRJNA009",
+                    "ERP009",
                     "initial",
                 ),
                 (
                     "project",
                     self.project_idx,
-                    "bioproject_accession",
-                    "PRJNA009",
-                    "PRJNA010",
+                    "ena_study_accession",
+                    "ERP009",
+                    "ERP010",
                     "correction",
                 ),
             ]
@@ -720,26 +720,26 @@ class TestEmptyStringRejection(_UpdatesTestBase):
             self._seed_sample(conn)
             set_biosample_accession(conn, "S1", "")
 
-    def test_set_bioproject_accession_rejects_empty_project_name(self):
+    def test_set_ena_study_accession_rejects_empty_project_name(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Exactly one of"),
         ):
-            set_bioproject_accession(conn, "PRJNA001", project_name="")
+            set_ena_study_accession(conn, "ERP001", project_name="")
 
-    def test_set_bioproject_accession_rejects_empty_external_project_id(self):
+    def test_set_ena_study_accession_rejects_empty_external_project_id(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Exactly one of"),
         ):
-            set_bioproject_accession(conn, "PRJNA001", external_project_id="")
+            set_ena_study_accession(conn, "ERP001", external_project_id="")
 
-    def test_set_bioproject_accession_rejects_empty_accession(self):
+    def test_set_ena_study_accession_rejects_empty_accession(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="accession must not be empty"),
         ):
-            set_bioproject_accession(conn, "", project_name="proj1")
+            set_ena_study_accession(conn, "", project_name="proj1")
 
     def test_set_illumina_run_setting_rejects_empty_value_mask_short_reads(
         self,

@@ -35,11 +35,11 @@ def seed_project(
     *,
     project_name: str = "proj1",
     external_project_id: str | None = "1",
-    bioproject_accession: str | None = None,
+    ena_study_accession: str | None = None,
 ) -> int:
     """Insert one project.
 
-    Either *external_project_id* or *bioproject_accession* may be None,
+    Either *external_project_id* or *ena_study_accession* may be None,
     but the row is rejected if both are NULL.
     """
     cur = conn.cursor()
@@ -47,9 +47,9 @@ def seed_project(
         "INSERT INTO project "
         "(project_name, external_project_id, human_filtering, "
         " library_construction_protocol, experiment_design_description, "
-        " bioproject_accession) "
+        " ena_study_accession) "
         "VALUES (?, ?, 1, 'proto', 'desc', ?)",
-        (project_name, external_project_id, bioproject_accession),
+        (project_name, external_project_id, ena_study_accession),
     )
     return cur.lastrowid
 
