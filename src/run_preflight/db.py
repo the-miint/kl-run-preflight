@@ -203,38 +203,37 @@ def get_single_run_idx(conn: sqlite3.Connection) -> int:
     return run_idxs[0]
 
 
-def get_projects_missing_external_id(
+def get_run_projects(
     conn: sqlite3.Connection,
     run_idx: int,
-) -> list[str]:
-    """Return the names of projects reachable from *run_idx* that have NULL
-    external_project_id.
+) -> list[tuple[str, str | None]]:
+    """Return (project_name, external_project_id) for every project in *run_idx*.
 
     Both the primary plate project and any per-sample (secondary)
-    project are in scope.  The list is sorted by project_name; the
-    list is empty when every reachable project has a non-NULL value.
+    project are in scope, sorted by project_name. external_project_id
+    is None for a reachable project that has none set.
     """
     # Primary projects: reachable via input_plate.primary_project_idx.
     # Secondary projects: reachable via input_sample.project_idx.
     cur = conn.execute(
         """
-        SELECT DISTINCT p.project_name
+        SELECT DISTINCT p.project_name, p.external_project_id
         FROM project p
         JOIN input_plate ip ON ip.primary_project_idx = p.project_idx
         JOIN input_sample ins ON ins.input_plate_idx = ip.input_plate_idx
         JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx
-        WHERE cs.run_idx = ? AND p.external_project_id IS NULL
+        WHERE cs.run_idx = ?
         UNION
-        SELECT DISTINCT p.project_name
+        SELECT DISTINCT p.project_name, p.external_project_id
         FROM project p
         JOIN input_sample ins ON ins.project_idx = p.project_idx
         JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx
-        WHERE cs.run_idx = ? AND p.external_project_id IS NULL
+        WHERE cs.run_idx = ?
         ORDER BY project_name
         """,
         (run_idx, run_idx),
     )
-    return [name for (name,) in cur.fetchall()]
+    return cur.fetchall()
 
 
 def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
@@ -252,6 +251,24 @@ def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
         "SELECT DISTINCT section_name, section_format FROM legacy_samplesheet_view"
     )
     return {name: fmt for name, fmt in cur.fetchall()}
+
+
+def get_projects_missing_external_id(
+    conn: sqlite3.Connection,
+    run_idx: int,
+) -> list[str]:
+    """Return the names of projects reachable from *run_idx* that have NULL
+    external_project_id.
+
+    Both the primary plate project and any per-sample (secondary)
+    project are in scope.  The list is sorted by project_name; the
+    list is empty when every reachable project has a non-NULL value.
+    """
+    return [
+        name
+        for name, external_project_id in get_run_projects(conn, run_idx)
+        if external_project_id is None
+    ]
 
 
 def get_legacy_format_idx(cur, sheet_type: str, sheet_version: int) -> int | None:
@@ -391,6 +408,44 @@ def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str |
         (sample_name,),
     )
     return cur.fetchall()
+
+
+def get_input_sample_project_info(
+    conn: sqlite3.Connection,
+) -> list[tuple[str, str | None, bool]]:
+    """Return distinct (sample_name, external_project_id, is_control) rows.
+
+    Resolves the sole processing_run via get_single_run_idx and returns
+    one row per distinct triple, ordered by sample_name; rows sharing all
+    three collapse, so both replicates and a sample appearing on multiple
+    plates yield a single row. external_project_id is that of the sample's
+    effective project (its own project, or the plate's primary project for
+    controls); is_control is True when input_sample.project_idx is NULL.
+    """
+    run_idx = get_single_run_idx(conn)
+
+    # Reuse prepped_sample_project's effective-project resolution, then map
+    # back to the input_sample for its sample_name and join out to the
+    # project for its external_project_id; DISTINCT collapses replicate rows.
+    cur = conn.execute(
+        """
+        SELECT DISTINCT ins.sample_name,
+               proj.external_project_id,
+               ins.project_idx IS NULL
+        FROM prepped_sample_project psp
+        JOIN prepped_sample prs ON prs.prepped_sample_idx = psp.prepped_sample_idx
+        JOIN compression_sample cs
+            ON prs.compression_sample_idx = cs.compression_sample_idx
+        JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
+        JOIN project proj ON psp.project_idx = proj.project_idx
+        WHERE cs.run_idx = ?
+        ORDER BY ins.sample_name
+        """,
+        (run_idx,),
+    )
+    return [
+        (name, ext_id, bool(is_control)) for name, ext_id, is_control in cur.fetchall()
+    ]
 
 
 def lookup_projects_by_key(

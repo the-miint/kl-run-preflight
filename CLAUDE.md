@@ -107,10 +107,12 @@ Tests are in `tests/`. SQL schema is in `src/run_preflight/sql/`.
 | `src/run_preflight/legacy/formatting.py` | Defines shared formatting (boolean columns, bcl_scrub_name) |
 | `src/run_preflight/legacy/roundtrip.py` | Packages load + write + normalize as test/dev helpers for byte-comparing reconstructed output against the original |
 
-## Ticket Tracking
+## Changelog
 
-When a ticket is completed, move it from "Open Tickets" to the "Completed"
-table in `docs/tickets.md` before considering the work done.
+When a unit of work is completed, add an entry to the `[Unreleased]` section of
+`CHANGELOG.md` (root) under the appropriate Added/Changed/Fixed/Removed heading
+before considering the work done. The file follows the
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
 ## Testing
 

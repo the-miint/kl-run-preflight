@@ -14,7 +14,9 @@ from run_preflight.db import (
     LABEL_STANDARD_NO_PROJECT,
     create_db,
     get_illumina_sample_info,
+    get_input_sample_project_info,
     get_projects_missing_external_id,
+    get_run_projects,
 )
 from run_preflight.updates import set_biosample_accession
 
@@ -402,6 +404,118 @@ class TestGetProjectsMissingExternalId(unittest.TestCase):
             conn.commit()
             missing = get_projects_missing_external_id(conn, run)
         self.assertEqual(missing, ["proj_secondary_no_qid"])
+
+
+class TestGetInputSampleProjectInfo(unittest.TestCase):
+    """Tests for db.get_input_sample_project_info."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+        conn = create_db(self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_get_input_sample_project_info(self):
+        # One plate (primary proj1) carrying: a standard sample on its own
+        # project, a standard sample on a secondary project, a control
+        # (NULL project, inherits the plate primary's QiitaID), and a
+        # replicated sample (two prepped rows) that must collapse to one row.
+        with open_db(self.db_path) as conn:
+            proj1, plate, run = _seed_run_skeleton(conn)
+            proj2 = _helpers.seed_project(
+                conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession="PRJNA002",
+            )
+            _helpers.seed_sample_chain(
+                conn, plate, proj1, run, sample_name="S1", well="A1"
+            )
+            _helpers.seed_sample_chain(
+                conn, plate, proj2, run, sample_name="S2", well="A2"
+            )
+            _helpers.seed_sample_chain(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                sample_type_name="extraction_blank",
+                well="A3",
+            )
+            _, rep_cs, _ = _helpers.seed_sample_chain(
+                conn, plate, proj1, run, sample_name="R1", well="A4"
+            )
+            # Second prepped row makes R1 a replicate; it must not duplicate R1
+            _helpers.seed_prepped_sample(conn, rep_cs, well="A5", sample_name="R1.A5")
+            conn.commit()
+
+        with open_db(self.db_path) as conn:
+            result = get_input_sample_project_info(conn)
+
+        self.assertEqual(
+            result,
+            [
+                ("R1", "1", False),
+                ("S1", "1", False),
+                ("S2", "2", False),
+                ("blank1", "1", True),
+            ],
+        )
+
+
+class TestGetRunProjects(unittest.TestCase):
+    """Tests for db.get_run_projects."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+        conn = create_db(self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_get_run_projects(self):
+        # Primary (proj1) plus a per-sample secondary (proj2) on the plate
+        with open_db(self.db_path) as conn:
+            proj1, plate, run = _seed_run_skeleton(conn)
+            proj2 = _helpers.seed_project(
+                conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession="PRJNA002",
+            )
+            _helpers.seed_sample_chain(conn, plate, proj1, run, sample_name="S1")
+            _helpers.seed_sample_chain(
+                conn, plate, proj2, run, sample_name="S2", well="A2"
+            )
+            conn.commit()
+            result = get_run_projects(conn, run)
+
+        self.assertEqual(result, [("proj1", "1"), ("proj2", "2")])
+
+    def test_get_run_projects_null_external_id(self):
+        # A reachable project with no QiitaID surfaces with None
+        with open_db(self.db_path) as conn:
+            project_idx = _helpers.seed_project(
+                conn,
+                project_name="proj_no_qid",
+                external_project_id=None,
+                bioproject_accession="PRJNA001",
+            )
+            plate_idx = _helpers.seed_plate(conn, project_idx)
+            run_idx = _helpers.seed_processing_run(conn)
+            _helpers.seed_sample_chain(
+                conn, plate_idx, project_idx, run_idx, sample_name="S1"
+            )
+            conn.commit()
+            result = get_run_projects(conn, run_idx)
+
+        self.assertEqual(result, [("proj_no_qid", None)])
 
 
 if __name__ == "__main__":
