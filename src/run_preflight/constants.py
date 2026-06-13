@@ -212,7 +212,7 @@ DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
 DB_COL_LANE = "lane"
 DB_COL_MASK_SHORT_READS = "mask_short_reads"
 DB_COL_OVERRIDE_CYCLES = "override_cycles"
-DB_COL_ENA_STUDY_ACCESSION = "ena_study_accession"
+DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
 DB_COL_PROJECT_NAME = "project_name"
 DB_COL_EXTERNAL_PROJECT_ID = "external_project_id"
 

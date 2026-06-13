@@ -396,7 +396,7 @@ def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str |
 def lookup_projects_by_key(
     cur, key_col: str, key_value: str
 ) -> list[tuple[int, str | None]]:
-    """Return (project_idx, ena_study_accession) rows where key_col = key_value.
+    """Return (project_idx, bioproject_accession) rows where key_col = key_value.
 
     *key_col* must be "project_name" or "external_project_id" (closed
     set; interpolated into SQL).
@@ -416,7 +416,7 @@ def lookup_projects_by_key(
     if key_col not in ("project_name", "external_project_id"):
         raise ValueError(f"Unsupported key_col {key_col!r}")
     cur.execute(
-        f"SELECT project_idx, ena_study_accession FROM project WHERE {key_col} = ?",
+        f"SELECT project_idx, bioproject_accession FROM project WHERE {key_col} = ?",
         (key_value,),
     )
     return cur.fetchall()
@@ -449,21 +449,21 @@ def _raise_violations(
 def get_illumina_sample_info(
     conn: sqlite3.Connection,
 ) -> list[tuple[int, str, str, list[str]]]:
-    """Return per-illumina_sample biosample + ena study accession info for the run.
+    """Return per-illumina_sample biosample + bioproject accession info for the run.
 
     Resolves the sole processing_run via get_single_run_idx and returns
     one tuple per illumina_sample row, ordered by illumina_sample_idx:
     (illumina_sample_idx, biosample_accession,
-    primary_ena_study_accession, secondary_ena_study_accessions),
-    where secondary_ena_study_accessions is a list of accessions for
+    primary_bioproject_accession, secondary_bioproject_accessions),
+    where secondary_bioproject_accessions is a list of accessions for
     every non-primary plate project (populated only for controls;
     empty for non-control samples), sorted by accession value.
 
     Raises:
         ValueError: If the control / project_idx pairing is violated
             on any row (raised before any accession check), or if any
-            required accession (biosample, primary ena study accession, or any
-            secondary ena study accession) is None on any row.
+            required accession (biosample, primary bioproject accession, or any
+            secondary bioproject accession) is None on any row.
     """
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
@@ -479,10 +479,10 @@ def get_illumina_sample_info(
             ins.project_idx,
             ins.biosample_accession,
             st.name,
-            COALESCE(own_proj.ena_study_accession,
-                     primary_proj.ena_study_accession),
+            COALESCE(own_proj.bioproject_accession,
+                     primary_proj.bioproject_accession),
             ipp.project_idx,
-            secondary_proj.ena_study_accession
+            secondary_proj.bioproject_accession
         FROM run_illumina_sample ris
         JOIN input_sample ins
             ON ris.input_sample_idx = ins.input_sample_idx
@@ -501,7 +501,7 @@ def get_illumina_sample_info(
         LEFT JOIN project secondary_proj
             ON ipp.project_idx = secondary_proj.project_idx
         WHERE ris.run_idx = ?
-        ORDER BY ris.illumina_sample_idx, secondary_proj.ena_study_accession
+        ORDER BY ris.illumina_sample_idx, secondary_proj.bioproject_accession
         """,
         (run_idx,),
     )
@@ -513,7 +513,7 @@ def get_illumina_sample_info(
     results: list[tuple[int, str, str, list[str]]] = []
     for ils_idx, group in groupby(rows, key=lambda r: r[0]):
         group_rows = list(group)
-        _, project_idx, biosample, st_name, primary_bp, _, _ = group_rows[0]
+        _, project_idx, biosample, st_name, primary_bioproject, _, _ = group_rows[0]
 
         # Enforce control / project_idx pairing before reading accessions
         is_standard = st_name == SAMPLE_TYPE_STANDARD
@@ -525,18 +525,18 @@ def get_illumina_sample_info(
             invariant_offenders.append((ils_idx, LABEL_NONSTANDARD_WITH_PROJECT))
             continue
 
-        # Collect non-primary plate projects' ena_study_accessions
+        # Collect non-primary plate projects' bioproject_accessions
         secondary = [r[6] for r in group_rows if r[5] is not None]
 
         # Record any missing accession for the summary report
         if biosample is None:
             accession_offenders.append((ils_idx, "biosample_accession"))
-        if primary_bp is None:
-            accession_offenders.append((ils_idx, "primary_ena_study_accession"))
+        if primary_bioproject is None:
+            accession_offenders.append((ils_idx, "primary_bioproject_accession"))
         if any(b is None for b in secondary):
-            accession_offenders.append((ils_idx, "secondary_ena_study_accessions"))
+            accession_offenders.append((ils_idx, "secondary_bioproject_accessions"))
 
-        results.append((ils_idx, biosample, primary_bp, secondary))
+        results.append((ils_idx, biosample, primary_bioproject, secondary))
 
     # Invariant violations indicate corrupt data; raise before accession checks
     _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders)

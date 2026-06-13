@@ -11,7 +11,7 @@ import sqlite3
 from typing import Literal, get_args
 
 from .constants import (
-    DB_COL_ENA_STUDY_ACCESSION,
+    DB_COL_BIOPROJECT_ACCESSION,
     DB_COL_BIOSAMPLE_ACCESSION,
     DB_COL_EXTERNAL_PROJECT_ID,
     DB_COL_ILLUMINA_SAMPLE_IDX,
@@ -317,14 +317,13 @@ def set_illumina_run_setting(
     valid = get_args(IllumRunSetting)
     if setting not in valid:
         raise ValueError(
-            f"Unsupported illumina_run setting {setting!r}; "
-            f"supported: {sorted(valid)}"
+            f"Unsupported illumina_run setting {setting!r}; supported: {sorted(valid)}"
         )
     _require_nonempty_or_none(value, "value")
     _set_illumina_run_column(conn, setting, value, reason)
 
 
-def set_ena_study_accession(
+def set_bioproject_accession(
     conn: sqlite3.Connection,
     accession: str | None,
     *,
@@ -332,7 +331,7 @@ def set_ena_study_accession(
     external_project_id: str | None = None,
     reason: str | None = None,
 ) -> None:
-    """Set ena_study_accession on the project matching the given key.
+    """Set bioproject_accession on the project matching the given key.
 
     Exactly one of *project_name* or *external_project_id* must be
     non-None. *accession* may be None to clear; doing so raises
@@ -378,7 +377,7 @@ def set_ena_study_accession(
         TABLE_PROJECT,
         DB_COL_PROJECT_IDX,
         project_idx,
-        DB_COL_ENA_STUDY_ACCESSION,
+        DB_COL_BIOPROJECT_ACCESSION,
         old_accession,
         accession,
         reason,

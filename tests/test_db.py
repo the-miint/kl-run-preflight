@@ -25,14 +25,14 @@ from ._helpers import open_db
 def _seed_run_skeleton(
     conn: sqlite3.Connection,
     *,
-    primary_ena_study_accession: str | None = "ERP001",
+    primary_bioproject_accession: str | None = "PRJNA001",
 ) -> tuple[int, int, int]:
     """Insert one project + plate + run; return (project_idx, plate_idx, run_idx)."""
     project_idx = _helpers.seed_project(
         conn,
         project_name="proj1",
         external_project_id="1",
-        ena_study_accession=primary_ena_study_accession,
+        bioproject_accession=primary_bioproject_accession,
     )
     plate_idx = _helpers.seed_plate(conn, project_idx)
     run_idx = _helpers.seed_processing_run(conn)
@@ -95,18 +95,18 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
 
-        self.assertEqual(result, [(ils_idx, "SAMN001", "ERP001", [])])
+        self.assertEqual(result, [(ils_idx, "SAMN001", "PRJNA001", [])])
 
     def test_get_illumina_sample_info_non_control_diff_project_from_plate_primary(self):
         # Non-control whose own project is not the plate primary: primary
-        # ena study accession = sample's own (not the plate primary's)
+        # bioproject accession = sample's own (not the plate primary's)
         with open_db(self.db_path) as conn:
             _, plate, run = _seed_run_skeleton(conn)
             other_proj = _helpers.seed_project(
                 conn,
                 project_name="proj2",
                 external_project_id="2",
-                ena_study_accession="ERP002",
+                bioproject_accession="PRJNA002",
             )
             _, ils_idx = _seed_illumina(
                 conn, plate, other_proj, run, sample_name="S1", well="A1"
@@ -116,7 +116,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
 
-        self.assertEqual(result, [(ils_idx, "SAMN001", "ERP002", [])])
+        self.assertEqual(result, [(ils_idx, "SAMN001", "PRJNA002", [])])
 
     def test_get_illumina_sample_info_control_single_project(self):
         # Control on a single-project plate: primary = plate primary; secondary = []
@@ -136,27 +136,27 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
 
-        self.assertEqual(result, [(ils_idx, "SAMN_BLK", "ERP001", [])])
+        self.assertEqual(result, [(ils_idx, "SAMN_BLK", "PRJNA001", [])])
 
     def test_get_illumina_sample_info_control_multi_project(self):
         # Control on a multi-project plate: secondary lists every non-primary
-        # plate project's ena_study_accession sorted by the accession value.
+        # plate project's bioproject_accession sorted by the accession value.
         # The two secondary projects are seeded so that project_idx order
-        # (proj2 then proj3) does NOT match accession order (ERP111 then
-        # ERP999), proving the function sorts by accession not project_idx.
+        # (proj2 then proj3) does NOT match accession order (PRJNA111 then
+        # PRJNA999), proving the function sorts by accession not project_idx.
         with open_db(self.db_path) as conn:
             _, plate, run = _seed_run_skeleton(conn)
             proj2 = _helpers.seed_project(
                 conn,
                 project_name="proj2",
                 external_project_id="2",
-                ena_study_accession="ERP999",
+                bioproject_accession="PRJNA999",
             )
             proj3 = _helpers.seed_project(
                 conn,
                 project_name="proj3",
                 external_project_id="3",
-                ena_study_accession="ERP111",
+                bioproject_accession="PRJNA111",
             )
             # Non-control samples from proj2 and proj3 land on the same plate
             # so input_plate_projects picks them up as secondaries
@@ -178,7 +178,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
 
         self.assertEqual(
             result,
-            [(ils_idx, "SAMN_BLK", "ERP001", ["ERP111", "ERP999"])],
+            [(ils_idx, "SAMN_BLK", "PRJNA001", ["PRJNA111", "PRJNA999"])],
         )
 
     def test_get_illumina_sample_info_missing_biosample_accession(self):
@@ -219,10 +219,12 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         self.assertIn(f"illumina_sample_idx={ils1}", msg)
         self.assertIn(f"illumina_sample_idx={ils2}", msg)
 
-    def test_get_illumina_sample_info_missing_own_ena_study_accession(self):
-        # Non-control whose own project has NULL ena_study_accession
+    def test_get_illumina_sample_info_missing_own_bioproject_accession(self):
+        # Non-control whose own project has NULL bioproject_accession
         with open_db(self.db_path) as conn:
-            proj, plate, run = _seed_run_skeleton(conn, primary_ena_study_accession=None)
+            proj, plate, run = _seed_run_skeleton(
+                conn, primary_bioproject_accession=None
+            )
             _, ils_idx = _seed_illumina(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
@@ -235,12 +237,14 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
         self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn("primary_ena_study_accession", msg)
+        self.assertIn("primary_bioproject_accession", msg)
 
-    def test_get_illumina_sample_info_missing_primary_ena_study_accession_for_control(self):
-        # Control inherits via plate primary; missing primary ena study accession errors
+    def test_get_illumina_sample_info_missing_primary_bioproject_accession_for_control(
+        self,
+    ):
+        # Control inherits via plate primary; missing primary bioproject accession errors
         with open_db(self.db_path) as conn:
-            _, plate, run = _seed_run_skeleton(conn, primary_ena_study_accession=None)
+            _, plate, run = _seed_run_skeleton(conn, primary_bioproject_accession=None)
             _, ils_idx = _seed_illumina(
                 conn,
                 plate,
@@ -259,17 +263,19 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
         self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn("primary_ena_study_accession", msg)
+        self.assertIn("primary_bioproject_accession", msg)
 
-    def test_get_illumina_sample_info_missing_secondary_ena_study_accession_for_control(self):
-        # Control on multi-project plate where one secondary has NULL ena study accession
+    def test_get_illumina_sample_info_missing_secondary_bioproject_accession_for_control(
+        self,
+    ):
+        # Control on multi-project plate where one secondary has NULL bioproject accession
         with open_db(self.db_path) as conn:
             _, plate, run = _seed_run_skeleton(conn)
             proj2 = _helpers.seed_project(
                 conn,
                 project_name="proj2",
                 external_project_id="2",
-                ena_study_accession=None,
+                bioproject_accession=None,
             )
             _helpers.seed_input_sample(conn, plate, proj2, sample_name="S2")
             _, ils_idx = _seed_illumina(
@@ -290,7 +296,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
         self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn("secondary_ena_study_accessions", msg)
+        self.assertIn("secondary_bioproject_accessions", msg)
 
     def test_get_illumina_sample_info_invariant_standard_null_project(self):
         # Standard sample_type with NULL project_idx violates the pairing
@@ -362,13 +368,13 @@ class TestGetProjectsMissingExternalId(unittest.TestCase):
 
     def test_get_projects_missing_external_id_primary_missing(self):
         # Primary plate project lacks external_project_id (row is
-        # valid only because ena_study_accession is non-null)
+        # valid only because bioproject_accession is non-null)
         with open_db(self.db_path) as conn:
             project_idx = _helpers.seed_project(
                 conn,
                 project_name="proj_no_qid",
                 external_project_id=None,
-                ena_study_accession="ERP001",
+                bioproject_accession="PRJNA001",
             )
             plate_idx = _helpers.seed_plate(conn, project_idx)
             run_idx = _helpers.seed_processing_run(conn)
@@ -388,7 +394,7 @@ class TestGetProjectsMissingExternalId(unittest.TestCase):
                 conn,
                 project_name="proj_secondary_no_qid",
                 external_project_id=None,
-                ena_study_accession="ERP999",
+                bioproject_accession="PRJNA999",
             )
             _helpers.seed_sample_chain(
                 conn, plate, secondary_idx, run, sample_name="S1"
