@@ -164,6 +164,10 @@ SEQUENCER_UNKNOWN = "Unknown"
 
 SAMPLE_TYPE_STANDARD = "standard"
 
+# Dot-delimited token marking a sample (or replicate) as "do not use";
+# detected case-insensitively in sample names during legacy ingest.
+DO_NOT_USE_TOKEN = "donotuse"
+
 
 # ---------------------------------------------------------------------------
 # SampleContext type mappings (source value -> DB sample_type name)
@@ -201,6 +205,7 @@ CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA = "check_has_extracted_sample_surface_ar
 
 # Tables
 TABLE_INPUT_SAMPLE = "input_sample"
+TABLE_PREPPED_SAMPLE = "prepped_sample"
 TABLE_ILLUMINA_SAMPLE = "illumina_sample"
 TABLE_TELLSEQ_SAMPLE = "tellseq_sample"
 TABLE_ILLUMINA_RUN = "illumina_run"
@@ -215,9 +220,11 @@ DB_COL_OVERRIDE_CYCLES = "override_cycles"
 DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
 DB_COL_PROJECT_NAME = "project_name"
 DB_COL_EXTERNAL_PROJECT_ID = "external_project_id"
+DB_COL_DO_NOT_USE = "do_not_use"
 
 # Primary-key index column names referenced by UPDATE statements
 DB_COL_INPUT_SAMPLE_IDX = "input_sample_idx"
+DB_COL_PREPPED_SAMPLE_IDX = "prepped_sample_idx"
 DB_COL_ILLUMINA_SAMPLE_IDX = "illumina_sample_idx"
 DB_COL_TELLSEQ_SAMPLE_IDX = "tellseq_sample_idx"
 DB_COL_RUN_IDX = "run_idx"

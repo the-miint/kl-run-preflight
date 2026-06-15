@@ -85,6 +85,8 @@ def save_legacy_csv(conn: sqlite3.Connection, csv_path: str) -> None:
 
     *conn* must describe exactly one processing run (legacy omnibus
     files describe exactly one run). Caller retains ownership of *conn*.
+    Samples flagged do_not_use are included in the output unchanged; the
+    flag has no effect on the written CSV.
 
     Raises:
         ValueError: If *conn* contains zero or multiple processing runs,
@@ -112,7 +114,9 @@ def save_legacy_csv(conn: sqlite3.Connection, csv_path: str) -> None:
     Path(csv_path).write_text(csv_text)
 
 
-def save_legacy_sample_id_map_csv(conn: sqlite3.Connection, csv_path: str) -> None:
+def save_legacy_sample_id_map_csv(
+    conn: sqlite3.Connection, csv_path: str, *, include_do_not_use: bool = False
+) -> None:
     """Write a CSV mapping illumina_sample_idx to legacy Sample_Name.
 
     *conn* must describe exactly one processing run with at least one
@@ -120,12 +124,19 @@ def save_legacy_sample_id_map_csv(conn: sqlite3.Connection, csv_path: str) -> No
     prepped_sample.sample_name when populated (replicates), else
     input_sample.sample_name. Rows are ordered by illumina_sample_idx.
 
+    Samples flagged do_not_use are excluded unless *include_do_not_use*
+    is True.
+
     Raises:
         ValueError: If *conn* lacks exactly one processing run, or has
             no illumina_sample rows.
     """
-    # Pull (illumina_sample_idx, sample_name) pairs from the run
-    rows = [(r[0], r[5]) for r in get_illumina_sample_rows(conn)]
+    # Pull (illumina_sample_idx, sample_name) pairs from the run;
+    # do_not_use-flagged samples are omitted unless the caller opts in.
+    rows = [
+        (r[0], r[5])
+        for r in get_illumina_sample_rows(conn, include_do_not_use=include_do_not_use)
+    ]
     if not rows:
         raise ValueError("run has no illumina_sample rows; cannot write sample id map")
 

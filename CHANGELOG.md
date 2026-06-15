@@ -15,6 +15,15 @@ until the first release is tagged.
 
 ### Added
 
+- Do-not-use flags on `input_sample` (hard floor) and `prepped_sample`
+  (per-replicate override), populated at legacy ingest by detecting a
+  `.donotuse.` dot-delimited token (case-insensitive) in sample names, and
+  settable for native runs via `set_input_sample_do_not_use` (by index or
+  biosample accession, the latter flagging all matches) and
+  `set_prepped_sample_do_not_use`. Sample fetchers
+  (`get_illumina_sample_rows`, `get_illumina_sample_info`,
+  `get_input_sample_project_info`) exclude flagged samples by default and
+  accept `include_do_not_use=True` to return them.
 - Standard Python project scaffolding: a root `.gitignore` and an installable
   `pyproject.toml` (setuptools + versioningit, generated `_version.py`,
   `environment.yml`, and a GitHub Actions CI workflow).

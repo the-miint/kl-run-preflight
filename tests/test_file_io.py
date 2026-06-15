@@ -14,6 +14,7 @@ from run_preflight import (
     migrate_legacy_csv_to_db_file,
     open_file,
     save_bclconvert_v1_csv,
+    set_prepped_sample_do_not_use,
 )
 from run_preflight.db import create_db
 from run_preflight.legacy import LegacyExtraColumnWarning
@@ -193,6 +194,50 @@ class TestSaveBclconvertV1Csv(unittest.TestCase):
             "1,2,TTAGGCAT,GGCTACTG,proj1\n"
         )
         self.assertEqual(self.out_path.read_text(), expected)
+
+    def test_save_bclconvert_v1_csv_excludes_do_not_use_by_default(self):
+        # A do_not_use-flagged sample is dropped from [Data] by default and
+        # emitted only when include_do_not_use is True.
+        project_idx, plate_idx = _helpers.seed_project_and_plate(self.conn)
+        run_idx = _seed_illumina_run(
+            self.conn, mask_short_reads="22", override_cycles="Y151;I8;I8;Y151"
+        )
+        prs1 = _seed_prepped_sample(
+            self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
+        )
+        prs2 = _seed_prepped_sample(
+            self.conn, plate_idx, project_idx, run_idx, "S2", "A2"
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs1, i7_seq="ATCACGAT", i5_seq="CGATGTAC", lane=1
+        )
+        _helpers.seed_illumina_sample(
+            self.conn, prs2, i7_seq="TTAGGCAT", i5_seq="GGCTACTG", lane=1
+        )
+        set_prepped_sample_do_not_use(self.conn, prs1)
+        self.conn.commit()
+
+        header = (
+            "[Header]\n"
+            "FileFormatVersion,1\n"
+            "\n"
+            "[Settings]\n"
+            "MaskShortReads,22\n"
+            "OverrideCycles,Y151;I8;I8;Y151\n"
+            "\n"
+            "[Data]\n"
+            "Lane,Sample_ID,index,index2,Sample_Project\n"
+        )
+        save_bclconvert_v1_csv(self.conn, str(self.out_path))
+        self.assertEqual(
+            self.out_path.read_text(), header + "1,2,TTAGGCAT,GGCTACTG,proj1\n"
+        )
+
+        save_bclconvert_v1_csv(self.conn, str(self.out_path), include_do_not_use=True)
+        self.assertEqual(
+            self.out_path.read_text(),
+            header + "1,1,ATCACGAT,CGATGTAC,proj1\n1,2,TTAGGCAT,GGCTACTG,proj1\n",
+        )
 
     def test_save_bclconvert_v1_csv_no_lane(self):
         # When illumina_sample.lane is uniformly NULL, the Lane column is

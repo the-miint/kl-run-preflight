@@ -14,6 +14,7 @@ from run_preflight import (
     open_db_file,
     save_legacy_csv,
     save_legacy_sample_id_map_csv,
+    set_input_sample_do_not_use,
 )
 from run_preflight.legacy import LegacyExtraColumnWarning
 from run_preflight.legacy.roundtrip import roundtrip_via_api
@@ -353,6 +354,34 @@ class TestSaveLegacySampleIdMapCsv(unittest.TestCase):
 
         expected = "illumina_sample_idx,Sample_Name\n1,S1\n2,S2\n"
         self.assertEqual(self.out_path.read_text(), expected)
+
+    def test_save_legacy_sample_id_map_csv_excludes_do_not_use_by_default(self):
+        # A do_not_use-flagged sample is dropped by default and returned
+        # only when include_do_not_use is True.
+        project_idx, plate_idx, run_idx = self._seed_illumina_run()
+        ins1, _, prs1 = _helpers.seed_sample_chain(
+            self.conn, plate_idx, project_idx, run_idx, sample_name="S1", well="A1"
+        )
+        _, _, prs2 = _helpers.seed_sample_chain(
+            self.conn, plate_idx, project_idx, run_idx, sample_name="S2", well="A2"
+        )
+        _helpers.seed_illumina_sample(self.conn, prs1)
+        _helpers.seed_illumina_sample(self.conn, prs2)
+        set_input_sample_do_not_use(self.conn, input_sample_idx=ins1)
+        self.conn.commit()
+
+        save_legacy_sample_id_map_csv(self.conn, str(self.out_path))
+        self.assertEqual(
+            self.out_path.read_text(), "illumina_sample_idx,Sample_Name\n2,S2\n"
+        )
+
+        save_legacy_sample_id_map_csv(
+            self.conn, str(self.out_path), include_do_not_use=True
+        )
+        self.assertEqual(
+            self.out_path.read_text(),
+            "illumina_sample_idx,Sample_Name\n1,S1\n2,S2\n",
+        )
 
     def test_save_legacy_sample_id_map_csv_replicates(self):
         # Replicates: prepped_sample.sample_name populated, so the per-

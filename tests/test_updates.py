@@ -16,6 +16,8 @@ from run_preflight.updates import (
     set_bioproject_accession,
     set_biosample_accession,
     set_illumina_run_setting,
+    set_input_sample_do_not_use,
+    set_prepped_sample_do_not_use,
     update_lane,
 )
 
@@ -764,3 +766,197 @@ class TestEmptyStringRejection(_UpdatesTestBase):
             pytest.raises(ValueError, match="value must not be empty"),
         ):
             set_illumina_run_setting(conn, "override_cycles", "")
+
+    def test_set_input_sample_do_not_use_rejects_empty_biosample_accession(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="biosample_accession must be a non-empty"),
+        ):
+            set_input_sample_do_not_use(conn, biosample_accession="")
+
+
+class TestSetInputSampleDoNotUse(_UpdatesTestBase):
+    def _do_not_use(self, conn, ins_idx: int):
+        """Return the do_not_use value stored on *ins_idx*."""
+        (value,) = conn.execute(
+            "SELECT do_not_use FROM input_sample WHERE input_sample_idx = ?",
+            (ins_idx,),
+        ).fetchone()
+        return value
+
+    def test_set_input_sample_do_not_use_by_idx(self):
+        with open_db(self.db_path) as conn:
+            ins_idx, _ = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+
+        with open_db(self.db_path) as conn:
+            set_input_sample_do_not_use(conn, input_sample_idx=ins_idx)
+
+        with open_db(self.db_path) as conn:
+            self.assertEqual(self._do_not_use(conn, ins_idx), 1)
+
+    def test_set_input_sample_do_not_use_clear(self):
+        # value=False clears a previously set flag back to 0
+        with open_db(self.db_path) as conn:
+            ins_idx, _ = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+
+        with open_db(self.db_path) as conn:
+            set_input_sample_do_not_use(conn, input_sample_idx=ins_idx, value=True)
+            set_input_sample_do_not_use(conn, input_sample_idx=ins_idx, value=False)
+
+        with open_db(self.db_path) as conn:
+            self.assertEqual(self._do_not_use(conn, ins_idx), 0)
+
+    def test_set_input_sample_do_not_use_by_biosample_sets_all_matches(self):
+        # Two distinct input_samples sharing one biosample_accession are
+        # both flagged when keyed by that accession.
+        with open_db(self.db_path) as conn:
+            ins1, _ = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+            ins2, _ = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S2", "A2"
+            )
+            conn.execute(
+                "UPDATE input_sample SET biosample_accession = 'SAMN_SHARED' "
+                "WHERE input_sample_idx IN (?, ?)",
+                (ins1, ins2),
+            )
+            conn.commit()
+
+        with open_db(self.db_path) as conn:
+            set_input_sample_do_not_use(conn, biosample_accession="SAMN_SHARED")
+
+        with open_db(self.db_path) as conn:
+            self.assertEqual(
+                (self._do_not_use(conn, ins1), self._do_not_use(conn, ins2)), (1, 1)
+            )
+
+    def test_set_input_sample_do_not_use_requires_exactly_one_key(self):
+        with open_db(self.db_path) as conn:
+            ins_idx, _ = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+
+        # Neither key supplied
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one of"),
+        ):
+            set_input_sample_do_not_use(conn)
+
+        # Both keys supplied
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one of"),
+        ):
+            set_input_sample_do_not_use(
+                conn, input_sample_idx=ins_idx, biosample_accession="SAMN001"
+            )
+
+    def test_set_input_sample_do_not_use_no_match(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="No input_sample matches"),
+        ):
+            set_input_sample_do_not_use(conn, input_sample_idx=999)
+
+    def test_set_input_sample_do_not_use_audit(self):
+        with open_db(self.db_path) as conn:
+            ins_idx, _ = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+
+        with open_db(self.db_path) as conn:
+            set_input_sample_do_not_use(
+                conn, input_sample_idx=ins_idx, value=True, reason="flagged"
+            )
+
+        with open_db(self.db_path) as conn:
+            cur = conn.execute(
+                "SELECT table_name, row_idx, column_name, "
+                " old_value, new_value, reason "
+                "FROM change_log ORDER BY change_idx"
+            )
+            self.assertEqual(
+                cur.fetchall(),
+                [("input_sample", ins_idx, "do_not_use", "0", "1", "flagged")],
+            )
+
+
+class TestSetPreppedSampleDoNotUse(_UpdatesTestBase):
+    def _do_not_use(self, conn, prs_idx: int):
+        """Return the do_not_use value stored on *prs_idx*."""
+        (value,) = conn.execute(
+            "SELECT do_not_use FROM prepped_sample WHERE prepped_sample_idx = ?",
+            (prs_idx,),
+        ).fetchone()
+        return value
+
+    def test_set_prepped_sample_do_not_use_override(self):
+        # Input sample left unflagged; the prep-level override flags one replicate
+        with open_db(self.db_path) as conn:
+            _, prs_idx = _add_sample(
+                conn,
+                self.plate_idx,
+                self.project_idx,
+                self.run_idx,
+                "S1",
+                "A1",
+                prs_name="S1.A1",
+            )
+
+        with open_db(self.db_path) as conn:
+            set_prepped_sample_do_not_use(conn, prs_idx)
+
+        with open_db(self.db_path) as conn:
+            self.assertEqual(self._do_not_use(conn, prs_idx), 1)
+
+    def test_set_prepped_sample_do_not_use_clear(self):
+        # value=None clears the override back to NULL (inherit input)
+        with open_db(self.db_path) as conn:
+            _, prs_idx = _add_sample(
+                conn,
+                self.plate_idx,
+                self.project_idx,
+                self.run_idx,
+                "S1",
+                "A1",
+                prs_name="S1.A1",
+            )
+
+        with open_db(self.db_path) as conn:
+            set_prepped_sample_do_not_use(conn, prs_idx, value=True)
+            set_prepped_sample_do_not_use(conn, prs_idx, value=None)
+
+        with open_db(self.db_path) as conn:
+            self.assertIsNone(self._do_not_use(conn, prs_idx))
+
+    def test_set_prepped_sample_do_not_use_rejects_false(self):
+        # False is not a valid prep-level state; only True / None are
+        with open_db(self.db_path) as conn:
+            _, prs_idx = _add_sample(
+                conn,
+                self.plate_idx,
+                self.project_idx,
+                self.run_idx,
+                "S1",
+                "A1",
+                prs_name="S1.A1",
+            )
+
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="False is not supported"),
+        ):
+            set_prepped_sample_do_not_use(conn, prs_idx, value=False)
+
+    def test_set_prepped_sample_do_not_use_no_match(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="No prepped_sample matches"),
+        ):
+            set_prepped_sample_do_not_use(conn, 999)

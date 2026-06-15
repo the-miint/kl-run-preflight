@@ -27,6 +27,8 @@ def save_bclconvert_v1_csv(
     conn: sqlite3.Connection,
     csv_path: str,
     include_sample_name: bool = False,
+    *,
+    include_do_not_use: bool = False,
 ) -> None:
     """Write a minimal bcl-convert v1 sample sheet from the run in *conn*.
 
@@ -40,12 +42,16 @@ def save_bclconvert_v1_csv(
     *include_sample_name* is True, the raw effective sample_name is
     emitted as a Sample_Name column immediately after Sample_ID.
 
+    Samples flagged do_not_use are excluded unless *include_do_not_use*
+    is True.
+
     Raises:
         ValueError: If *conn* lacks exactly one processing run, or has
             no illumina_sample rows.
     """
-    # Pull all needed data before any formatting
-    data_rows = get_illumina_sample_rows(conn)
+    # Pull all needed data before any formatting; do_not_use-flagged
+    # samples are omitted unless the caller opts in.
+    data_rows = get_illumina_sample_rows(conn, include_do_not_use=include_do_not_use)
     if not data_rows:
         raise ValueError(
             "run has no illumina_sample rows; cannot write bcl-convert sample sheet"
@@ -131,7 +137,8 @@ def save_db_file(conn: sqlite3.Connection, db_path: str) -> None:
     """Serialize a live SQLite connection to a database file.
 
     Works for both in-memory and file-backed source connections. The
-    caller retains ownership of *conn*.
+    caller retains ownership of *conn*. The copy is verbatim, including
+    any do_not_use-flagged records.
 
     Args:
         conn: An open SQLite source connection.

@@ -13,10 +13,12 @@ from typing import Literal, get_args
 from .constants import (
     DB_COL_BIOPROJECT_ACCESSION,
     DB_COL_BIOSAMPLE_ACCESSION,
+    DB_COL_DO_NOT_USE,
     DB_COL_EXTERNAL_PROJECT_ID,
     DB_COL_ILLUMINA_SAMPLE_IDX,
     DB_COL_INPUT_SAMPLE_IDX,
     DB_COL_LANE,
+    DB_COL_PREPPED_SAMPLE_IDX,
     DB_COL_PROJECT_IDX,
     DB_COL_PROJECT_NAME,
     DB_COL_RUN_IDX,
@@ -25,6 +27,7 @@ from .constants import (
     TABLE_ILLUMINA_RUN,
     TABLE_ILLUMINA_SAMPLE,
     TABLE_INPUT_SAMPLE,
+    TABLE_PREPPED_SAMPLE,
     TABLE_PROJECT,
     TABLE_TELLSEQ_SAMPLE,
     UPDATE_PLATFORM_ILLUMINA,
@@ -99,6 +102,30 @@ def _log_change(
     )
 
 
+def _apply_row_update(
+    conn: sqlite3.Connection,
+    table: str,
+    pk_col: str,
+    pk_value: int,
+    column: str,
+    old_value: object,
+    new_value: object,
+    reason: str | None,
+) -> None:
+    """Update one row's *column* and log the change; caller owns the commit.
+
+    *table*, *pk_col*, and *column* must come from a closed set of
+    constants — they are interpolated into the SQL statement. Issues no
+    commit or rollback so a caller can batch several rows into one
+    transaction.
+    """
+    conn.execute(
+        f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
+        (new_value, pk_value),
+    )
+    _log_change(conn, table, pk_value, column, old_value, new_value, reason)
+
+
 def _apply_single_row_update(
     conn: sqlite3.Connection,
     table: str,
@@ -109,19 +136,15 @@ def _apply_single_row_update(
     new_value: object,
     reason: str | None,
 ) -> None:
-    """Apply a single-column update to one row and log it in change_log.
+    """Apply a single-column update to one row and commit it.
 
-    *table*, *pk_col*, and *column* must come from a closed set of
-    constants — they are interpolated into the SQL statement. The
-    update and audit-log insert run inside one transaction: a failure
-    in either rolls back both.
+    The update and audit-log insert run inside one transaction: a
+    failure in either rolls back both.
     """
     try:
-        conn.execute(
-            f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
-            (new_value, pk_value),
+        _apply_row_update(
+            conn, table, pk_col, pk_value, column, old_value, new_value, reason
         )
-        _log_change(conn, table, pk_value, column, old_value, new_value, reason)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -381,4 +404,150 @@ def set_bioproject_accession(
         old_accession,
         accession,
         reason,
+    )
+
+
+def _lookup_do_not_use_rows(
+    cur,
+    table: str,
+    pk_col: str,
+    key_col: str,
+    key_value: object,
+) -> list[tuple[int, object]]:
+    """Return (pk_value, current do_not_use) rows where key_col = key_value.
+
+    *table*, *pk_col*, and *key_col* must come from the closed set of
+    table/column constants — they are interpolated into the SQL.
+    """
+    cur.execute(
+        f"SELECT {pk_col}, {DB_COL_DO_NOT_USE} FROM {table} WHERE {key_col} = ?",
+        (key_value,),
+    )
+    return cur.fetchall()
+
+
+def _set_do_not_use(
+    conn: sqlite3.Connection,
+    table: str,
+    pk_col: str,
+    rows: list[tuple[int, object]],
+    value: bool | None,
+    reason: str | None,
+) -> None:
+    """Set do_not_use to *value* on each (pk_value, old_value) in *rows*.
+
+    Callers resolve *rows* and supply the target (table, pk_col); this
+    body applies and audits the change for each. All rows are updated
+    within a single transaction: a failure on any row rolls back the
+    whole batch.
+    """
+    # Store as 0/1/NULL so the column and audit log stay integer-consistent
+    new_value = None if value is None else int(value)
+    try:
+        for pk_value, old_value in rows:
+            _apply_row_update(
+                conn,
+                table,
+                pk_col,
+                pk_value,
+                DB_COL_DO_NOT_USE,
+                old_value,
+                new_value,
+                reason,
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def set_input_sample_do_not_use(
+    conn: sqlite3.Connection,
+    *,
+    input_sample_idx: int | None = None,
+    biosample_accession: str | None = None,
+    value: bool = True,
+    reason: str | None = None,
+) -> None:
+    """Set do_not_use on the input_sample(s) identified by one key.
+
+    Exactly one of *input_sample_idx* or *biosample_accession* must be
+    supplied; a *biosample_accession* matching several input_samples sets
+    every match. *value* True (the default) excludes the sample and all
+    its preps from default fetches regardless of any per-prep override
+    (the flag is a hard floor); False clears the flag.
+
+    Raises:
+        ValueError: If zero or two keys are supplied, if
+            *biosample_accession* is empty, or if no input_sample matches.
+    """
+    # Require exactly one supplied key, then resolve it to (column, value)
+    keys = [
+        col
+        for col, val in (
+            (DB_COL_INPUT_SAMPLE_IDX, input_sample_idx),
+            (DB_COL_BIOSAMPLE_ACCESSION, biosample_accession),
+        )
+        if val is not None
+    ]
+    if len(keys) != 1:
+        raise ValueError(
+            "Exactly one of input_sample_idx or biosample_accession must be supplied"
+        )
+    key_col = keys[0]
+    if key_col == DB_COL_BIOSAMPLE_ACCESSION:
+        _require_nonempty(biosample_accession, "biosample_accession")
+        key_value = biosample_accession
+    else:
+        key_value = input_sample_idx
+
+    # Resolve the key to one or more input_sample rows and update each
+    cur = conn.cursor()
+    rows = _lookup_do_not_use_rows(
+        cur, TABLE_INPUT_SAMPLE, DB_COL_INPUT_SAMPLE_IDX, key_col, key_value
+    )
+    if not rows:
+        raise ValueError(f"No input_sample matches {key_col} {key_value!r}")
+    _set_do_not_use(
+        conn, TABLE_INPUT_SAMPLE, DB_COL_INPUT_SAMPLE_IDX, rows, value, reason
+    )
+
+
+def set_prepped_sample_do_not_use(
+    conn: sqlite3.Connection,
+    prepped_sample_idx: int,
+    *,
+    value: bool | None = True,
+    reason: str | None = None,
+) -> None:
+    """Set the per-prep do_not_use override on one prepped_sample.
+
+    The override is two-state: *value* True flags this replicate; None
+    clears the override so it inherits the input_sample flag. False is
+    rejected — an explicit prep-level "not flagged" is indistinguishable
+    from inheriting, so use None. The override can only add exclusion: an
+    input_sample marked do_not_use stays excluded regardless.
+
+    Raises:
+        ValueError: If *value* is False, or if no prepped_sample matches
+            *prepped_sample_idx*.
+    """
+    if value is False:
+        raise ValueError(
+            "value must be True (flag) or None (inherit); False is not supported"
+        )
+    cur = conn.cursor()
+    rows = _lookup_do_not_use_rows(
+        cur,
+        TABLE_PREPPED_SAMPLE,
+        DB_COL_PREPPED_SAMPLE_IDX,
+        DB_COL_PREPPED_SAMPLE_IDX,
+        prepped_sample_idx,
+    )
+    if not rows:
+        raise ValueError(
+            f"No prepped_sample matches prepped_sample_idx {prepped_sample_idx!r}"
+        )
+    _set_do_not_use(
+        conn, TABLE_PREPPED_SAMPLE, DB_COL_PREPPED_SAMPLE_IDX, rows, value, reason
     )

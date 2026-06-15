@@ -53,6 +53,7 @@ from .constants import (
     COL_WELL_DESCRIPTION,
     COL_WELL_ID_384,
     CONTEXT_TYPE_MAP,
+    DO_NOT_USE_TOKEN,
     FIELD_ASSAY,
     FIELD_DATE,
     FIELD_DESCRIPTION,
@@ -412,6 +413,8 @@ def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str |
 
 def get_input_sample_project_info(
     conn: sqlite3.Connection,
+    *,
+    include_do_not_use: bool = False,
 ) -> list[tuple[str, str | None, bool]]:
     """Return distinct (sample_name, external_project_id, is_control) rows.
 
@@ -421,24 +424,32 @@ def get_input_sample_project_info(
     plates yield a single row. external_project_id is that of the sample's
     effective project (its own project, or the plate's primary project for
     controls); is_control is True when input_sample.project_idx is NULL.
+
+    Unless *include_do_not_use* is True, prep rows whose effective
+    do_not_use flag is set are dropped before the collapse, so a sample
+    disappears only when every one of its preps is flagged.
     """
     run_idx = get_single_run_idx(conn)
+    do_not_use_filter = "" if include_do_not_use else "AND psn.do_not_use = 0\n"
 
     # Reuse prepped_sample_project's effective-project resolution, then map
     # back to the input_sample for its sample_name and join out to the
     # project for its external_project_id; DISTINCT collapses replicate rows.
     cur = conn.execute(
-        """
+        f"""
         SELECT DISTINCT ins.sample_name,
                proj.external_project_id,
                ins.project_idx IS NULL
         FROM prepped_sample_project psp
         JOIN prepped_sample prs ON prs.prepped_sample_idx = psp.prepped_sample_idx
+        JOIN prepped_sample_name psn
+            ON psn.prepped_sample_idx = prs.prepped_sample_idx
         JOIN compression_sample cs
             ON prs.compression_sample_idx = cs.compression_sample_idx
         JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
         JOIN project proj ON psp.project_idx = proj.project_idx
         WHERE cs.run_idx = ?
+        {do_not_use_filter}
         ORDER BY ins.sample_name
         """,
         (run_idx,),
@@ -503,6 +514,8 @@ def _raise_violations(
 
 def get_illumina_sample_info(
     conn: sqlite3.Connection,
+    *,
+    include_do_not_use: bool = False,
 ) -> list[tuple[int, str, str, list[str]]]:
     """Return per-illumina_sample biosample + bioproject accession info for the run.
 
@@ -512,7 +525,9 @@ def get_illumina_sample_info(
     primary_bioproject_accession, secondary_bioproject_accessions),
     where secondary_bioproject_accessions is a list of accessions for
     every non-primary plate project (populated only for controls;
-    empty for non-control samples), sorted by accession value.
+    empty for non-control samples), sorted by accession value. Rows whose
+    effective do_not_use flag is set are excluded unless
+    *include_do_not_use* is True.
 
     Raises:
         ValueError: If the control / project_idx pairing is violated
@@ -522,13 +537,14 @@ def get_illumina_sample_info(
     """
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
+    do_not_use_filter = "" if include_do_not_use else "AND ris.do_not_use = 0\n"
 
     # One row per (illumina_sample x non-primary plate project); LEFT
     # JOINs keep a single row for non-controls / single-project plates.
     # The leading ORDER BY illumina_sample_idx is load-bearing: the
     # groupby() below relies on adjacent same-key rows.
     cur.execute(
-        """
+        f"""
         SELECT
             ris.illumina_sample_idx,
             ins.project_idx,
@@ -556,6 +572,7 @@ def get_illumina_sample_info(
         LEFT JOIN project secondary_proj
             ON ipp.project_idx = secondary_proj.project_idx
         WHERE ris.run_idx = ?
+        {do_not_use_filter}
         ORDER BY ris.illumina_sample_idx, secondary_proj.bioproject_accession
         """,
         (run_idx,),
@@ -601,24 +618,30 @@ def get_illumina_sample_info(
 
 def get_illumina_sample_rows(
     conn: sqlite3.Connection,
+    *,
+    include_do_not_use: bool = False,
 ) -> list[tuple[int, int | None, str, str, str, str]]:
     """Return per-illumina_sample data tuples for the sole processing run.
 
     Each tuple is (illumina_sample_idx, lane, i7_sequence, i5_sequence,
     project_name, sample_name), ordered by illumina_sample_idx.
     sample_name follows the legacy rule: prepped_sample.sample_name when
-    populated for a replicate, else input_sample.sample_name.
+    populated for a replicate, else input_sample.sample_name. Rows whose
+    effective do_not_use flag is set are excluded unless
+    *include_do_not_use* is True.
 
     Raises:
         ValueError: If *conn* lacks exactly one processing run.
     """
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
+    do_not_use_filter = "" if include_do_not_use else "AND do_not_use = 0 "
     cur.execute(
         "SELECT illumina_sample_idx, lane, i7_sequence, i5_sequence, "
         "project_name, sample_name "
         "FROM run_illumina_sample "
         "WHERE run_idx = ? "
+        f"{do_not_use_filter}"
         "ORDER BY illumina_sample_idx",
         (run_idx,),
     )
@@ -795,6 +818,18 @@ def _reject_unsupported_replicates(
 # ---------------------------------------------------------------------------
 
 
+def _has_do_not_use_token(name: str | None) -> bool:
+    """Return True if *name* carries the do-not-use token as a dot segment.
+
+    Matching is case-insensitive against dot-delimited segments, so the
+    token is recognized at any position but not as a substring of a
+    larger word. None or empty yields False.
+    """
+    if not name:
+        return False
+    return DO_NOT_USE_TOKEN in name.lower().split(".")
+
+
 def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     """Insert all parsed omnibus data into *conn*.
 
@@ -968,13 +1003,15 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 
             cur.execute(
                 """INSERT INTO input_sample
-                   (sample_name, input_plate_idx, project_idx, sample_type_idx)
-                   VALUES (?, ?, ?, ?)""",
+                   (sample_name, input_plate_idx, project_idx,
+                    sample_type_idx, do_not_use)
+                   VALUES (?, ?, ?, ?, ?)""",
                 (
                     orig_name,
                     plate_idxs[plate_name],
                     sample_project_idx,
                     type_ids[st_name],
+                    _has_do_not_use_token(orig_name),
                 ),
             )
             assert cur.lastrowid is not None
@@ -1002,12 +1039,20 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             # -- prepped_sample --
             well_desc = row.get(COL_WELL_DESCRIPTION) or None
             prepped_sample_name = sample_name if has_replicates else None
+            # Prep-level override is two-state: True when a replicate's
+            # Sample_Name carries the token, NULL otherwise (inherit input).
+            prepped_do_not_use = (
+                True
+                if prepped_sample_name is not None
+                and _has_do_not_use_token(prepped_sample_name)
+                else None
+            )
             cur.execute(
                 """INSERT INTO prepped_sample
                    (compression_sample_idx, prepped_well,
-                    sample_name, well_description)
-                   VALUES (?, ?, ?, ?)""",
-                (cs_idx, dest_well, prepped_sample_name, well_desc),
+                    sample_name, do_not_use, well_description)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (cs_idx, dest_well, prepped_sample_name, prepped_do_not_use, well_desc),
             )
             assert cur.lastrowid is not None
             prs_idx = cur.lastrowid

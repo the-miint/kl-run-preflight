@@ -358,6 +358,8 @@ CREATE TABLE input_sample (
     sample_type_idx      INTEGER NOT NULL REFERENCES sample_type(sample_type_idx),
     biosample_accession TEXT,
         -- NCBI BioSample accession
+    do_not_use          BOOLEAN NOT NULL DEFAULT 0,
+        -- TRUE excludes the sample (and all its preps) from default fetches
     -- A sample is identified by sample_name, biosample_accession, or both
     CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)
 );
@@ -397,6 +399,10 @@ CREATE TABLE prepped_sample (
     sample_name             TEXT,
         -- NULL when same as input_sample.sample_name;
         -- populated for replicates (e.g. "orig_name.dest_well")
+    do_not_use              BOOLEAN,
+        -- per-replicate override: 1 = exclude this replicate;
+        -- NULL = not flagged (inherit the input_sample flag).
+        -- Can only add exclusion: the input_sample flag is a hard floor.
     well_description        TEXT
 );
 
@@ -682,13 +688,16 @@ CREATE VIEW prepped_sample_project AS
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN project p ON ins.project_idx = p.project_idx;
 
--- Resolves each prepped_sample to its effective sample_name:
--- prepped_sample.sample_name when populated (replicates) else
--- input_sample.sample_name. Provides one shared definition reused by
--- run_illumina_sample and by the omnibus reconstruction Data views.
+-- Resolves each prepped_sample to its effective sample_name and effective
+-- do_not_use flag. sample_name is prepped_sample.sample_name when populated
+-- (replicates) else input_sample.sample_name. do_not_use is the hard-floor
+-- OR of the input flag and the per-prep override (input excluded => excluded
+-- regardless of the prep value). Defined once so the resolution is shared
+-- rather than duplicated across the views that need it.
 CREATE VIEW prepped_sample_name AS
     SELECT prs.prepped_sample_idx,
-           COALESCE(prs.sample_name, ins.sample_name) AS sample_name
+           COALESCE(prs.sample_name, ins.sample_name) AS sample_name,
+           (ins.do_not_use = 1 OR COALESCE(prs.do_not_use, 0) = 1) AS do_not_use
     FROM prepped_sample prs
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx;
@@ -705,6 +714,7 @@ CREATE VIEW run_illumina_sample AS
         cs.run_idx,
         cs.input_sample_idx,
         psn.sample_name,
+        psn.do_not_use,
         psp.project_name
     FROM illumina_sample ils
     JOIN prepped_sample prs ON ils.prepped_sample_idx = prs.prepped_sample_idx

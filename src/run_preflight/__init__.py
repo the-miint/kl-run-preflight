@@ -13,6 +13,8 @@ from .updates import (
     set_bioproject_accession,
     set_biosample_accession,
     set_illumina_run_setting,
+    set_input_sample_do_not_use,
+    set_prepped_sample_do_not_use,
     update_lane,
 )
 
@@ -30,5 +32,7 @@ __all__ = [
     "set_bioproject_accession",
     "set_biosample_accession",
     "set_illumina_run_setting",
+    "set_input_sample_do_not_use",
+    "set_prepped_sample_do_not_use",
     "update_lane",
 ]
