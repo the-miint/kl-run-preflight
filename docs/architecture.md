@@ -264,6 +264,18 @@ Key properties:
   controls and failed samples, making per-row non-null constraints too
   strict.
 
+### The frozen v0 baseline
+
+`schema.sql` is the canonical current schema: `create_db` builds fresh
+databases from it and stamps them at the latest patch version.
+`schema_v0.sql` is the immutable baseline for the schema that shipped in
+databases already created in the wild. Because those v0 databases exist,
+`schema_v0.sql` is never edited again; every schema change is expressed as
+a numbered patch under `sql/patches/` **and** applied to `schema.sql`. A
+drift test builds one database from `schema_v0.sql` + all patches and
+another from `schema.sql`, asserting they are structurally identical and
+carry the same `user_version`, which keeps the two paths from diverging.
+
 ### Why custom migration code instead of an existing tool
 
 The forward-migration pattern (versioned patches applied in sequence) is

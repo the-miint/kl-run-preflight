@@ -464,7 +464,9 @@ CREATE TABLE pacbio_sample (
         REFERENCES prepped_sample(prepped_sample_idx),
     barcode_id              TEXT NOT NULL,
     twist_adaptor_id        TEXT,
-    syndna_is_twisted       BOOLEAN
+    syndna_is_twisted       BOOLEAN,
+    smrt_cell_well_sample_id TEXT CHECK (smrt_cell_well_sample_id GLOB '[12]_[A-D]01'),
+    movie_context_id        TEXT
 );
 
 -- ============================================================
@@ -721,6 +723,29 @@ CREATE VIEW run_illumina_sample AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN prepped_sample_name psn ON ils.prepped_sample_idx = psn.prepped_sample_idx
     JOIN prepped_sample_project psp ON ils.prepped_sample_idx = psp.prepped_sample_idx;
+
+-- Joins pacbio_sample to its scoping run and input_sample, mirroring
+-- run_illumina_sample so callers can filter by run_idx without re-deriving
+-- the prepped/compression chain.
+CREATE VIEW run_pacbio_sample AS
+    SELECT
+        ps.pacbio_sample_idx,
+        ps.prepped_sample_idx,
+        ps.barcode_id,
+        ps.twist_adaptor_id,
+        ps.syndna_is_twisted,
+        ps.smrt_cell_well_sample_id,
+        ps.movie_context_id,
+        cs.run_idx,
+        cs.input_sample_idx,
+        psn.sample_name,
+        psn.do_not_use,
+        psp.project_name
+    FROM pacbio_sample ps
+    JOIN prepped_sample prs ON ps.prepped_sample_idx = prs.prepped_sample_idx
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN prepped_sample_name psn ON ps.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON ps.prepped_sample_idx = psp.prepped_sample_idx;
 
 -- ============================================================
 -- Omnibus Reconstruction Views — Shared

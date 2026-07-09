@@ -15,15 +15,30 @@ until the first release is tagged.
 
 ### Added
 
-- Do-not-use flags on `input_sample` (hard floor) and `prepped_sample`
-  (per-replicate override), populated at legacy ingest by detecting a
-  `.donotuse.` dot-delimited token (case-insensitive) in sample names, and
-  settable for native runs via `set_input_sample_do_not_use` (by index or
-  biosample accession, the latter flagging all matches) and
-  `set_prepped_sample_do_not_use`. Sample fetchers
-  (`get_illumina_sample_rows`, `get_illumina_sample_info`,
-  `get_input_sample_project_info`) exclude flagged samples by default and
-  accept `include_do_not_use=True` to return them.
+- Nullable `smrt_cell_well_sample_id` column on `pacbio_sample` recording the SMRT Cell
+  position, constrained to `<1|2>_<A-D>01` (`GLOB '[12]_[A-D]01'`), plus a nullable
+  `movie_context_id` column, both surfaced by a new `run_pacbio_sample` view mirroring
+  `run_illumina_sample`. Shipped as the
+  first schema patch (`sql/patches/001_*`); `schema_v0.sql` is now the frozen
+  baseline for databases already in the wild, so every schema change flows
+  through a patch from here on.
+- `get_pacbio_sample_info`, returning per-`pacbio_sample` biosample and
+  bioproject accession info keyed by `pacbio_sample_idx` (control/secondary and
+  do-not-use handling identical to `get_illumina_sample_info`).
+
+- Do-not-use flags on `input_sample` (two-state hard floor) and
+  `prepped_sample` (two-state per-replicate override: set = exclude this
+  replicate, NULL = inherit the input flag), populated at legacy ingest by
+  detecting a `.donotuse.` dot-delimited token (case-insensitive) in sample
+  names. Settable for native runs via `set_input_sample_do_not_use` (by index
+  or biosample accession, the latter flagging all matches in one transaction;
+  `value=False` clears the flag) and `set_prepped_sample_do_not_use`
+  (`value=True` flags, `value=None` clears to inherit; `False` is rejected).
+  Sample fetchers (`get_illumina_sample_rows`, `get_illumina_sample_info`,
+  `get_input_sample_project_info`) and the forward writers
+  (`save_bclconvert_v1_csv`, `save_legacy_sample_id_map_csv`) exclude flagged
+  samples by default and accept `include_do_not_use=True` to return them.
+  `save_legacy_csv` and `save_db_file` always include flagged records.
 - Standard Python project scaffolding: a root `.gitignore` and an installable
   `pyproject.toml` (setuptools + versioningit, generated `_version.py`,
   `environment.yml`, and a GitHub Actions CI workflow).
@@ -56,6 +71,14 @@ until the first release is tagged.
 
 ### Changed
 
+- Collapsed `get_illumina_sample_info` and `get_pacbio_sample_info` onto one
+  parameterized helper keyed by a `PlatformSpecificSampleKind` (`illumina` /
+  `pacbio` / `tellseq`), deriving each kind's table, primary-key column, and
+  run view by naming convention rather than a hand-maintained lookup.
+- Renamed `update_lane`'s `platform` parameter to `sample_kind` and its
+  internal lane-target lookup to the Illumina-platform sample kinds
+  (`illumina`, `tellseq`), correcting the prior labelling of TellSeq (a library
+  prep, not a platform) as a platform.
 - Restructured the repository into a `src/run_preflight/` package layout, with
   the SQL schema living inside the package.
 - Switched the test runner from `unittest` to `pytest`.

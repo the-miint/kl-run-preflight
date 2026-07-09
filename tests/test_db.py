@@ -9,6 +9,9 @@ import unittest
 
 from pathlib import Path
 
+from typing import get_args
+
+from run_preflight.constants import PlatformSpecificSampleKind
 from run_preflight.db import (
     ERR_CATEGORY_INVARIANT,
     ERR_CATEGORY_MISSING_ACCESSION,
@@ -19,8 +22,10 @@ from run_preflight.db import (
     get_illumina_sample_info,
     get_illumina_sample_rows,
     get_input_sample_project_info,
+    get_pacbio_sample_info,
     get_projects_missing_external_id,
     get_run_projects,
+    sample_kind_names,
 )
 from run_preflight.legacy.api import load_legacy_csv
 from run_preflight.updates import (
@@ -32,7 +37,9 @@ from . import _helpers
 from ._helpers import open_db
 
 DATA_DIR = Path(__file__).parent / "data"
-DO_NOT_USE_CSV = DATA_DIR / "good_standard_metagv101_donotuse_synthetic_not_roundtrippable.csv"
+DO_NOT_USE_CSV = (
+    DATA_DIR / "good_standard_metagv101_donotuse_synthetic_not_roundtrippable.csv"
+)
 
 
 def _seed_run_skeleton(
@@ -81,6 +88,31 @@ def _seed_illumina(
     )
     conn.commit()
     return ins_idx, ils_idx
+
+
+def _seed_pacbio(
+    conn: sqlite3.Connection,
+    plate_idx: int,
+    project_idx: int | None,
+    run_idx: int,
+    *,
+    sample_name: str,
+    well: str,
+    sample_type_name: str = "standard",
+) -> tuple[int, int]:
+    """Seed sample chain + pacbio_sample; return (input_sample_idx, ps_idx)."""
+    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+        conn,
+        plate_idx,
+        project_idx,
+        run_idx,
+        sample_name=sample_name,
+        sample_type_name=sample_type_name,
+        well=well,
+    )
+    ps_idx = _helpers.seed_pacbio_sample(conn, prs_idx, barcode_id=f"bc_{sample_name}")
+    conn.commit()
+    return ins_idx, ps_idx
 
 
 class TestGetIlluminaSampleInfo(unittest.TestCase):
@@ -670,6 +702,179 @@ class TestDoNotUseIngest(unittest.TestCase):
                 ("SZ.C", "12345", False),
             ],
         )
+
+
+class TestGetPacbioSampleInfo(unittest.TestCase):
+    """get_pacbio_sample_info wires the shared helper to pacbio_sample_idx."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+        conn = create_db(self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_get_pacbio_sample_info_non_control_single_project(self):
+        # Non-control on a single-project plate: primary = own; secondary = []
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _, ps_idx = _seed_pacbio(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            set_biosample_accession(conn, "S1", "SAMN001")
+
+        with open_db(self.db_path) as conn:
+            result = get_pacbio_sample_info(conn)
+
+        self.assertEqual(result, [(ps_idx, "SAMN001", "PRJNA001", [])])
+
+    def test_get_pacbio_sample_info_control_multi_project(self):
+        # Control on a multi-project plate: secondary lists every non-primary
+        # plate project's bioproject_accession, sorted by accession value.
+        with open_db(self.db_path) as conn:
+            _, plate, run = _seed_run_skeleton(conn)
+            proj2 = _helpers.seed_project(
+                conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession="PRJNA999",
+            )
+            proj3 = _helpers.seed_project(
+                conn,
+                project_name="proj3",
+                external_project_id="3",
+                bioproject_accession="PRJNA111",
+            )
+            _helpers.seed_input_sample(conn, plate, proj2, sample_name="S2")
+            _helpers.seed_input_sample(conn, plate, proj3, sample_name="S3")
+            _, ps_idx = _seed_pacbio(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                well="A1",
+                sample_type_name="extraction_blank",
+            )
+            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+
+        with open_db(self.db_path) as conn:
+            result = get_pacbio_sample_info(conn)
+
+        self.assertEqual(
+            result,
+            [(ps_idx, "SAMN_BLK", "PRJNA001", ["PRJNA111", "PRJNA999"])],
+        )
+
+    def test_get_pacbio_sample_info_excludes_do_not_use_by_default(self):
+        # One flagged do-not-use is dropped by default, returned when requested.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            ins1, ps1 = _seed_pacbio(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            _, ps2 = _seed_pacbio(conn, plate, proj, run, sample_name="S2", well="A2")
+            set_biosample_accession(conn, "S1", "SAMN001")
+            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_do_not_use(conn, input_sample_idx=ins1)
+
+        with open_db(self.db_path) as conn:
+            default_result = get_pacbio_sample_info(conn)
+            full_result = get_pacbio_sample_info(conn, include_do_not_use=True)
+
+        self.assertEqual(default_result, [(ps2, "SAMN002", "PRJNA001", [])])
+        self.assertEqual(
+            full_result,
+            [
+                (ps1, "SAMN001", "PRJNA001", []),
+                (ps2, "SAMN002", "PRJNA001", []),
+            ],
+        )
+
+
+class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):
+    """pacbio_sample.smrt_cell_well_sample_id CHECK accepts <1|2>_<A-D>01 and rejects everything else."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+        conn = create_db(self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _insert_pacbio_with_smrt_cell_well_sample_id(self, conn, plate, proj, run, name, smrt_cell_well_sample_id):
+        # Each pacbio_sample needs its own prepped_sample (UNIQUE constraint).
+        _ins, _cs, prs = _helpers.seed_sample_chain(
+            conn, plate, proj, run, sample_name=name, well="A1"
+        )
+        conn.execute(
+            "INSERT INTO pacbio_sample (prepped_sample_idx, barcode_id, smrt_cell_well_sample_id) "
+            "VALUES (?, 'bc', ?)",
+            (prs, smrt_cell_well_sample_id),
+        )
+
+    def test_pacbio_smrt_cell_well_sample_id_valid_values_accepted(self):
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            for i, value in enumerate(["1_A01", "2_A01", "1_B01", "2_C01", "1_D01", None]):
+                self._insert_pacbio_with_smrt_cell_well_sample_id(
+                    conn, plate, proj, run, f"S{i}", value
+                )
+            stored = conn.execute(
+                "SELECT smrt_cell_well_sample_id FROM pacbio_sample ORDER BY pacbio_sample_idx"
+            ).fetchall()
+
+        self.assertEqual(
+            stored,
+            [("1_A01",), ("2_A01",), ("1_B01",), ("2_C01",), ("1_D01",), (None,)],
+        )
+
+    def test_pacbio_smrt_cell_well_sample_id_invalid_values_rejected(self):
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            for i, value in enumerate(["A01", "3_A01", "1_E01", "1_A02", "1_a01", "0_A01"]):
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self._insert_pacbio_with_smrt_cell_well_sample_id(
+                        conn, plate, proj, run, f"S{i}", value
+                    )
+
+
+class TestRunPacbioSampleView(unittest.TestCase):
+    """run_pacbio_sample surfaces the pacbio-specific columns."""
+
+    def test_run_pacbio_sample_exposes_pacbio_columns(self):
+        conn = create_db(":memory:")
+        try:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(run_pacbio_sample)")]
+        finally:
+            conn.close()
+        for expected in ("smrt_cell_well_sample_id", "movie_context_id"):
+            self.assertIn(expected, cols)
+
+
+class TestSampleKindNamingConvention(unittest.TestCase):
+    """Every declared sample kind resolves to real schema objects."""
+
+    def test_sample_kind_names_match_schema(self):
+        # Guards the derive-by-convention contract: adding a kind without its
+        # table/idx column fails here rather than at runtime.
+        conn = create_db(":memory:")
+        try:
+            for kind in get_args(PlatformSpecificSampleKind):
+                names = sample_kind_names(kind)
+                table_row = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+                    (names.table,),
+                ).fetchone()
+                self.assertIsNotNone(table_row, f"missing table {names.table}")
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({names.table})")]
+                self.assertIn(names.idx_col, cols)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

@@ -15,36 +15,32 @@ from .constants import (
     DB_COL_BIOSAMPLE_ACCESSION,
     DB_COL_DO_NOT_USE,
     DB_COL_EXTERNAL_PROJECT_ID,
-    DB_COL_ILLUMINA_SAMPLE_IDX,
     DB_COL_INPUT_SAMPLE_IDX,
     DB_COL_LANE,
     DB_COL_PREPPED_SAMPLE_IDX,
     DB_COL_PROJECT_IDX,
     DB_COL_PROJECT_NAME,
     DB_COL_RUN_IDX,
-    DB_COL_TELLSEQ_SAMPLE_IDX,
+    PlatformSpecificSampleKind,
     TABLE_CHANGE_LOG,
     TABLE_ILLUMINA_RUN,
-    TABLE_ILLUMINA_SAMPLE,
     TABLE_INPUT_SAMPLE,
     TABLE_PREPPED_SAMPLE,
     TABLE_PROJECT,
-    TABLE_TELLSEQ_SAMPLE,
-    UPDATE_PLATFORM_ILLUMINA,
-    UPDATE_PLATFORM_TELLSEQ,
 )
 from .db import (
     get_single_run_idx,
     lookup_input_samples_by_name,
     lookup_projects_by_key,
+    sample_kind_names,
 )
 
-# Map platform strings to (table_name, primary_key_column) for the
-# platform-specific sample tables targeted by lane updates.
-_PLATFORM_TABLES = {
-    UPDATE_PLATFORM_ILLUMINA: (TABLE_ILLUMINA_SAMPLE, DB_COL_ILLUMINA_SAMPLE_IDX),
-    UPDATE_PLATFORM_TELLSEQ: (TABLE_TELLSEQ_SAMPLE, DB_COL_TELLSEQ_SAMPLE_IDX),
-}
+# The platform-specific sample kinds sequenced on the Illumina platform;
+# these are the lane-bearing tables that lane updates may target. Their
+# table and primary-key column names are derived from the kind token.
+_ILLUMINA_PLATFORM_SAMPLE_KINDS: frozenset[PlatformSpecificSampleKind] = frozenset(
+    {"illumina", "tellseq"}
+)
 
 IllumRunSetting = Literal["mask_short_reads", "override_cycles"]
 
@@ -201,7 +197,7 @@ def set_biosample_accession(
 
 def update_lane(
     conn: sqlite3.Connection,
-    platform: str,
+    sample_kind: PlatformSpecificSampleKind,
     from_lane: int | None,
     to_lane: int | None,
     reason: str | None = None,
@@ -209,21 +205,23 @@ def update_lane(
     """Bulk-reassign lane values on a platform-specific sample table.
 
     Every row whose current lane equals *from_lane* (NULL is a value)
-    is updated to *to_lane*. *platform* must be ``"illumina"`` or
-    ``"tellseq"``. Returns the number of rows updated.
+    is updated to *to_lane*. *sample_kind* must be an Illumina-platform
+    sample kind (``"illumina"`` or ``"tellseq"``). Returns the number of
+    rows updated.
 
     Raises:
-        ValueError: For an unsupported platform, a post-update state
+        ValueError: For a sample kind without lanes, a post-update state
             that mixes NULL and non-NULL lane values, or a collision
             with the unique ``(prepped_sample_idx, lane)`` index.
     """
-    if platform not in _PLATFORM_TABLES:
-        supported = sorted(_PLATFORM_TABLES.keys())
+    if sample_kind not in _ILLUMINA_PLATFORM_SAMPLE_KINDS:
+        supported = sorted(_ILLUMINA_PLATFORM_SAMPLE_KINDS)
         raise ValueError(
-            f"Unsupported platform {platform!r}; lane updates are only "
+            f"Unsupported sample kind {sample_kind!r}; lane updates are only "
             f"defined for {supported}"
         )
-    table, pk_col = _PLATFORM_TABLES[platform]
+    names = sample_kind_names(sample_kind)
+    table, pk_col = names.table, names.idx_col
     cur = conn.cursor()
 
     # Verify post-update lane uniformity: rows whose current lane != from_lane

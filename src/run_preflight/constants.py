@@ -5,6 +5,8 @@ platform strings, and other repeated literals so that each value is
 defined in exactly one place.
 """
 
+from typing import Literal
+
 # ---------------------------------------------------------------------------
 # Section names
 # ---------------------------------------------------------------------------
@@ -157,6 +159,12 @@ PLATFORM_ILLUMINA = "Illumina"
 SEQUENCER_PACBIO_REVIO = "Pacbio_Revio"
 SEQUENCER_UNKNOWN = "Unknown"
 
+# The platform-specific per-sample kinds, one per ``<kind>_sample`` table.
+# tellseq is a library prep sequenced on Illumina, not a platform of its own;
+# each member is the lowercase table prefix from which the table, primary-key
+# column, and run view names are derived by convention.
+PlatformSpecificSampleKind = Literal["illumina", "pacbio", "tellseq"]
+
 
 # ---------------------------------------------------------------------------
 # Sample-type strings (values in the sample_type reference table)
@@ -229,7 +237,3 @@ DB_COL_ILLUMINA_SAMPLE_IDX = "illumina_sample_idx"
 DB_COL_TELLSEQ_SAMPLE_IDX = "tellseq_sample_idx"
 DB_COL_RUN_IDX = "run_idx"
 DB_COL_PROJECT_IDX = "project_idx"
-
-# Update-platform identifiers (caller-supplied platform string)
-UPDATE_PLATFORM_ILLUMINA = "illumina"
-UPDATE_PLATFORM_TELLSEQ = "tellseq"

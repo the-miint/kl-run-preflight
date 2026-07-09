@@ -237,3 +237,21 @@ def seed_tellseq_sample(
         (prs_idx, barcode_id, lane),
     )
     return cur.lastrowid
+
+
+def seed_pacbio_sample(
+    conn: sqlite3.Connection,
+    prs_idx: int,
+    *,
+    barcode_id: str = "BC1",
+    smrt_cell_well_sample_id: str | None = None,
+) -> int:
+    """Insert one pacbio_sample row; return pacbio_sample_idx."""
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO pacbio_sample "
+        "(prepped_sample_idx, barcode_id, smrt_cell_well_sample_id) "
+        "VALUES (?, ?, ?)",
+        (prs_idx, barcode_id, smrt_cell_well_sample_id),
+    )
+    return cur.lastrowid

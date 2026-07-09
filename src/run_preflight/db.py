@@ -10,6 +10,7 @@ import sqlite3
 import warnings
 from itertools import groupby
 from pathlib import Path
+from typing import NamedTuple, get_args
 
 from .legacy import LegacyExtraColumnWarning
 from .migrate import get_latest_version
@@ -66,6 +67,7 @@ from .constants import (
     FIELD_SHEET_VERSION,
     PLATFORM_ILLUMINA,
     PLATFORM_PACBIO,
+    PlatformSpecificSampleKind,
     SAMPLE_TYPE_STANDARD,
     SECTION_BIOINFORMATICS,
     SECTION_CONTACT,
@@ -488,6 +490,35 @@ def lookup_projects_by_key(
     return cur.fetchall()
 
 
+class _SampleKindNames(NamedTuple):
+    """Derived DB object names for a platform-specific sample kind."""
+
+    table: str
+    idx_col: str
+    run_view: str
+
+
+def sample_kind_names(kind: PlatformSpecificSampleKind) -> _SampleKindNames:
+    """Derive the DB object names for a platform-specific sample kind.
+
+    Every ``<kind>_sample`` table follows one naming convention, so its
+    table, primary-key column, and run-scoped view all derive from the
+    kind token. The convention is enforced by a schema-drift test.
+
+    Raises:
+        ValueError: If *kind* is not a declared PlatformSpecificSampleKind.
+    """
+    valid_kinds = get_args(PlatformSpecificSampleKind)
+    if kind not in valid_kinds:
+        raise ValueError(
+            f"Unknown sample kind {kind!r}; expected one of {', '.join(valid_kinds)}"
+        )
+    table = f"{kind}_sample"
+    idx_col = f"{kind}_sample_idx"
+    run_view = f"run_{kind}_sample"
+    return _SampleKindNames(table, idx_col, run_view)
+
+
 # Error categories and per-row labels for invariant/accession violations.
 ERR_CATEGORY_INVARIANT = "control / project_idx invariant violation"
 ERR_CATEGORY_MISSING_ACCESSION = "missing required accession"
@@ -498,35 +529,35 @@ LABEL_NONSTANDARD_WITH_PROJECT = "non-standard sample_type with non-NULL project
 def _raise_violations(
     category: str,
     offenders: list[tuple[int, str]],
+    idx_col_name: str,
 ) -> None:
     """Raise ValueError summarizing per-row violations, if any.
 
-    Each offender is (illumina_sample_idx, label) describing what is
-    wrong on that row; no-op when *offenders* is empty.
+    Each offender is (sample_idx, label) describing what is wrong on that
+    row; *idx_col_name* names the sample-idx column for the message. No-op
+    when *offenders* is empty.
     """
     if not offenders:
         return
-    items = ", ".join(
-        f"illumina_sample_idx={idx} ({label})" for idx, label in offenders
-    )
+    items = ", ".join(f"{idx_col_name}={idx} ({label})" for idx, label in offenders)
     raise ValueError(f"{category}: {items}")
 
 
-def get_illumina_sample_info(
+def _get_platform_specific_sample_info(
     conn: sqlite3.Connection,
+    kind: PlatformSpecificSampleKind,
     *,
     include_do_not_use: bool = False,
 ) -> list[tuple[int, str, str, list[str]]]:
-    """Return per-illumina_sample biosample + bioproject accession info for the run.
+    """Return per-sample biosample + bioproject accession info for the run.
 
     Resolves the sole processing_run via get_single_run_idx and returns
-    one tuple per illumina_sample row, ordered by illumina_sample_idx:
-    (illumina_sample_idx, biosample_accession,
-    primary_bioproject_accession, secondary_bioproject_accessions),
-    where secondary_bioproject_accessions is a list of accessions for
-    every non-primary plate project (populated only for controls;
-    empty for non-control samples), sorted by accession value. Rows whose
-    effective do_not_use flag is set are excluded unless
+    one tuple per *kind* sample row, ordered by the kind's sample-idx:
+    (sample_idx, biosample_accession, primary_bioproject_accession,
+    secondary_bioproject_accessions), where secondary_bioproject_accessions
+    is a list of accessions for every non-primary plate project (populated
+    only for controls; empty for non-control samples), sorted by accession
+    value. Rows whose effective do_not_use flag is set are excluded unless
     *include_do_not_use* is True.
 
     Raises:
@@ -535,18 +566,19 @@ def get_illumina_sample_info(
             required accession (biosample, primary bioproject accession, or any
             secondary bioproject accession) is None on any row.
     """
+    names = sample_kind_names(kind)
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
-    do_not_use_filter = "" if include_do_not_use else "AND ris.do_not_use = 0\n"
+    do_not_use_filter = "" if include_do_not_use else "AND rs.do_not_use = 0\n"
 
-    # One row per (illumina_sample x non-primary plate project); LEFT
-    # JOINs keep a single row for non-controls / single-project plates.
-    # The leading ORDER BY illumina_sample_idx is load-bearing: the
-    # groupby() below relies on adjacent same-key rows.
+    # One row per (sample x non-primary plate project); LEFT JOINs keep a
+    # single row for non-controls / single-project plates. The leading
+    # ORDER BY on the sample-idx is load-bearing: the groupby() below
+    # relies on adjacent same-key rows.
     cur.execute(
         f"""
         SELECT
-            ris.illumina_sample_idx,
+            rs.{names.idx_col},
             ins.project_idx,
             ins.biosample_accession,
             st.name,
@@ -554,9 +586,9 @@ def get_illumina_sample_info(
                      primary_proj.bioproject_accession),
             ipp.project_idx,
             secondary_proj.bioproject_accession
-        FROM run_illumina_sample ris
+        FROM {names.run_view} rs
         JOIN input_sample ins
-            ON ris.input_sample_idx = ins.input_sample_idx
+            ON rs.input_sample_idx = ins.input_sample_idx
         JOIN sample_type st
             ON ins.sample_type_idx = st.sample_type_idx
         JOIN input_plate ip
@@ -571,19 +603,19 @@ def get_illumina_sample_info(
             AND ipp.project_idx != ip.primary_project_idx
         LEFT JOIN project secondary_proj
             ON ipp.project_idx = secondary_proj.project_idx
-        WHERE ris.run_idx = ?
+        WHERE rs.run_idx = ?
         {do_not_use_filter}
-        ORDER BY ris.illumina_sample_idx, secondary_proj.bioproject_accession
+        ORDER BY rs.{names.idx_col}, secondary_proj.bioproject_accession
         """,
         (run_idx,),
     )
     rows = cur.fetchall()
 
-    # Group result rows by illumina_sample_idx and validate per-group.
+    # Group result rows by sample-idx and validate per-group.
     invariant_offenders: list[tuple[int, str]] = []
     accession_offenders: list[tuple[int, str]] = []
     results: list[tuple[int, str, str, list[str]]] = []
-    for ils_idx, group in groupby(rows, key=lambda r: r[0]):
+    for sample_idx, group in groupby(rows, key=lambda r: r[0]):
         group_rows = list(group)
         _, project_idx, biosample, st_name, primary_bioproject, _, _ = group_rows[0]
 
@@ -591,10 +623,10 @@ def get_illumina_sample_info(
         is_standard = st_name == SAMPLE_TYPE_STANDARD
         has_project = project_idx is not None
         if is_standard and not has_project:
-            invariant_offenders.append((ils_idx, LABEL_STANDARD_NO_PROJECT))
+            invariant_offenders.append((sample_idx, LABEL_STANDARD_NO_PROJECT))
             continue
         if not is_standard and has_project:
-            invariant_offenders.append((ils_idx, LABEL_NONSTANDARD_WITH_PROJECT))
+            invariant_offenders.append((sample_idx, LABEL_NONSTANDARD_WITH_PROJECT))
             continue
 
         # Collect non-primary plate projects' bioproject_accessions
@@ -602,18 +634,42 @@ def get_illumina_sample_info(
 
         # Record any missing accession for the summary report
         if biosample is None:
-            accession_offenders.append((ils_idx, "biosample_accession"))
+            accession_offenders.append((sample_idx, "biosample_accession"))
         if primary_bioproject is None:
-            accession_offenders.append((ils_idx, "primary_bioproject_accession"))
+            accession_offenders.append((sample_idx, "primary_bioproject_accession"))
         if any(b is None for b in secondary):
-            accession_offenders.append((ils_idx, "secondary_bioproject_accessions"))
+            accession_offenders.append((sample_idx, "secondary_bioproject_accessions"))
 
-        results.append((ils_idx, biosample, primary_bioproject, secondary))
+        results.append((sample_idx, biosample, primary_bioproject, secondary))
 
     # Invariant violations indicate corrupt data; raise before accession checks
-    _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders)
-    _raise_violations(ERR_CATEGORY_MISSING_ACCESSION, accession_offenders)
+    _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders, names.idx_col)
+    _raise_violations(
+        ERR_CATEGORY_MISSING_ACCESSION, accession_offenders, names.idx_col
+    )
     return results
+
+
+def get_illumina_sample_info(
+    conn: sqlite3.Connection,
+    *,
+    include_do_not_use: bool = False,
+) -> list[tuple[int, str, str, list[str]]]:
+    """Return per-illumina_sample accession info; see the shared helper."""
+    return _get_platform_specific_sample_info(
+        conn, "illumina", include_do_not_use=include_do_not_use
+    )
+
+
+def get_pacbio_sample_info(
+    conn: sqlite3.Connection,
+    *,
+    include_do_not_use: bool = False,
+) -> list[tuple[int, str, str, list[str]]]:
+    """Return per-pacbio_sample accession info; see the shared helper."""
+    return _get_platform_specific_sample_info(
+        conn, "pacbio", include_do_not_use=include_do_not_use
+    )
 
 
 def get_illumina_sample_rows(

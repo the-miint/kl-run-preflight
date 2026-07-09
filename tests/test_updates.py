@@ -460,7 +460,7 @@ class TestUpdateLane(_UpdatesTestBase):
     def test_update_lane_unsupported_platform(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Unsupported platform"),
+            pytest.raises(ValueError, match="Unsupported sample kind"),
         ):
             update_lane(conn, "pacbio", from_lane=1, to_lane=2)
 
