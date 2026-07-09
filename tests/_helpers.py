@@ -1,15 +1,27 @@
-"""Shared DB-seed helpers for the test suite.
+"""Shared DB helpers for the test suite.
 
-These functions encapsulate the project → plate → run → input_sample →
-compression_sample → prepped_sample → platform_sample insert chain so
-tests do not duplicate it. Each helper takes an open SQLite connection
-and returns the surrogate id of the row it inserted.
+Provides two families of helper. The seed functions encapsulate the
+project → plate → run → input_sample → compression_sample →
+prepped_sample → platform_sample insert chain so tests do not duplicate
+it; each takes an open SQLite connection and returns the surrogate id of
+the row it inserted. The snapshot function captures a deterministic,
+JSON-serializable image of a database's structure and contents for
+byte-comparison against a persisted expectation.
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
+import re
 import sqlite3
+from pathlib import Path
+
+_DATA_DIR = Path(__file__).parent / "data"
+LEGACY_DATA_DIR = _DATA_DIR / "legacy"
+NATIVE_DATA_DIR = _DATA_DIR / "native"
+GOOD_LEGACY_GLOB = "good_*.csv"
+NATIVE_SNAPSHOT_SUFFIX = ".generated_snapshot.json"
 
 
 @contextlib.contextmanager
@@ -21,6 +33,95 @@ def open_db(db_path: str):
         yield conn
     finally:
         conn.close()
+
+
+def _normalize_sql(sql: str | None) -> str:
+    """Collapse whitespace runs so functionally equal SQL compares equal.
+
+    SQLite's stored CREATE statements may differ from the original file
+    in whitespace after ALTER TABLE rewrites; collapsing runs of
+    whitespace into single spaces makes equivalent definitions equal.
+    """
+    if sql is None:
+        return ""
+    return re.sub(r"\s+", " ", sql).strip()
+
+
+def _row_sort_key(row: tuple) -> list[tuple[bool, str, str]]:
+    # Deterministic, None-safe ordering for heterogeneous row tuples:
+    # NULLs first, then by type name, then by string value
+    return [(v is None, type(v).__name__, str(v)) for v in row]
+
+
+def capture_db_snapshot(conn: sqlite3.Connection) -> dict:
+    """Return a deterministic snapshot of DB structure and full contents.
+
+    The snapshot is keyed by object name and every row list is sorted,
+    so neither object-creation order nor row-insertion order affects
+    equality. All values are JSON-serializable, so a caller can persist
+    a snapshot and byte-compare it against a later capture.
+    """
+    snapshot: dict = {
+        "tables": {},
+        "indexes": {},
+        "triggers": {},
+        "views": {},
+        "data": {},
+    }
+    cur = conn.cursor()
+
+    # Tables: column structure, foreign keys, and full row contents
+    cur.execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+        "ORDER BY name"
+    )
+    table_names = [r[0] for r in cur.fetchall()]
+    for tname in table_names:
+        cols = cur.execute(f"PRAGMA table_info({tname})").fetchall()
+        fks = cur.execute(f"PRAGMA foreign_key_list({tname})").fetchall()
+        snapshot["tables"][tname] = {
+            "columns": [tuple(c) for c in cols],
+            "foreign_keys": sorted((tuple(f) for f in fks), key=_row_sort_key),
+        }
+        # Sort rows so insertion order does not affect equality
+        rows = cur.execute(f"SELECT * FROM {tname}").fetchall()
+        snapshot["data"][tname] = sorted((tuple(r) for r in rows), key=_row_sort_key)
+
+    # Indexes: include auto-indexes from PK / UNIQUE constraints
+    cur.execute(
+        "SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index' ORDER BY name"
+    )
+    for name, tbl_name, sql in cur.fetchall():
+        cols = cur.execute(f"PRAGMA index_info({name})").fetchall()
+        snapshot["indexes"][name] = {
+            "table": tbl_name,
+            "sql": _normalize_sql(sql),
+            "columns": [tuple(c) for c in cols],
+        }
+
+    # Triggers and views: compare normalized SQL bodies
+    cur.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name"
+    )
+    for name, sql in cur.fetchall():
+        snapshot["triggers"][name] = _normalize_sql(sql)
+
+    cur.execute("SELECT name, sql FROM sqlite_master WHERE type='view' ORDER BY name")
+    for name, sql in cur.fetchall():
+        snapshot["views"][name] = _normalize_sql(sql)
+
+    return snapshot
+
+
+def snapshot_to_json(snapshot: dict) -> str:
+    """Serialize a snapshot to canonical JSON text.
+
+    Stable key order and a trailing newline make two independently
+    produced snapshots byte-comparable, so a persisted image and a
+    freshly captured one can be diffed directly.
+    """
+    return json.dumps(snapshot, indent=2, sort_keys=True) + "\n"
 
 
 def seed_project_and_plate(conn: sqlite3.Connection) -> tuple[int, int]:

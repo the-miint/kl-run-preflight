@@ -12,7 +12,7 @@ from run_preflight.legacy.parser import parse_omnibus
 
 from . import _helpers
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent / "data" / "legacy"
 
 
 def _setup_run_and_prs(conn: sqlite3.Connection) -> tuple[int, int]:

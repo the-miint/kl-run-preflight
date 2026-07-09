@@ -36,9 +36,9 @@ from run_preflight.updates import (
 from . import _helpers
 from ._helpers import open_db
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent / "data" / "legacy"
 DO_NOT_USE_CSV = (
-    DATA_DIR / "good_standard_metagv101_donotuse_synthetic_not_roundtrippable.csv"
+    DATA_DIR / "good_standard_metagv101_contains_donotuse_unsupported_roundtrip.csv"
 )
 
 
@@ -806,7 +806,9 @@ class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def _insert_pacbio_with_smrt_cell_well_sample_id(self, conn, plate, proj, run, name, smrt_cell_well_sample_id):
+    def _insert_pacbio_with_smrt_cell_well_sample_id(
+        self, conn, plate, proj, run, name, smrt_cell_well_sample_id
+    ):
         # Each pacbio_sample needs its own prepped_sample (UNIQUE constraint).
         _ins, _cs, prs = _helpers.seed_sample_chain(
             conn, plate, proj, run, sample_name=name, well="A1"
@@ -820,7 +822,9 @@ class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):
     def test_pacbio_smrt_cell_well_sample_id_valid_values_accepted(self):
         with open_db(self.db_path) as conn:
             proj, plate, run = _seed_run_skeleton(conn)
-            for i, value in enumerate(["1_A01", "2_A01", "1_B01", "2_C01", "1_D01", None]):
+            for i, value in enumerate(
+                ["1_A01", "2_A01", "1_B01", "2_C01", "1_D01", None]
+            ):
                 self._insert_pacbio_with_smrt_cell_well_sample_id(
                     conn, plate, proj, run, f"S{i}", value
                 )
@@ -836,7 +840,9 @@ class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):
     def test_pacbio_smrt_cell_well_sample_id_invalid_values_rejected(self):
         with open_db(self.db_path) as conn:
             proj, plate, run = _seed_run_skeleton(conn)
-            for i, value in enumerate(["A01", "3_A01", "1_E01", "1_A02", "1_a01", "0_A01"]):
+            for i, value in enumerate(
+                ["A01", "3_A01", "1_E01", "1_A02", "1_a01", "0_A01"]
+            ):
                 with self.assertRaises(sqlite3.IntegrityError):
                     self._insert_pacbio_with_smrt_cell_well_sample_id(
                         conn, plate, proj, run, f"S{i}", value
