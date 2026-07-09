@@ -350,14 +350,14 @@ the flag to avoid reading incomplete runs.
 
 ## Test files
 
-- v0: `tests/data/good_standard_metagv0_really_metat.csv`
-- v90: `tests/data/good_standard_metagv90.csv`
-- v100: `tests/data/good_standard_metagv100_wo_replicates.csv`
-- abs_quant_metag v10: `tests/data/good_abs_quant_metagv10.csv`
-- abs_quant_metag v11: `tests/data/good_abs_quant_metagv11.csv`
-- standard_metat v10: `tests/data/good_standard_metatv10.csv`
-- tellseq_metag v10: `tests/data/good_tellseq_metagv10.csv`
-- tellseq_absquant v10: `tests/data/Tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv`
+- v0: `tests/data/legacy/good_standard_metagv0_really_metat.csv`
+- v90: `tests/data/legacy/good_standard_metagv90.csv`
+- v100: `tests/data/legacy/good_standard_metagv100_wo_replicates.csv`
+- abs_quant_metag v10: `tests/data/legacy/good_abs_quant_metagv10.csv`
+- abs_quant_metag v11: `tests/data/legacy/good_abs_quant_metagv11.csv`
+- standard_metat v10: `tests/data/legacy/good_standard_metatv10.csv`
+- tellseq_metag v10: `tests/data/legacy/good_tellseq_metagv10.csv`
+- tellseq_absquant v10: `tests/data/legacy/good_tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv`
 - v100 with extra columns (for ticket 014):
   `fork-kl-metapool/metapool/tests/data/good_standard_metagv100_w_replicates.csv`
   and `fork-kl-metapool/metapool/tests/data/sheet_wo_replicates.csv`
