@@ -9,8 +9,13 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import sys
 import textwrap
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from run_preflight.db import _SCHEMA_PATH  # noqa: E402
 
 # ============================================================
 # Category definitions — update this dict when adding new
@@ -84,13 +89,6 @@ CATEGORIES: dict[str, dict] = {
 # Paths
 # ============================================================
 
-_SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "src"
-    / "run_preflight"
-    / "sql"
-    / "schema.sql"
-)
 _OUTPUT_PATH = _SCHEMA_PATH.parent / "schema_diagram.html"
 
 # ============================================================

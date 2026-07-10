@@ -413,6 +413,19 @@ def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str |
     return cur.fetchall()
 
 
+def _do_not_use_filter(include_do_not_use: bool, alias: str = "") -> str:
+    """Return an ``AND <alias>do_not_use = 0`` SQL clause, or ``""``.
+
+    Returns the empty string when *include_do_not_use* is True (no
+    filtering). *alias* is a table/view alias prefix ending in ``.`` (or
+    ``""`` for an unqualified column); callers place the clause between
+    the surrounding WHERE and ORDER BY fragments.
+    """
+    if include_do_not_use:
+        return ""
+    return f"AND {alias}do_not_use = 0"
+
+
 def get_input_sample_project_info(
     conn: sqlite3.Connection,
     *,
@@ -432,7 +445,7 @@ def get_input_sample_project_info(
     disappears only when every one of its preps is flagged.
     """
     run_idx = get_single_run_idx(conn)
-    do_not_use_filter = "" if include_do_not_use else "AND psn.do_not_use = 0\n"
+    do_not_use_filter = _do_not_use_filter(include_do_not_use, "psn.")
 
     # Reuse prepped_sample_project's effective-project resolution, then map
     # back to the input_sample for its sample_name and join out to the
@@ -519,6 +532,67 @@ def sample_kind_names(kind: PlatformSpecificSampleKind) -> _SampleKindNames:
     return _SampleKindNames(table, idx_col, run_view)
 
 
+class PacbioSampleRow(NamedTuple):
+    """PacBio-specific columns of one pacbio_sample row.
+
+    Field names match the pacbio_sample DB columns; the field order is
+    load-bearing — it drives the SELECT column list built in
+    _get_platform_specific_sample_info. Build instances from a raw run-view
+    value tuple via from_run_view, which applies storage-to-domain coercion.
+    """
+
+    barcode_id: str
+    twist_adaptor_id: str | None
+    syndna_is_twisted: bool | None
+    smrt_cell_well_sample_id: str | None
+    movie_context_id: str | None
+
+    @classmethod
+    def sample_kind(cls) -> PlatformSpecificSampleKind:
+        """Return the platform-specific sample kind this row represents."""
+        return "pacbio"
+
+    @classmethod
+    def from_run_view(cls, values: tuple) -> PacbioSampleRow:
+        """Build from a run_pacbio_sample value tuple in field order."""
+        row = cls._make(values)
+
+        # syndna_is_twisted is a SQLite BOOLEAN stored as 0/1/NULL; surface
+        # it to consumers as a genuine bool | None.
+        stored = row.syndna_is_twisted
+        is_twisted = None if stored is None else bool(stored)
+        return row._replace(syndna_is_twisted=is_twisted)
+
+
+class IlluminaSampleRow(NamedTuple):
+    """Illumina-specific columns of one illumina_sample row.
+
+    Field names match the illumina_sample DB columns; the field order is
+    load-bearing — it drives the SELECT column list built in
+    _get_platform_specific_sample_info. Build instances from a raw run-view
+    value tuple via from_run_view.
+    """
+
+    i7_index_id: str
+    i7_sequence: str
+    i5_index_id: str
+    i5_sequence: str
+    lane: int | None
+
+    @classmethod
+    def sample_kind(cls) -> PlatformSpecificSampleKind:
+        """Return the platform-specific sample kind this row represents."""
+        return "illumina"
+
+    @classmethod
+    def from_run_view(cls, values: tuple) -> IlluminaSampleRow:
+        """Build from a run_illumina_sample value tuple in field order.
+
+        No column needs storage-to-domain coercion, so this is a direct map.
+        """
+        return cls._make(values)
+
+
 # Error categories and per-row labels for invariant/accession violations.
 ERR_CATEGORY_INVARIANT = "control / project_idx invariant violation"
 ERR_CATEGORY_MISSING_ACCESSION = "missing required accession"
@@ -545,20 +619,22 @@ def _raise_violations(
 
 def _get_platform_specific_sample_info(
     conn: sqlite3.Connection,
-    kind: PlatformSpecificSampleKind,
+    row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow],
     *,
     include_do_not_use: bool = False,
-) -> list[tuple[int, str, str, list[str]]]:
+) -> list[tuple[int, str, str, list[str], PacbioSampleRow | IlluminaSampleRow]]:
     """Return per-sample biosample + bioproject accession info for the run.
 
     Resolves the sole processing_run via get_single_run_idx and returns
-    one tuple per *kind* sample row, ordered by the kind's sample-idx:
+    one tuple per *row_cls* sample row, ordered by that kind's sample-idx:
     (sample_idx, biosample_accession, primary_bioproject_accession,
-    secondary_bioproject_accessions), where secondary_bioproject_accessions
-    is a list of accessions for every non-primary plate project (populated
-    only for controls; empty for non-control samples), sorted by accession
-    value. Rows whose effective do_not_use flag is set are excluded unless
-    *include_do_not_use* is True.
+    secondary_bioproject_accessions, kind_row), where
+    secondary_bioproject_accessions is a list of accessions for every
+    non-primary plate project (populated only for controls; empty for
+    non-control samples), sorted by accession value, and kind_row is a
+    *row_cls* instance carrying the platform-specific columns (its field
+    order drives the SELECT). Rows whose effective do_not_use flag is set
+    are excluded unless *include_do_not_use* is True.
 
     Raises:
         ValueError: If the control / project_idx pairing is violated
@@ -566,10 +642,14 @@ def _get_platform_specific_sample_info(
             required accession (biosample, primary bioproject accession, or any
             secondary bioproject accession) is None on any row.
     """
-    names = sample_kind_names(kind)
+    names = sample_kind_names(row_cls.sample_kind())
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
-    do_not_use_filter = "" if include_do_not_use else "AND rs.do_not_use = 0\n"
+    do_not_use_filter = _do_not_use_filter(include_do_not_use, "rs.")
+
+    # Pull the platform-specific columns from the run view in field order,
+    # so they land at fixed trailing positions in each result row.
+    kind_select = ", ".join(f"rs.{field}" for field in row_cls._fields)
 
     # One row per (sample x non-primary plate project); LEFT JOINs keep a
     # single row for non-controls / single-project plates. The leading
@@ -585,7 +665,8 @@ def _get_platform_specific_sample_info(
             COALESCE(own_proj.bioproject_accession,
                      primary_proj.bioproject_accession),
             ipp.project_idx,
-            secondary_proj.bioproject_accession
+            secondary_proj.bioproject_accession,
+            {kind_select}
         FROM {names.run_view} rs
         JOIN input_sample ins
             ON rs.input_sample_idx = ins.input_sample_idx
@@ -614,10 +695,18 @@ def _get_platform_specific_sample_info(
     # Group result rows by sample-idx and validate per-group.
     invariant_offenders: list[tuple[int, str]] = []
     accession_offenders: list[tuple[int, str]] = []
-    results: list[tuple[int, str, str, list[str]]] = []
+    results: list[
+        tuple[int, str, str, list[str], PacbioSampleRow | IlluminaSampleRow]
+    ] = []
     for sample_idx, group in groupby(rows, key=lambda r: r[0]):
         group_rows = list(group)
-        _, project_idx, biosample, st_name, primary_bioproject, _, _ = group_rows[0]
+        first_row = group_rows[0]
+        _, project_idx, biosample, st_name, primary_bioproject = first_row[:5]
+
+        # The kind columns are constant across a control's grouped rows;
+        # read them from the first row and rebuild the platform-specific row
+        # (from_run_view applies any storage-to-domain coercion).
+        kind_row = row_cls.from_run_view(first_row[7:])
 
         # Enforce control / project_idx pairing before reading accessions
         is_standard = st_name == SAMPLE_TYPE_STANDARD
@@ -640,7 +729,7 @@ def _get_platform_specific_sample_info(
         if any(b is None for b in secondary):
             accession_offenders.append((sample_idx, "secondary_bioproject_accessions"))
 
-        results.append((sample_idx, biosample, primary_bioproject, secondary))
+        results.append((sample_idx, biosample, primary_bioproject, secondary, kind_row))
 
     # Invariant violations indicate corrupt data; raise before accession checks
     _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders, names.idx_col)
@@ -654,10 +743,10 @@ def get_illumina_sample_info(
     conn: sqlite3.Connection,
     *,
     include_do_not_use: bool = False,
-) -> list[tuple[int, str, str, list[str]]]:
-    """Return per-illumina_sample accession info; see the shared helper."""
+) -> list[tuple[int, str, str, list[str], IlluminaSampleRow]]:
+    """Return per-illumina_sample accession + illumina row; see shared helper."""
     return _get_platform_specific_sample_info(
-        conn, "illumina", include_do_not_use=include_do_not_use
+        conn, IlluminaSampleRow, include_do_not_use=include_do_not_use
     )
 
 
@@ -665,10 +754,10 @@ def get_pacbio_sample_info(
     conn: sqlite3.Connection,
     *,
     include_do_not_use: bool = False,
-) -> list[tuple[int, str, str, list[str]]]:
-    """Return per-pacbio_sample accession info; see the shared helper."""
+) -> list[tuple[int, str, str, list[str], PacbioSampleRow]]:
+    """Return per-pacbio_sample accession + pacbio row; see shared helper."""
     return _get_platform_specific_sample_info(
-        conn, "pacbio", include_do_not_use=include_do_not_use
+        conn, PacbioSampleRow, include_do_not_use=include_do_not_use
     )
 
 
@@ -691,13 +780,13 @@ def get_illumina_sample_rows(
     """
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
-    do_not_use_filter = "" if include_do_not_use else "AND do_not_use = 0 "
+    do_not_use_filter = _do_not_use_filter(include_do_not_use)
     cur.execute(
         "SELECT illumina_sample_idx, lane, i7_sequence, i5_sequence, "
         "project_name, sample_name "
         "FROM run_illumina_sample "
         "WHERE run_idx = ? "
-        f"{do_not_use_filter}"
+        f"{do_not_use_filter} "
         "ORDER BY illumina_sample_idx",
         (run_idx,),
     )

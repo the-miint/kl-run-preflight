@@ -17,6 +17,8 @@ from run_preflight.db import (
     ERR_CATEGORY_MISSING_ACCESSION,
     LABEL_NONSTANDARD_WITH_PROJECT,
     LABEL_STANDARD_NO_PROJECT,
+    IlluminaSampleRow,
+    PacbioSampleRow,
     _has_do_not_use_token,
     create_db,
     get_illumina_sample_info,
@@ -31,6 +33,7 @@ from run_preflight.legacy.api import load_legacy_csv
 from run_preflight.updates import (
     set_biosample_accession,
     set_input_sample_do_not_use,
+    set_pacbio_sample_run_details,
 )
 
 from . import _helpers
@@ -115,6 +118,18 @@ def _seed_pacbio(
     return ins_idx, ps_idx
 
 
+def _expected_illumina_row(sample_name: str) -> IlluminaSampleRow:
+    """Build the IlluminaSampleRow _seed_illumina produces for *sample_name*."""
+    return IlluminaSampleRow(
+        f"i7_{sample_name}", "AAAA", f"i5_{sample_name}", "CCCC", None
+    )
+
+
+def _expected_pacbio_row(sample_name: str) -> PacbioSampleRow:
+    """Build the PacbioSampleRow _seed_pacbio produces for *sample_name*."""
+    return PacbioSampleRow(f"bc_{sample_name}", None, None, None, None)
+
+
 class TestGetIlluminaSampleInfo(unittest.TestCase):
     """End-to-end tests for get_illumina_sample_info."""
 
@@ -140,7 +155,10 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
 
-        self.assertEqual(result, [(ils_idx, "SAMN001", "PRJNA001", [])])
+        self.assertEqual(
+            result,
+            [(ils_idx, "SAMN001", "PRJNA001", [], _expected_illumina_row("S1"))],
+        )
 
     def test_get_illumina_sample_info_excludes_do_not_use_by_default(self):
         # Two non-controls; one flagged do-not-use is dropped by default
@@ -161,12 +179,15 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             default_result = get_illumina_sample_info(conn)
             full_result = get_illumina_sample_info(conn, include_do_not_use=True)
 
-        self.assertEqual(default_result, [(ils2, "SAMN002", "PRJNA001", [])])
+        self.assertEqual(
+            default_result,
+            [(ils2, "SAMN002", "PRJNA001", [], _expected_illumina_row("S2"))],
+        )
         self.assertEqual(
             full_result,
             [
-                (ils1, "SAMN001", "PRJNA001", []),
-                (ils2, "SAMN002", "PRJNA001", []),
+                (ils1, "SAMN001", "PRJNA001", [], _expected_illumina_row("S1")),
+                (ils2, "SAMN002", "PRJNA001", [], _expected_illumina_row("S2")),
             ],
         )
 
@@ -189,7 +210,10 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
 
-        self.assertEqual(result, [(ils_idx, "SAMN001", "PRJNA002", [])])
+        self.assertEqual(
+            result,
+            [(ils_idx, "SAMN001", "PRJNA002", [], _expected_illumina_row("S1"))],
+        )
 
     def test_get_illumina_sample_info_control_single_project(self):
         # Control on a single-project plate: primary = plate primary; secondary = []
@@ -209,7 +233,10 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
 
-        self.assertEqual(result, [(ils_idx, "SAMN_BLK", "PRJNA001", [])])
+        self.assertEqual(
+            result,
+            [(ils_idx, "SAMN_BLK", "PRJNA001", [], _expected_illumina_row("blank1"))],
+        )
 
     def test_get_illumina_sample_info_control_multi_project(self):
         # Control on a multi-project plate: secondary lists every non-primary
@@ -251,7 +278,15 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
 
         self.assertEqual(
             result,
-            [(ils_idx, "SAMN_BLK", "PRJNA001", ["PRJNA111", "PRJNA999"])],
+            [
+                (
+                    ils_idx,
+                    "SAMN_BLK",
+                    "PRJNA001",
+                    ["PRJNA111", "PRJNA999"],
+                    _expected_illumina_row("blank1"),
+                )
+            ],
         )
 
     def test_get_illumina_sample_info_missing_biosample_accession(self):
@@ -728,7 +763,10 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         with open_db(self.db_path) as conn:
             result = get_pacbio_sample_info(conn)
 
-        self.assertEqual(result, [(ps_idx, "SAMN001", "PRJNA001", [])])
+        self.assertEqual(
+            result,
+            [(ps_idx, "SAMN001", "PRJNA001", [], _expected_pacbio_row("S1"))],
+        )
 
     def test_get_pacbio_sample_info_control_multi_project(self):
         # Control on a multi-project plate: secondary lists every non-primary
@@ -765,7 +803,15 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
 
         self.assertEqual(
             result,
-            [(ps_idx, "SAMN_BLK", "PRJNA001", ["PRJNA111", "PRJNA999"])],
+            [
+                (
+                    ps_idx,
+                    "SAMN_BLK",
+                    "PRJNA001",
+                    ["PRJNA111", "PRJNA999"],
+                    _expected_pacbio_row("blank1"),
+                )
+            ],
         )
 
     def test_get_pacbio_sample_info_excludes_do_not_use_by_default(self):
@@ -784,14 +830,92 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
             default_result = get_pacbio_sample_info(conn)
             full_result = get_pacbio_sample_info(conn, include_do_not_use=True)
 
-        self.assertEqual(default_result, [(ps2, "SAMN002", "PRJNA001", [])])
+        self.assertEqual(
+            default_result,
+            [(ps2, "SAMN002", "PRJNA001", [], _expected_pacbio_row("S2"))],
+        )
         self.assertEqual(
             full_result,
             [
-                (ps1, "SAMN001", "PRJNA001", []),
-                (ps2, "SAMN002", "PRJNA001", []),
+                (ps1, "SAMN001", "PRJNA001", [], _expected_pacbio_row("S1")),
+                (ps2, "SAMN002", "PRJNA001", [], _expected_pacbio_row("S2")),
             ],
         )
+
+    def test_get_pacbio_sample_info_kind_row_carries_populated_fields(self):
+        # Populated pacbio-specific columns flow through into kind_row.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _, ps_idx = _seed_pacbio(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            set_biosample_accession(conn, "S1", "SAMN001")
+            set_pacbio_sample_run_details(
+                conn,
+                sample_name="S1",
+                smrt_cell_well_sample_id="1_A01",
+                movie_context_id="m64001_230101_000000",
+            )
+
+        with open_db(self.db_path) as conn:
+            result = get_pacbio_sample_info(conn)
+
+        expected_row = PacbioSampleRow(
+            "bc_S1", None, None, "1_A01", "m64001_230101_000000"
+        )
+        self.assertEqual(result, [(ps_idx, "SAMN001", "PRJNA001", [], expected_row)])
+
+    def test_get_pacbio_sample_info_syndna_is_twisted_coerced_to_bool(self):
+        # SQLite BOOLEAN stored as 1/0/NULL surfaces as Python True/False/None.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _, ps1 = _seed_pacbio(conn, plate, proj, run, sample_name="S1", well="A1")
+            _, ps2 = _seed_pacbio(conn, plate, proj, run, sample_name="S2", well="A2")
+            _, ps3 = _seed_pacbio(conn, plate, proj, run, sample_name="S3", well="A3")
+            # Store the raw boolean integers directly; NULL is left on S3.
+            for ps_idx, stored in ((ps1, 1), (ps2, 0)):
+                conn.execute(
+                    "UPDATE pacbio_sample SET syndna_is_twisted = ? "
+                    "WHERE pacbio_sample_idx = ?",
+                    (stored, ps_idx),
+                )
+            for name in ("S1", "S2", "S3"):
+                set_biosample_accession(conn, name, f"SAMN_{name}")
+            conn.commit()
+
+        with open_db(self.db_path) as conn:
+            result = get_pacbio_sample_info(conn)
+
+        self.assertEqual(
+            result,
+            [
+                (
+                    ps1,
+                    "SAMN_S1",
+                    "PRJNA001",
+                    [],
+                    PacbioSampleRow("bc_S1", None, True, None, None),
+                ),
+                (
+                    ps2,
+                    "SAMN_S2",
+                    "PRJNA001",
+                    [],
+                    PacbioSampleRow("bc_S2", None, False, None, None),
+                ),
+                (
+                    ps3,
+                    "SAMN_S3",
+                    "PRJNA001",
+                    [],
+                    PacbioSampleRow("bc_S3", None, None, None, None),
+                ),
+            ],
+        )
+        # 1 == True and 0 == False in Python, so equality above cannot prove
+        # coercion; assert the concrete types of the surfaced values.
+        twisted_types = [type(row[4].syndna_is_twisted) for row in result]
+        self.assertEqual(twisted_types, [bool, bool, type(None)])
 
 
 class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):
@@ -881,6 +1005,17 @@ class TestSampleKindNamingConvention(unittest.TestCase):
                 self.assertIn(names.idx_col, cols)
         finally:
             conn.close()
+
+    def test_sample_row_sample_kind_reports_declared_kind(self):
+        # Each row class reports its own kind; the info helper relies on this
+        # instead of a separately-passed kind argument.
+        valid_kinds = get_args(PlatformSpecificSampleKind)
+        reported = {
+            PacbioSampleRow.sample_kind(),
+            IlluminaSampleRow.sample_kind(),
+        }
+        self.assertEqual(reported, {"pacbio", "illumina"})
+        self.assertTrue(reported.issubset(set(valid_kinds)))
 
 
 if __name__ == "__main__":

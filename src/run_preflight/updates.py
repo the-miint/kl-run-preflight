@@ -17,14 +17,19 @@ from .constants import (
     DB_COL_EXTERNAL_PROJECT_ID,
     DB_COL_INPUT_SAMPLE_IDX,
     DB_COL_LANE,
+    DB_COL_MOVIE_CONTEXT_ID,
+    DB_COL_PACBIO_SAMPLE_IDX,
     DB_COL_PREPPED_SAMPLE_IDX,
     DB_COL_PROJECT_IDX,
     DB_COL_PROJECT_NAME,
     DB_COL_RUN_IDX,
+    DB_COL_SAMPLE_NAME,
+    DB_COL_SMRT_CELL_WELL_SAMPLE_ID,
     PlatformSpecificSampleKind,
     TABLE_CHANGE_LOG,
     TABLE_ILLUMINA_RUN,
     TABLE_INPUT_SAMPLE,
+    TABLE_PACBIO_SAMPLE,
     TABLE_PREPPED_SAMPLE,
     TABLE_PROJECT,
 )
@@ -45,6 +50,21 @@ _ILLUMINA_PLATFORM_SAMPLE_KINDS: frozenset[PlatformSpecificSampleKind] = frozens
 IllumRunSetting = Literal["mask_short_reads", "override_cycles"]
 
 
+class Unchanged:
+    """Sentinel type for a set-field argument the caller did not supply.
+
+    Distinct from None, which explicitly clears a field: passing the
+    UNCHANGED singleton (or omitting the argument) leaves a field
+    untouched.
+    """
+
+    def __repr__(self) -> str:
+        return "<unchanged>"
+
+
+UNCHANGED = Unchanged()
+
+
 def _require_nonempty_or_none(value: str | None, param_name: str) -> str | None:
     """Reject empty-string *value*; allow None (clear) and non-empty strings.
 
@@ -62,6 +82,38 @@ def _require_nonempty(value: str, param_name: str) -> str:
     if value is None or value == "":
         raise ValueError(f"{param_name} must be a non-empty string")
     return value
+
+
+def _require_exactly_one_key(
+    pairs: tuple[tuple[str, object], ...],
+    description: str,
+) -> tuple[str, object]:
+    """Return the sole (column, value) in *pairs* whose value is not None.
+
+    *description* names the candidate keys for the error message. Raises
+    ValueError unless exactly one value is non-None.
+    """
+    supplied = [(col, val) for col, val in pairs if val is not None]
+    if len(supplied) != 1:
+        raise ValueError(f"Exactly one of {description} must be supplied")
+    return supplied[0]
+
+
+def _require_unique_match(
+    matches: list[tuple],
+    no_match_msg: str,
+    ambiguous_msg: str,
+) -> tuple:
+    """Return the sole element of *matches*.
+
+    Raises ValueError with *no_match_msg* when empty, or *ambiguous_msg*
+    when *matches* holds more than one row.
+    """
+    if not matches:
+        raise ValueError(no_match_msg)
+    if len(matches) > 1:
+        raise ValueError(ambiguous_msg)
+    return matches[0]
 
 
 def _to_audit_value(value: object) -> str | None:
@@ -122,6 +174,27 @@ def _apply_row_update(
     _log_change(conn, table, pk_value, column, old_value, new_value, reason)
 
 
+def _apply_row_updates(
+    conn: sqlite3.Connection,
+    specs: list[tuple],
+) -> None:
+    """Apply several row updates and their audit logs in one transaction.
+
+    Each spec is the argument tuple passed to _apply_row_update after
+    *conn*: (table, pk_col, pk_value, column, old_value, new_value,
+    reason). A failure on any spec rolls back the whole batch.
+    """
+    try:
+        for table, pk_col, pk_value, column, old_value, new_value, reason in specs:
+            _apply_row_update(
+                conn, table, pk_col, pk_value, column, old_value, new_value, reason
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def _apply_single_row_update(
     conn: sqlite3.Connection,
     table: str,
@@ -132,19 +205,10 @@ def _apply_single_row_update(
     new_value: object,
     reason: str | None,
 ) -> None:
-    """Apply a single-column update to one row and commit it.
-
-    The update and audit-log insert run inside one transaction: a
-    failure in either rolls back both.
-    """
-    try:
-        _apply_row_update(
-            conn, table, pk_col, pk_value, column, old_value, new_value, reason
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+    """Apply a single-column update to one row and commit it."""
+    _apply_row_updates(
+        conn, [(table, pk_col, pk_value, column, old_value, new_value, reason)]
+    )
 
 
 def set_biosample_accession(
@@ -174,15 +238,12 @@ def set_biosample_accession(
 
     # Resolve effective Sample_Name to a unique input_sample
     matches = lookup_input_samples_by_name(cur, sample_name)
-    if not matches:
-        raise ValueError(f"No input_sample matches Sample_Name {sample_name!r}")
-    if len(matches) > 1:
-        raise ValueError(
-            f"Sample_Name {sample_name!r} is ambiguous; resolves to "
-            f"{len(matches)} distinct input_samples"
-        )
-
-    input_sample_idx, old_accession = matches[0]
+    input_sample_idx, old_accession = _require_unique_match(
+        matches,
+        f"No input_sample matches Sample_Name {sample_name!r}",
+        f"Sample_Name {sample_name!r} is ambiguous; resolves to "
+        f"{len(matches)} distinct input_samples",
+    )
     _apply_single_row_update(
         conn,
         TABLE_INPUT_SAMPLE,
@@ -373,6 +434,8 @@ def set_bioproject_accession(
         DB_COL_PROJECT_NAME: project_name,
         DB_COL_EXTERNAL_PROJECT_ID: external_project_id,
     }
+    # same-pattern-ok: empty string counts as absent here (truthiness), not
+    # is-not-None as in _require_exactly_one_key; message also differs
     keys = [k for k, v in supplied.items() if v]
     if len(keys) != 1:
         raise ValueError(
@@ -385,14 +448,11 @@ def set_bioproject_accession(
     # Resolve the chosen key to project_idx and capture the prior value
     cur = conn.cursor()
     matches = lookup_projects_by_key(cur, key_col, key_value)
-    if not matches:
-        raise ValueError(f"No project matches {key_col} {key_value!r}")
-    if len(matches) > 1:
-        raise ValueError(
-            f"{key_col} {key_value!r} is ambiguous; resolves to {len(matches)} projects"
-        )
-
-    project_idx, old_accession = matches[0]
+    project_idx, old_accession = _require_unique_match(
+        matches,
+        f"No project matches {key_col} {key_value!r}",
+        f"{key_col} {key_value!r} is ambiguous; resolves to {len(matches)} projects",
+    )
     _apply_single_row_update(
         conn,
         TABLE_PROJECT,
@@ -441,22 +501,11 @@ def _set_do_not_use(
     """
     # Store as 0/1/NULL so the column and audit log stay integer-consistent
     new_value = None if value is None else int(value)
-    try:
-        for pk_value, old_value in rows:
-            _apply_row_update(
-                conn,
-                table,
-                pk_col,
-                pk_value,
-                DB_COL_DO_NOT_USE,
-                old_value,
-                new_value,
-                reason,
-            )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+    specs = [
+        (table, pk_col, pk_value, DB_COL_DO_NOT_USE, old_value, new_value, reason)
+        for pk_value, old_value in rows
+    ]
+    _apply_row_updates(conn, specs)
 
 
 def set_input_sample_do_not_use(
@@ -480,24 +529,15 @@ def set_input_sample_do_not_use(
             *biosample_accession* is empty, or if no input_sample matches.
     """
     # Require exactly one supplied key, then resolve it to (column, value)
-    keys = [
-        col
-        for col, val in (
+    key_col, key_value = _require_exactly_one_key(
+        (
             (DB_COL_INPUT_SAMPLE_IDX, input_sample_idx),
             (DB_COL_BIOSAMPLE_ACCESSION, biosample_accession),
-        )
-        if val is not None
-    ]
-    if len(keys) != 1:
-        raise ValueError(
-            "Exactly one of input_sample_idx or biosample_accession must be supplied"
-        )
-    key_col = keys[0]
+        ),
+        "input_sample_idx or biosample_accession",
+    )
     if key_col == DB_COL_BIOSAMPLE_ACCESSION:
         _require_nonempty(biosample_accession, "biosample_accession")
-        key_value = biosample_accession
-    else:
-        key_value = input_sample_idx
 
     # Resolve the key to one or more input_sample rows and update each
     cur = conn.cursor()
@@ -549,3 +589,121 @@ def set_prepped_sample_do_not_use(
     _set_do_not_use(
         conn, TABLE_PREPPED_SAMPLE, DB_COL_PREPPED_SAMPLE_IDX, rows, value, reason
     )
+
+
+def _resolve_pacbio_sample(
+    cur,
+    key_col: str,
+    key_value: object,
+    columns: list[str],
+) -> tuple[int, dict[str, object]]:
+    """Return (pacbio_sample_idx, {column: current_value}) for the sole match.
+
+    *key_col* is DB_COL_PACBIO_SAMPLE_IDX (matched directly) or
+    DB_COL_SAMPLE_NAME (resolved via the effective Sample_Name exposed by
+    prepped_sample_name). *columns* are pacbio_sample columns whose
+    current values the caller needs for audit logging; they and the key
+    column come from the closed set of column constants — they are
+    interpolated into the SQL.
+
+    Raises:
+        ValueError: If the key matches zero, or more than one, pacbio_sample.
+    """
+    select_cols = ", ".join(
+        [f"ps.{DB_COL_PACBIO_SAMPLE_IDX}"] + [f"ps.{c}" for c in columns]
+    )
+    if key_col == DB_COL_PACBIO_SAMPLE_IDX:
+        cur.execute(
+            f"SELECT {select_cols} FROM {TABLE_PACBIO_SAMPLE} ps "
+            f"WHERE ps.{DB_COL_PACBIO_SAMPLE_IDX} = ?",
+            (key_value,),
+        )
+    else:
+        cur.execute(
+            f"SELECT {select_cols} FROM {TABLE_PACBIO_SAMPLE} ps "
+            "JOIN prepped_sample_name psn "
+            f"ON ps.{DB_COL_PREPPED_SAMPLE_IDX} = psn.{DB_COL_PREPPED_SAMPLE_IDX} "
+            f"WHERE psn.{DB_COL_SAMPLE_NAME} = ?",
+            (key_value,),
+        )
+    rows = cur.fetchall()
+    match = _require_unique_match(
+        rows,
+        f"No pacbio_sample matches {key_col} {key_value!r}",
+        f"{key_col} {key_value!r} is ambiguous; resolves to {len(rows)} "
+        "pacbio_samples — use pacbio_sample_idx",
+    )
+    ps_idx = match[0]
+    old_values = {col: match[i + 1] for i, col in enumerate(columns)}
+    return ps_idx, old_values
+
+
+def set_pacbio_sample_run_details(
+    conn: sqlite3.Connection,
+    *,
+    sample_name: str | None = None,
+    pacbio_sample_idx: int | None = None,
+    smrt_cell_well_sample_id: str | None | Unchanged = UNCHANGED,
+    movie_context_id: str | None | Unchanged = UNCHANGED,
+    reason: str | None = None,
+) -> None:
+    """Set post-creation PacBio run details on one pacbio_sample.
+
+    Identify the target by exactly one of *sample_name* or
+    *pacbio_sample_idx*; a *sample_name* must resolve to exactly one
+    pacbio_sample (a name matching several raises, directing the caller
+    to pacbio_sample_idx). Each field left as UNCHANGED is untouched; a
+    supplied value is written and a supplied None clears it. At least one
+    field must be supplied. smrt_cell_well_sample_id values are validated
+    by the database CHECK: an invalid value raises sqlite3.IntegrityError.
+
+    Raises:
+        ValueError: If not exactly one identifier is supplied, if no field
+            is supplied, if a supplied value is an empty string, or if the
+            identifier matches zero or multiple pacbio_samples.
+    """
+    # Require exactly one identifier key.
+    key_col, key_value = _require_exactly_one_key(
+        (
+            (DB_COL_PACBIO_SAMPLE_IDX, pacbio_sample_idx),
+            (DB_COL_SAMPLE_NAME, sample_name),
+        ),
+        "sample_name or pacbio_sample_idx",
+    )
+
+    # Collect the supplied fields (UNCHANGED means leave alone); a supplied
+    # None clears the field, a supplied empty string is rejected.
+    updates: list[tuple[str, str | None]] = []
+    for col, value in (
+        (DB_COL_SMRT_CELL_WELL_SAMPLE_ID, smrt_cell_well_sample_id),
+        (DB_COL_MOVIE_CONTEXT_ID, movie_context_id),
+    ):
+        if not isinstance(value, Unchanged):
+            _require_nonempty_or_none(value, col)
+            updates.append((col, value))
+    if not updates:
+        raise ValueError(
+            "At least one of smrt_cell_well_sample_id or movie_context_id "
+            "must be supplied"
+        )
+
+    # Resolve to exactly one pacbio_sample and its current per-column values.
+    cur = conn.cursor()
+    ps_idx, old_values = _resolve_pacbio_sample(
+        cur, key_col, key_value, [col for col, _ in updates]
+    )
+
+    # Apply every supplied field on the row in a single transaction.
+    specs = [
+        (
+            TABLE_PACBIO_SAMPLE,
+            DB_COL_PACBIO_SAMPLE_IDX,
+            ps_idx,
+            col,
+            old_values[col],
+            new_value,
+            reason,
+        )
+        for col, new_value in updates
+    ]
+    _apply_row_updates(conn, specs)

@@ -25,3 +25,6 @@ venv/
 # IDE
 .vscode/
 .claude/
+
+# Local design scratch (never commit)
+docs/do_not_commit_scratch/

@@ -24,7 +24,19 @@ until the first release is tagged.
   through a patch from here on.
 - `get_pacbio_sample_info`, returning per-`pacbio_sample` biosample and
   bioproject accession info keyed by `pacbio_sample_idx` (control/secondary and
-  do-not-use handling identical to `get_illumina_sample_info`).
+  do-not-use handling identical to `get_illumina_sample_info`). Both info
+  functions also return the platform-specific columns as a fifth tuple element
+  — a `PacbioSampleRow` / `IlluminaSampleRow` NamedTuple — so a consumer gets
+  the accession info and the run-specific sample fields in one call. The
+  `PacbioSampleRow.syndna_is_twisted` column, a SQLite `BOOLEAN` stored as
+  `0`/`1`/`NULL`, is surfaced to consumers as `bool | None`.
+- `set_pacbio_sample_run_details`, setting the post-creation PacBio
+  `smrt_cell_well_sample_id` and/or `movie_context_id` on one `pacbio_sample`,
+  addressed by `sample_name` or `pacbio_sample_idx` (a `sample_name` matching
+  more than one row raises, directing the caller to `pacbio_sample_idx`).
+  Exposes a public `UNCHANGED` sentinel so a field can be left untouched,
+  distinct from `None` which clears it; invalid `smrt_cell_well_sample_id`
+  values are rejected by the column CHECK.
 
 - Do-not-use flags on `input_sample` (two-state hard floor) and
   `prepped_sample` (two-state per-replicate override: set = exclude this
@@ -68,9 +80,22 @@ until the first release is tagged.
   `UNIQUE(prepped_sample_id, COALESCE(lane,-1))` indexes, per-tube consistency
   triggers (i5/i7, barcode, lane uniformity, one-run-per-DB), and a synthetic
   multi-lane round-trip fixture.
+- Committed native-format test files under `tests/data/native/`: for every
+  good_ legacy CSV, a SQLite database plus a JSON snapshot of its full
+  structure and contents, produced by `scripts/generate_native_test_files.py`.
+  The `.sqlite` files give downstream consumers ready-to-use native
+  run-preflight inputs; `tests/test_native_test_files.py` enforces that every
+  good_ legacy CSV has a native pair, that the native directory stays paired
+  (`.sqlite` ↔ snapshot), and that each committed `.sqlite` matches both its
+  snapshot and a fresh load of its source CSV.
 
 ### Changed
 
+- Reorganized test data into `tests/data/legacy/` (legacy omnibus CSVs) and
+  `tests/data/native/` (native SQLite files and snapshots); renamed four
+  real-world-named good CSVs to the `good_` convention and the
+  reject-by-design pre-v101-replicates CSV to an `unsupported_` prefix so it
+  is excluded from the good_ sweep.
 - Collapsed `get_illumina_sample_info` and `get_pacbio_sample_info` onto one
   parameterized helper keyed by a `PlatformSpecificSampleKind` (`illumina` /
   `pacbio` / `tellseq`), deriving each kind's table, primary-key column, and
@@ -106,6 +131,10 @@ until the first release is tagged.
 
 ### Fixed
 
+- Reconstruction now emits tabular Data rows in a deterministic lane-major
+  order (by `Lane`, then insertion order), matching the metapool writer's
+  layout. Previously multi-lane sheets round-tripped with samples grouped
+  and their lanes adjacent, which differed from the source row order.
 - Narrowed `cursor.lastrowid` handling at INSERT sites to eliminate Pyright
   `reportArgumentType` warnings.
 

@@ -60,6 +60,24 @@
       ],
       [
         2,
+        2,
+        "iTru7_107_07",
+        "CCGACTAC",
+        "iTru5_01_A",
+        "ATGTCGGT",
+        1
+      ],
+      [
+        3,
+        3,
+        "iTru7_107_07",
+        "CCGACTAG",
+        "iTru5_01_A",
+        "CTGTCGGT",
+        1
+      ],
+      [
+        4,
         1,
         "iTru7_107_07",
         "CCGACTAT",
@@ -68,31 +86,13 @@
         2
       ],
       [
-        3,
-        2,
-        "iTru7_107_07",
-        "CCGACTAC",
-        "iTru5_01_A",
-        "ATGTCGGT",
-        1
-      ],
-      [
-        4,
+        5,
         2,
         "iTru7_107_07",
         "CCGACTAC",
         "iTru5_01_A",
         "ATGTCGGT",
         2
-      ],
-      [
-        5,
-        3,
-        "iTru7_107_07",
-        "CCGACTAG",
-        "iTru5_01_A",
-        "CTGTCGGT",
-        1
       ]
     ],
     "input_plate": [

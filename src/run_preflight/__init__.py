@@ -1,6 +1,12 @@
 """run_preflight — SQLite-backed representation of a sequencing run preflight."""
 
-from .db import create_db, get_illumina_sample_info, get_pacbio_sample_info
+from .db import (
+    IlluminaSampleRow,
+    PacbioSampleRow,
+    create_db,
+    get_illumina_sample_info,
+    get_pacbio_sample_info,
+)
 from .file_io import open_db_file, save_bclconvert_v1_csv, save_db_file
 from .legacy.api import (
     load_legacy_csv,
@@ -10,16 +16,20 @@ from .legacy.api import (
     save_legacy_sample_id_map_csv,
 )
 from .updates import (
+    UNCHANGED,
     set_bioproject_accession,
     set_biosample_accession,
     set_illumina_run_setting,
     set_input_sample_do_not_use,
+    set_pacbio_sample_run_details,
     set_prepped_sample_do_not_use,
     update_lane,
 )
 
 __all__ = [
     "create_db",
+    "IlluminaSampleRow",
+    "PacbioSampleRow",
     "get_illumina_sample_info",
     "get_pacbio_sample_info",
     "open_db_file",
@@ -34,6 +44,8 @@ __all__ = [
     "set_biosample_accession",
     "set_illumina_run_setting",
     "set_input_sample_do_not_use",
+    "set_pacbio_sample_run_details",
     "set_prepped_sample_do_not_use",
     "update_lane",
+    "UNCHANGED",
 ]
