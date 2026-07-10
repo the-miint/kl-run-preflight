@@ -1,13 +1,16 @@
 """Guards for the committed native-format test files.
 
-Enforces four invariants over ``tests/data/native/``: every good_ legacy
-CSV has a committed native ``.sqlite`` + snapshot (coverage); the native
-directory is internally paired (every ``.sqlite`` has a snapshot and vice
-versa); each committed ``.sqlite`` reproduces its committed snapshot
-(consistency); and freshly loading each good_ legacy CSV reproduces its
-committed snapshot (correctness). A failure names the offending file and
-points at the regenerator, so a forgotten regeneration fails loudly rather
-than leaving a silent gap.
+Enforces five invariants over ``tests/data/native/``: every good_ legacy
+CSV has a committed true-preflight ``.sqlite`` + snapshot (coverage); the
+native directory is internally paired (every ``.sqlite`` has a snapshot and
+vice versa); each committed ``.sqlite`` reproduces its committed snapshot
+(consistency); freshly loading each good_ legacy CSV reproduces its
+true-preflight snapshot (correctness); and every committed ``.sqlite``'s
+fact-suffix matches the data it actually holds (labelling). A source CSV may
+back more than one fixture — a bare true-preflight load plus setter-augmented
+fixtures carrying a fact suffix. A failure names the offending file and points
+at the regenerator, so a forgotten regeneration fails loudly rather than
+leaving a silent gap.
 """
 
 from __future__ import annotations
@@ -16,7 +19,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_preflight import migrate_legacy_csv_to_db_file
+from run_preflight import (
+    PacbioSampleRow,
+    PlatformSampleInfo,
+    get_pacbio_sample_info,
+    migrate_legacy_csv_to_db_file,
+)
 
 from ._helpers import (
     GOOD_LEGACY_GLOB,
@@ -24,6 +32,8 @@ from ._helpers import (
     NATIVE_DATA_DIR,
     NATIVE_SNAPSHOT_SUFFIX,
     capture_db_snapshot,
+    derive_native_facts,
+    facts_in_native_stem,
     open_db,
     snapshot_to_json,
 )
@@ -110,6 +120,77 @@ class TestNativeTestFiles(unittest.TestCase):
                     f"fresh load of {csv_path.name} differs from its committed "
                     f"snapshot ({_REGEN_HINT})",
                 )
+
+    def test_native_filename_matches_derived_facts(self):
+        # Labelling: a fixture's fact-suffix must match the data it holds, so a
+        # consumer selecting by suffix cannot be misled by a mislabelled file
+        for db_path in sorted(NATIVE_DATA_DIR.glob("*.sqlite")):
+            with self.subTest(native=db_path.name):
+                with open_db(str(db_path)) as conn:
+                    actual_facts = derive_native_facts(conn)
+                declared_facts = facts_in_native_stem(db_path.stem)
+                self.assertEqual(
+                    declared_facts,
+                    actual_facts,
+                    f"{db_path.name} fact-suffix {declared_facts} does not match "
+                    f"its contents {actual_facts} ({_REGEN_HINT})",
+                )
+
+
+class TestAccessionedFixtureIsRunnable(unittest.TestCase):
+    """The accessioned PacBio fixture is a runnable get_pacbio_sample_info target."""
+
+    def test_get_pacbio_sample_info(self):
+        # A true-preflight fixture raises (no accessions); this post-submission
+        # fixture is the shipped example that reads cleanly through the reader
+        db_path = _sqlite_path("good_pacbio_metagv11.accessioned")
+        with open_db(str(db_path)) as conn:
+            result = get_pacbio_sample_info(conn)
+        expected = [
+            PlatformSampleInfo(
+                1,
+                "standard",
+                "SAMN00000001",
+                "PRJNA000001",
+                [],
+                PacbioSampleRow(
+                    barcode_id="bc3011",
+                    twist_adaptor_id="16_UDI_1_A01_F--16_UDI_1_A01_R",
+                    syndna_is_twisted=None,
+                    smrt_cell_well_sample_id=None,
+                    movie_context_id=None,
+                ),
+            ),
+            PlatformSampleInfo(
+                2,
+                "standard",
+                "SAMN00000002",
+                "PRJNA000001",
+                [],
+                PacbioSampleRow(
+                    barcode_id="bc0112",
+                    twist_adaptor_id="16_UDI_2_B01_F--16_UDI_2_B01_R",
+                    syndna_is_twisted=None,
+                    smrt_cell_well_sample_id=None,
+                    movie_context_id=None,
+                ),
+            ),
+            PlatformSampleInfo(
+                3,
+                "extraction_blank",
+                "SAMN00000003",
+                "PRJNA000001",
+                [],
+                PacbioSampleRow(
+                    barcode_id="bc9992",
+                    twist_adaptor_id="16_UDI_5_E01_F--16_UDI_5_E01_R",
+                    syndna_is_twisted=None,
+                    smrt_cell_well_sample_id=None,
+                    movie_context_id=None,
+                ),
+            ),
+        ]
+        self.assertEqual(result, expected)
 
 
 if __name__ == "__main__":

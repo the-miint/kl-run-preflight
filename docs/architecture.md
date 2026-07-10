@@ -417,6 +417,35 @@ the flag to avoid reading incomplete runs.
 |-------|-------------------|-------|
 | MetatranscriptomicSampleSheetv10 | standard_metat v10 | Extra Data columns (total_rna_concentration_ng_ul, vol_extracted_elution_ul). _ORDERED_BY_DATA_COLUMNS = True. No SampleContext |
 
+## Native fixtures and preflight stages
+
+A run preflight moves through stages as data accrues, and a consumer's code
+targets a particular stage. Rather than stamp a single linear stage label,
+each committed native fixture is classified by **content-derived facts** —
+independent booleans computed from what the database actually holds — because
+sequencing placement is platform-specific and can arrive separately from NCBI
+accessions:
+
+- **true preflight** — what a plain load of most legacy CSVs produces:
+  samples, plates, and QiitaID-keyed projects, but no NCBI accessions. For
+  Illumina this already includes `Lane`; for PacBio the SMRT Cell placement is
+  still absent.
+- **accessioned** (`biosample_accession` / `bioproject_accession` populated) —
+  the post-submission state, reached by calling `set_biosample_accession` /
+  `set_bioproject_accession`. The accession readers (`get_illumina_sample_info`
+  / `get_pacbio_sample_info`) require this state and raise otherwise.
+- **placed** (PacBio `smrt_cell_well_sample_id` / `movie_context_id`
+  populated) — the post-flight state for PacBio, reached via
+  `set_pacbio_sample_run_details`.
+
+Facts are surfaced through the fixture **filename**: a true preflight keeps its
+bare source stem (e.g. `good_pacbio_metagv11.sqlite`), and each populated fact
+appends a dot-delimited token (e.g. `good_pacbio_metagv11.accessioned.sqlite`).
+One source CSV may therefore back several fixtures at different stages. The
+facts are derived from DB content, never hand-maintained, and a guard test
+asserts every fixture's filename suffix matches its recomputed facts, so the
+signal cannot drift from reality.
+
 ## Key dimensions of variation across all formats
 
 ### Sections present

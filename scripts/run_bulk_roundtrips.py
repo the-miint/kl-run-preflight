@@ -9,7 +9,7 @@ from pathlib import Path
 from run_preflight.legacy.roundtrip import roundtrip_via_api
 
 # TODO: put in path to directory with lots of legacy CSV sample sheets
-SHEET_DIR_STR = "/Users/amandabirmingham/Work/Repositories/fork-kl-metapool/notebooks/test_output/SampleSheets"
+SHEET_DIR_STR = ""
 _SHEET_DIR = Path(SHEET_DIR_STR)
 
 

@@ -7388,6 +7388,10 @@
           0
         ]
       ],
+      "definition": [
+        "assay_type_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "name TEXT NOT NULL UNIQUE"
+      ],
       "foreign_keys": []
     },
     "change_log": {
@@ -7457,6 +7461,16 @@
           0
         ]
       ],
+      "definition": [
+        "change_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "changed_at TEXT NOT NULL DEFAULT (datetime('now'))",
+        "column_name TEXT NOT NULL",
+        "new_value TEXT",
+        "old_value TEXT",
+        "reason TEXT",
+        "row_idx INTEGER NOT NULL",
+        "table_name TEXT NOT NULL"
+      ],
       "foreign_keys": []
     },
     "compression_sample": {
@@ -7493,6 +7507,12 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "compression_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "compression_well TEXT NOT NULL",
+        "input_sample_idx INTEGER NOT NULL REFERENCES input_sample(input_sample_idx)",
+        "run_idx INTEGER NOT NULL REFERENCES processing_run(run_idx)"
       ],
       "foreign_keys": [
         [
@@ -7592,6 +7612,17 @@
           0
         ]
       ],
+      "definition": [
+        "barcodes_are_rc BOOLEAN",
+        "forward_adapter TEXT",
+        "mask_short_reads TEXT",
+        "override_cycles TEXT",
+        "read1_length INTEGER NOT NULL",
+        "read2_length INTEGER NOT NULL",
+        "reverse_adapter TEXT",
+        "reverse_complement BOOLEAN",
+        "run_idx INTEGER PRIMARY KEY REFERENCES processing_run(run_idx)"
+      ],
       "foreign_keys": [
         [
           0,
@@ -7664,6 +7695,15 @@
           0
         ]
       ],
+      "definition": [
+        "i5_index_id TEXT NOT NULL",
+        "i5_sequence TEXT NOT NULL",
+        "i7_index_id TEXT NOT NULL",
+        "i7_sequence TEXT NOT NULL",
+        "illumina_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "lane INTEGER",
+        "prepped_sample_idx INTEGER NOT NULL REFERENCES prepped_sample(prepped_sample_idx)"
+      ],
       "foreign_keys": [
         [
           0,
@@ -7711,6 +7751,12 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "elution_vol REAL",
+        "input_plate_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "plate_name TEXT NOT NULL",
+        "primary_project_idx INTEGER NOT NULL REFERENCES project(project_idx)"
       ],
       "foreign_keys": [
         [
@@ -7792,6 +7838,17 @@
           0
         ]
       ],
+      "definition": [
+        "CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)",
+        "biosample_accession TEXT",
+        "do_not_use BOOLEAN NOT NULL DEFAULT 0",
+        "input_plate_idx INTEGER NOT NULL REFERENCES input_plate(input_plate_idx)",
+        "input_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "project_idx INTEGER REFERENCES project(project_idx)",
+        "sample_name TEXT",
+        "sample_type_idx INTEGER NOT NULL REFERENCES sample_type(sample_type_idx)",
+        "well TEXT"
+      ],
       "foreign_keys": [
         [
           0,
@@ -7860,6 +7917,12 @@
           0
         ]
       ],
+      "definition": [
+        "input_sample_idx INTEGER PRIMARY KEY REFERENCES input_sample(input_sample_idx)",
+        "number_of_cells INTEGER",
+        "rack_id TEXT",
+        "tube_code TEXT"
+      ],
       "foreign_keys": [
         [
           0,
@@ -7900,6 +7963,12 @@
           0
         ]
       ],
+      "definition": [
+        "PRIMARY KEY (prepped_sample_idx, column_name)",
+        "column_name TEXT NOT NULL",
+        "column_value TEXT",
+        "prepped_sample_idx INTEGER NOT NULL REFERENCES prepped_sample(prepped_sample_idx)"
+      ],
       "foreign_keys": [
         [
           0,
@@ -7939,6 +8008,12 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "UNIQUE(legacy_sheet_type, legacy_version)",
+        "legacy_format_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "legacy_sheet_type TEXT NOT NULL",
+        "legacy_version INTEGER NOT NULL"
       ],
       "foreign_keys": []
     },
@@ -7992,6 +8067,15 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "PRIMARY KEY (legacy_format_idx, section_name, group_name)",
+        "check_function TEXT NOT NULL",
+        "column_names TEXT NOT NULL",
+        "group_name TEXT NOT NULL",
+        "insert_after TEXT",
+        "legacy_format_idx INTEGER NOT NULL REFERENCES legacy_samplesheet_format(legacy_format_idx)",
+        "section_name TEXT NOT NULL"
       ],
       "foreign_keys": [
         [
@@ -8049,6 +8133,14 @@
           0
         ]
       ],
+      "definition": [
+        "PRIMARY KEY (legacy_format_idx, section_name)",
+        "legacy_format_idx INTEGER NOT NULL REFERENCES legacy_samplesheet_format(legacy_format_idx)",
+        "section_format TEXT NOT NULL DEFAULT 'tabular' REFERENCES legacy_section_format(format_name)",
+        "section_name TEXT NOT NULL",
+        "section_order INTEGER NOT NULL",
+        "view_name TEXT NOT NULL"
+      ],
       "foreign_keys": [
         [
           0,
@@ -8082,6 +8174,9 @@
           null,
           1
         ]
+      ],
+      "definition": [
+        "format_name TEXT PRIMARY KEY"
       ],
       "foreign_keys": []
     },
@@ -8152,6 +8247,16 @@
           0
         ]
       ],
+      "definition": [
+        "extracted_gdna_concentration REAL",
+        "extracted_sample_mass_g REAL",
+        "extracted_sample_surface_area_cm2 REAL",
+        "extracted_sample_volume_ul REAL",
+        "prepped_sample_idx INTEGER PRIMARY KEY REFERENCES prepped_sample(prepped_sample_idx)",
+        "sequenced_sample_gdna_mass_ng REAL",
+        "syndna_pool_mass_ng REAL",
+        "syndna_pool_number TEXT"
+      ],
       "foreign_keys": [
         [
           0,
@@ -8183,6 +8288,10 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "prepped_sample_idx INTEGER PRIMARY KEY REFERENCES prepped_sample(prepped_sample_idx)",
+        "total_rna_concentration_ng_ul REAL"
       ],
       "foreign_keys": [
         [
@@ -8256,6 +8365,15 @@
           0
         ]
       ],
+      "definition": [
+        "barcode_id TEXT NOT NULL",
+        "movie_context_id TEXT",
+        "pacbio_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "prepped_sample_idx INTEGER NOT NULL UNIQUE REFERENCES prepped_sample(prepped_sample_idx)",
+        "smrt_cell_well_sample_id TEXT CHECK (smrt_cell_well_sample_id GLOB '[12]_[A-D]01')",
+        "syndna_is_twisted BOOLEAN",
+        "twist_adaptor_id TEXT"
+      ],
       "foreign_keys": [
         [
           0,
@@ -8319,6 +8437,14 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "compression_sample_idx INTEGER NOT NULL REFERENCES compression_sample(compression_sample_idx)",
+        "do_not_use BOOLEAN",
+        "prepped_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "prepped_well TEXT NOT NULL",
+        "sample_name TEXT",
+        "well_description TEXT"
       ],
       "foreign_keys": [
         [
@@ -8424,6 +8550,19 @@
           0
         ]
       ],
+      "definition": [
+        "assay_type_idx INTEGER NOT NULL REFERENCES assay_type(assay_type_idx)",
+        "compression_plate_name TEXT",
+        "description TEXT DEFAULT ''",
+        "experiment_name TEXT NOT NULL",
+        "external_run_id TEXT",
+        "instrument_type TEXT NOT NULL",
+        "investigator_name TEXT NOT NULL DEFAULT ''",
+        "legacy_format_idx INTEGER REFERENCES legacy_samplesheet_format(legacy_format_idx)",
+        "platform_idx INTEGER NOT NULL REFERENCES sequencing_platform(platform_idx)",
+        "run_date TEXT NOT NULL",
+        "run_idx INTEGER PRIMARY KEY AUTOINCREMENT"
+      ],
       "foreign_keys": [
         [
           0,
@@ -8524,6 +8663,17 @@
           0
         ]
       ],
+      "definition": [
+        "CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)",
+        "bioproject_accession TEXT",
+        "contact_email TEXT",
+        "experiment_design_description TEXT NOT NULL",
+        "external_project_id TEXT",
+        "human_filtering BOOLEAN NOT NULL DEFAULT 1",
+        "library_construction_protocol TEXT NOT NULL",
+        "project_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "project_name TEXT NOT NULL UNIQUE"
+      ],
       "foreign_keys": []
     },
     "sample_type": {
@@ -8545,6 +8695,10 @@
           0
         ]
       ],
+      "definition": [
+        "name TEXT NOT NULL UNIQUE",
+        "sample_type_idx INTEGER PRIMARY KEY AUTOINCREMENT"
+      ],
       "foreign_keys": []
     },
     "sequencing_platform": {
@@ -8565,6 +8719,10 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "name TEXT NOT NULL UNIQUE",
+        "platform_idx INTEGER PRIMARY KEY AUTOINCREMENT"
       ],
       "foreign_keys": []
     },
@@ -8602,6 +8760,12 @@
           null,
           0
         ]
+      ],
+      "definition": [
+        "barcode_id TEXT NOT NULL",
+        "lane INTEGER",
+        "prepped_sample_idx INTEGER NOT NULL REFERENCES prepped_sample(prepped_sample_idx)",
+        "tellseq_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT"
       ],
       "foreign_keys": [
         [

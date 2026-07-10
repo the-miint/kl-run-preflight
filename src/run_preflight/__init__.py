@@ -3,6 +3,7 @@
 from .db import (
     IlluminaSampleRow,
     PacbioSampleRow,
+    PlatformSampleInfo,
     create_db,
     get_illumina_sample_info,
     get_pacbio_sample_info,
@@ -30,6 +31,7 @@ __all__ = [
     "create_db",
     "IlluminaSampleRow",
     "PacbioSampleRow",
+    "PlatformSampleInfo",
     "get_illumina_sample_info",
     "get_pacbio_sample_info",
     "open_db_file",

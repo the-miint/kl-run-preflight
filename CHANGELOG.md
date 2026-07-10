@@ -25,11 +25,16 @@ until the first release is tagged.
 - `get_pacbio_sample_info`, returning per-`pacbio_sample` biosample and
   bioproject accession info keyed by `pacbio_sample_idx` (control/secondary and
   do-not-use handling identical to `get_illumina_sample_info`). Both info
-  functions also return the platform-specific columns as a fifth tuple element
-  — a `PacbioSampleRow` / `IlluminaSampleRow` NamedTuple — so a consumer gets
-  the accession info and the run-specific sample fields in one call. The
-  `PacbioSampleRow.syndna_is_twisted` column, a SQLite `BOOLEAN` stored as
-  `0`/`1`/`NULL`, is surfaced to consumers as `bool | None`.
+  functions return a `PlatformSampleInfo` NamedTuple per sample, carrying the
+  sample's `sample_type` (the DB `sample_type.name`, e.g. `standard` /
+  `extraction_blank`), its biosample and bioproject accessions, and the
+  platform-specific columns as a `PacbioSampleRow` / `IlluminaSampleRow`
+  `kind_row` — so a consumer gets the accession info, the sample type, and the
+  run-specific sample fields in one call. The `PacbioSampleRow.syndna_is_twisted`
+  column, a SQLite `BOOLEAN` stored as `0`/`1`/`NULL`, is surfaced to consumers
+  as `bool | None`. **Breaking:** `get_illumina_sample_info`'s return changes
+  from a bare tuple to a `PlatformSampleInfo` NamedTuple, so existing code
+  unpacking it positionally must be updated.
 - `set_pacbio_sample_run_details`, setting the post-creation PacBio
   `smrt_cell_well_sample_id` and/or `movie_context_id` on one `pacbio_sample`,
   addressed by `sample_name` or `pacbio_sample_idx` (a `sample_name` matching
@@ -88,6 +93,13 @@ until the first release is tagged.
   good_ legacy CSV has a native pair, that the native directory stays paired
   (`.sqlite` ↔ snapshot), and that each committed `.sqlite` matches both its
   snapshot and a fresh load of its source CSV.
+- Content-derived stage signalling for native fixtures: each committed
+  `.sqlite` carries a fact-based filename suffix — bare for a true preflight,
+  `.accessioned` once NCBI accessions are populated — derived from its contents
+  and guarded against drift, so a consumer can pick a fixture matching the
+  stage their code needs. Includes an accessioned PacBio fixture that reads
+  cleanly through `get_pacbio_sample_info` (a true-preflight fixture raises,
+  by design, until its accessions are set).
 
 ### Changed
 
@@ -103,7 +115,8 @@ until the first release is tagged.
 - Renamed `update_lane`'s `platform` parameter to `sample_kind` and its
   internal lane-target lookup to the Illumina-platform sample kinds
   (`illumina`, `tellseq`), correcting the prior labelling of TellSeq (a library
-  prep, not a platform) as a platform.
+  prep, not a platform) as a platform. **Breaking:** callers passing
+  `platform=` by keyword must switch to `sample_kind=`.
 - Restructured the repository into a `src/run_preflight/` package layout, with
   the SQL schema living inside the package.
 - Switched the test runner from `unittest` to `pytest`.
@@ -131,6 +144,15 @@ until the first release is tagged.
 
 ### Fixed
 
+- Schema patch files under `sql/patches/` are now included in the built
+  package, so migrations apply from an installed wheel rather than only from an
+  editable checkout.
+- Schema patches now apply atomically: each patch body and its `user_version`
+  stamp run in one transaction, so a patch failing part-way rolls back instead
+  of stranding a half-migrated database that re-fails on every later open.
+- The database snapshot used by the drift and native-file guards now captures
+  each table's normalized definition, so CHECK, COLLATE, and table-level
+  constraints are compared rather than silently ignored.
 - Reconstruction now emits tabular Data rows in a deterministic lane-major
   order (by `Lane`, then insertion order), matching the metapool writer's
   layout. Previously multi-lane sheets round-tripped with samples grouped

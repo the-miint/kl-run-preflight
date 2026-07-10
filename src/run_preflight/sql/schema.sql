@@ -465,7 +465,12 @@ CREATE TABLE pacbio_sample (
     barcode_id              TEXT NOT NULL,
     twist_adaptor_id        TEXT,
     syndna_is_twisted       BOOLEAN,
+    -- On-disk SMRT Cell well folder name (e.g. 1_B01); Revio wells are
+    -- column 01 only (A01-D01), so _02 and higher are invalid per page 28
+    -- of SMRT-Link-v25.2-user-guide.pdf.
     smrt_cell_well_sample_id TEXT CHECK (smrt_cell_well_sample_id GLOB '[12]_[A-D]01'),
+    -- Full movie context (e.g. m84137_260702_104358_s3); its format varies
+    -- across instrument and software, so it is intentionally unconstrained.
     movie_context_id        TEXT
 );
 

@@ -239,6 +239,46 @@ def get_run_projects(
     return cur.fetchall()
 
 
+class PreflightDataFacts(NamedTuple):
+    """Which classes of post-preflight data a run preflight has populated.
+
+    has_accessions is true when any NCBI biosample or bioproject accession is
+    set; has_pacbio_placement is true when any PacBio SMRT Cell placement is
+    set. Both false denotes a true preflight.
+    """
+
+    has_accessions: bool
+    has_pacbio_placement: bool
+
+
+def get_preflight_data_facts(conn: sqlite3.Connection) -> PreflightDataFacts:
+    """Return which classes of accrued data are populated in the database.
+
+    Derives each fact from what the database actually holds, so a caller
+    (e.g. a fixture classifier) need not know the underlying columns.
+    """
+    cur = conn.cursor()
+
+    # Accessions: any biosample on a sample or bioproject on a project
+    cur.execute(
+        "SELECT "
+        "(SELECT COUNT(*) FROM input_sample WHERE biosample_accession IS NOT NULL) "
+        "+ (SELECT COUNT(*) FROM project WHERE bioproject_accession IS NOT NULL)"
+    )
+    (accession_count,) = cur.fetchone()
+
+    # PacBio placement: any SMRT Cell well or movie-context assignment
+    cur.execute(
+        "SELECT COUNT(*) FROM pacbio_sample "
+        "WHERE smrt_cell_well_sample_id IS NOT NULL OR movie_context_id IS NOT NULL"
+    )
+    (placement_count,) = cur.fetchone()
+
+    has_accessions = bool(accession_count)
+    has_pacbio_placement = bool(placement_count)
+    return PreflightDataFacts(has_accessions, has_pacbio_placement)
+
+
 def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
     """Return a mapping of section name to section format from the DB.
 
@@ -514,9 +554,11 @@ class _SampleKindNames(NamedTuple):
 def sample_kind_names(kind: PlatformSpecificSampleKind) -> _SampleKindNames:
     """Derive the DB object names for a platform-specific sample kind.
 
-    Every ``<kind>_sample`` table follows one naming convention, so its
-    table, primary-key column, and run-scoped view all derive from the
-    kind token. The convention is enforced by a schema-drift test.
+    Every ``<kind>_sample`` table and its primary-key column follow one
+    naming convention, so both derive from the kind token; the run-scoped
+    view ``run_<kind>_sample`` follows the same convention but exists only
+    for kinds surfaced through a run view (illumina, pacbio). A convention
+    guard test checks that each declared kind's table and idx column exist.
 
     Raises:
         ValueError: If *kind* is not a declared PlatformSpecificSampleKind.
@@ -593,6 +635,25 @@ class IlluminaSampleRow(NamedTuple):
         return cls._make(values)
 
 
+class PlatformSampleInfo(NamedTuple):
+    """Per-sample accession + identity info for one platform sample row.
+
+    Bundles the platform-independent identity and accession fields with
+    *kind_row*, the platform-specific columns. sample_type is the DB
+    sample_type.name (e.g. "standard", "extraction_blank");
+    secondary_bioproject_accessions is populated only for project-agnostic
+    controls added at prep-time and is empty for all other samples
+    (including controls project-specific controls).
+    """
+
+    sample_idx: int
+    sample_type: str
+    biosample_accession: str
+    primary_bioproject_accession: str
+    secondary_bioproject_accessions: list[str]
+    kind_row: IlluminaSampleRow | PacbioSampleRow
+
+
 # Error categories and per-row labels for invariant/accession violations.
 ERR_CATEGORY_INVARIANT = "control / project_idx invariant violation"
 ERR_CATEGORY_MISSING_ACCESSION = "missing required accession"
@@ -622,19 +683,17 @@ def _get_platform_specific_sample_info(
     row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow],
     *,
     include_do_not_use: bool = False,
-) -> list[tuple[int, str, str, list[str], PacbioSampleRow | IlluminaSampleRow]]:
+) -> list[PlatformSampleInfo]:
     """Return per-sample biosample + bioproject accession info for the run.
 
     Resolves the sole processing_run via get_single_run_idx and returns
-    one tuple per *row_cls* sample row, ordered by that kind's sample-idx:
-    (sample_idx, biosample_accession, primary_bioproject_accession,
-    secondary_bioproject_accessions, kind_row), where
-    secondary_bioproject_accessions is a list of accessions for every
+    one PlatformSampleInfo per *row_cls* sample row, ordered by that kind's
+    sample-idx. secondary_bioproject_accessions lists accessions for every
     non-primary plate project (populated only for controls; empty for
-    non-control samples), sorted by accession value, and kind_row is a
-    *row_cls* instance carrying the platform-specific columns (its field
-    order drives the SELECT). Rows whose effective do_not_use flag is set
-    are excluded unless *include_do_not_use* is True.
+    non-control samples), sorted by accession value; kind_row is a *row_cls*
+    instance carrying the platform-specific columns (its field order drives
+    the SELECT). Rows whose effective do_not_use flag is set are excluded
+    unless *include_do_not_use* is True.
 
     Raises:
         ValueError: If the control / project_idx pairing is violated
@@ -695,13 +754,11 @@ def _get_platform_specific_sample_info(
     # Group result rows by sample-idx and validate per-group.
     invariant_offenders: list[tuple[int, str]] = []
     accession_offenders: list[tuple[int, str]] = []
-    results: list[
-        tuple[int, str, str, list[str], PacbioSampleRow | IlluminaSampleRow]
-    ] = []
+    results: list[PlatformSampleInfo] = []
     for sample_idx, group in groupby(rows, key=lambda r: r[0]):
         group_rows = list(group)
         first_row = group_rows[0]
-        _, project_idx, biosample, st_name, primary_bioproject = first_row[:5]
+        _, project_idx, biosample, sample_type_name, primary_bioproject = first_row[:5]
 
         # The kind columns are constant across a control's grouped rows;
         # read them from the first row and rebuild the platform-specific row
@@ -709,7 +766,7 @@ def _get_platform_specific_sample_info(
         kind_row = row_cls.from_run_view(first_row[7:])
 
         # Enforce control / project_idx pairing before reading accessions
-        is_standard = st_name == SAMPLE_TYPE_STANDARD
+        is_standard = sample_type_name == SAMPLE_TYPE_STANDARD
         has_project = project_idx is not None
         if is_standard and not has_project:
             invariant_offenders.append((sample_idx, LABEL_STANDARD_NO_PROJECT))
@@ -729,7 +786,16 @@ def _get_platform_specific_sample_info(
         if any(b is None for b in secondary):
             accession_offenders.append((sample_idx, "secondary_bioproject_accessions"))
 
-        results.append((sample_idx, biosample, primary_bioproject, secondary, kind_row))
+        results.append(
+            PlatformSampleInfo(
+                sample_idx,
+                sample_type_name,
+                biosample,
+                primary_bioproject,
+                secondary,
+                kind_row,
+            )
+        )
 
     # Invariant violations indicate corrupt data; raise before accession checks
     _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders, names.idx_col)
@@ -743,8 +809,12 @@ def get_illumina_sample_info(
     conn: sqlite3.Connection,
     *,
     include_do_not_use: bool = False,
-) -> list[tuple[int, str, str, list[str], IlluminaSampleRow]]:
-    """Return per-illumina_sample accession + illumina row; see shared helper."""
+) -> list[PlatformSampleInfo]:
+    """Return per-illumina_sample accession + illumina row; see shared helper.
+
+    Requires every referenced project to have its NCBI accessions populated; a
+    preflight with a required accession still NULL raises ``ValueError``.
+    """
     return _get_platform_specific_sample_info(
         conn, IlluminaSampleRow, include_do_not_use=include_do_not_use
     )
@@ -754,8 +824,12 @@ def get_pacbio_sample_info(
     conn: sqlite3.Connection,
     *,
     include_do_not_use: bool = False,
-) -> list[tuple[int, str, str, list[str], PacbioSampleRow]]:
-    """Return per-pacbio_sample accession + pacbio row; see shared helper."""
+) -> list[PlatformSampleInfo]:
+    """Return per-pacbio_sample accession + pacbio row; see shared helper.
+
+    Requires every referenced project to have its NCBI accessions populated; a
+    preflight with a required accession still NULL raises ``ValueError``.
+    """
     return _get_platform_specific_sample_info(
         conn, PacbioSampleRow, include_do_not_use=include_do_not_use
     )
@@ -1140,10 +1214,10 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         else:
             # Controls have NULL project_idx; they inherit via input_plate.
             if is_control:
-                st_name = control_names[control_key]
+                sample_type_name = control_names[control_key]
                 sample_project_idx = None
             else:
-                st_name = SAMPLE_TYPE_STANDARD
+                sample_type_name = SAMPLE_TYPE_STANDARD
                 sample_project_idx = project_idxs.get(project_name)
 
             cur.execute(
@@ -1155,7 +1229,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
                     orig_name,
                     plate_idxs[plate_name],
                     sample_project_idx,
-                    type_ids[st_name],
+                    type_ids[sample_type_name],
                     _has_do_not_use_token(orig_name),
                 ),
             )
