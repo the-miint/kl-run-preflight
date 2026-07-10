@@ -53,6 +53,12 @@ from tests._helpers import (  # noqa: E402
 # is a runnable target for get_pacbio_sample_info.
 _ACCESSIONED_PACBIO_SOURCE = "good_pacbio_metagv11.csv"
 
+# Synthetic, fixed change_log.changed_at for setter-augmented fixtures. The
+# column defaults to datetime('now'), which would otherwise make every
+# regeneration diff on wall-clock time; freezing it keeps the fixture
+# byte-reproducible.
+_FROZEN_CHANGED_AT = "2000-01-01 00:00:00"
+
 
 def _populate_all_accessions(conn) -> None:
     # Give every project a synthetic bioproject and every named sample a
@@ -89,6 +95,9 @@ def _build_accessioned_pacbio(tmp_dir: Path) -> tuple[Path, str]:
     migrate_legacy_csv_to_db_file(str(src), str(temp_db))
     with open_db(str(temp_db)) as conn:
         _populate_all_accessions(conn)
+        # Freeze the audit timestamps the setters just wrote so the fixture
+        # stays byte-reproducible across regenerations
+        conn.execute("UPDATE change_log SET changed_at = ?", (_FROZEN_CHANGED_AT,))
         conn.commit()
     return temp_db, src.stem
 
