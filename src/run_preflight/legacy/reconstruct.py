@@ -23,6 +23,7 @@ from ..constants import (
     CHECK_HAS_EXTRACTED_SAMPLE_SURFACE_AREA,
     CHECK_HAS_EXTRACTED_SAMPLE_VOLUME,
     CHECK_HAS_SEQUENCED_GDNA_MASS,
+    COL_LANE,
     COL_SAMPLE_ID,
     COL_SAMPLE_NAME,
     FORMAT_HEADER_KV,
@@ -79,7 +80,12 @@ def _pad_to_max_width(csv_text: str) -> str:
 
 
 def _query_view(
-    cur, view_name: str, col_names: list[str], has_run_idx: bool, run_idx: int
+    cur,
+    view_name: str,
+    col_names: list[str],
+    has_run_idx: bool,
+    run_idx: int,
+    order_by: list[str] | None = None,
 ):
     """Query a view for the given run and return all matching rows.
 
@@ -89,6 +95,8 @@ def _query_view(
         col_names: Column names to select (should exclude run_idx).
         has_run_idx: Whether the view contains a run_idx column.
         run_idx: The processing_run.run_idx to filter on.
+        order_by: Column names to sort by; each must be present in
+            col_names. When omitted, row order is left to the engine.
 
     Returns:
         list[tuple]: All matching rows, each as a tuple of values in the
@@ -96,16 +104,23 @@ def _query_view(
     """
     select_cols = ", ".join(f'"{c}"' for c in col_names)
 
+    # Build an optional ORDER BY so tabular output is deterministic
+    order_clause = ""
+    if order_by:
+        order_cols = ", ".join(f'"{c}"' for c in order_by)
+        order_clause = f" ORDER BY {order_cols}"
+
     if has_run_idx:
         cur.execute(
-            f'SELECT {select_cols} FROM "{view_name}" WHERE run_idx = ?',
+            f'SELECT {select_cols} FROM "{view_name}" WHERE run_idx = ?{order_clause}',
             (run_idx,),
         )
     else:
         # Fallback: return everything (shouldn't happen in practice).
-        cur.execute(f'SELECT {select_cols} FROM "{view_name}"')
+        cur.execute(f'SELECT {select_cols} FROM "{view_name}"{order_clause}')
 
-    return cur.fetchall()
+    returned_rows = cur.fetchall()
+    return returned_rows
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +421,14 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
             active_cols = _get_active_columns(
                 cur, legacy_format_idx, section_name, all_cols, run_idx
             )
-            rows = _query_view(cur, view_name, active_cols, has_run_idx, run_idx)
+
+            # Emit rows lane-major, then by insertion order (Sample_ID
+            # carries prepped_sample_idx here), matching the metapool
+            # writer's layout; empty for sections lacking these columns
+            order_by = [c for c in (COL_LANE, COL_SAMPLE_ID) if c in active_cols]
+            rows = _query_view(
+                cur, view_name, active_cols, has_run_idx, run_idx, order_by
+            )
 
             # Merge extra columns for the Data section
             if section_name == SECTION_DATA:

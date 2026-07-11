@@ -1,0 +1,2758 @@
+{
+  "data": {
+    "assay_type": [
+      [
+        1,
+        "Metagenomic"
+      ],
+      [
+        2,
+        "Metatranscriptomic"
+      ],
+      [
+        3,
+        "Amplicon"
+      ]
+    ],
+    "change_log": [],
+    "compression_sample": [
+      [
+        1,
+        1,
+        1,
+        "A1"
+      ],
+      [
+        2,
+        1,
+        2,
+        "A2"
+      ],
+      [
+        3,
+        1,
+        3,
+        "A3"
+      ],
+      [
+        4,
+        1,
+        4,
+        "A4"
+      ],
+      [
+        5,
+        1,
+        5,
+        "A5"
+      ],
+      [
+        6,
+        1,
+        6,
+        "B6"
+      ],
+      [
+        7,
+        1,
+        7,
+        "B8"
+      ]
+    ],
+    "illumina_run": [
+      [
+        1,
+        150,
+        150,
+        0,
+        "1",
+        "Y150;I8N2;I8N16;Y150",
+        "AACC",
+        "GGTT",
+        0
+      ]
+    ],
+    "illumina_sample": [
+      [
+        1,
+        1,
+        "iTru7_107_07",
+        "CCGACTAT",
+        "iTru5_01_A",
+        "ACCGACAA",
+        1
+      ],
+      [
+        2,
+        2,
+        "iTru7_107_08",
+        "CCGACTAT",
+        "iTru5_01_A",
+        "CTTCGCAA",
+        1
+      ],
+      [
+        3,
+        3,
+        "iTru7_107_09",
+        "GCCTTGTT",
+        "iTru5_01_A",
+        "AACACCAC",
+        1
+      ],
+      [
+        4,
+        4,
+        "iTru7_107_10",
+        "AACTTGCC",
+        "iTru5_01_A",
+        "CGTATCTC",
+        1
+      ],
+      [
+        5,
+        5,
+        "iTru7_107_11",
+        "CAATGTGG",
+        "iTru5_01_A",
+        "GGTACGAA",
+        1
+      ],
+      [
+        6,
+        6,
+        "iTru7_107_12",
+        "AAGGCTGA",
+        "iTru5_01_A",
+        "CGATCGAT",
+        1
+      ],
+      [
+        7,
+        7,
+        "iTru7_107_13",
+        "TTACCGAG",
+        "iTru5_01_A",
+        "AAGACACC",
+        1
+      ]
+    ],
+    "input_plate": [
+      [
+        1,
+        "FooBar_666_p1",
+        1,
+        null
+      ]
+    ],
+    "input_sample": [
+      [
+        1,
+        "sample1",
+        1,
+        null,
+        1,
+        1,
+        null,
+        0
+      ],
+      [
+        2,
+        "sample2",
+        1,
+        null,
+        1,
+        1,
+        null,
+        0
+      ],
+      [
+        3,
+        "sample3",
+        1,
+        null,
+        1,
+        1,
+        null,
+        0
+      ],
+      [
+        4,
+        "sample4",
+        1,
+        null,
+        1,
+        1,
+        null,
+        0
+      ],
+      [
+        5,
+        "sample5",
+        1,
+        null,
+        2,
+        1,
+        null,
+        0
+      ],
+      [
+        6,
+        "sample6",
+        1,
+        null,
+        2,
+        1,
+        null,
+        0
+      ],
+      [
+        7,
+        "sample7",
+        1,
+        null,
+        2,
+        1,
+        null,
+        0
+      ]
+    ],
+    "katharoseq_sample": [],
+    "legacy_extra_column": [],
+    "legacy_samplesheet_format": [
+      [
+        1,
+        "pacbio_absquant",
+        11
+      ],
+      [
+        10,
+        "abs_quant_metag",
+        11
+      ],
+      [
+        11,
+        "standard_metat",
+        10
+      ],
+      [
+        12,
+        "tellseq_metag",
+        10
+      ],
+      [
+        13,
+        "tellseq_absquant",
+        10
+      ],
+      [
+        14,
+        "pacbio_absquant",
+        12
+      ],
+      [
+        2,
+        "standard_metag",
+        101
+      ],
+      [
+        3,
+        "pacbio_metag",
+        11
+      ],
+      [
+        4,
+        "pacbio_metag",
+        10
+      ],
+      [
+        5,
+        "pacbio_absquant",
+        10
+      ],
+      [
+        6,
+        "standard_metag",
+        90
+      ],
+      [
+        7,
+        "standard_metag",
+        0
+      ],
+      [
+        8,
+        "standard_metag",
+        100
+      ],
+      [
+        9,
+        "abs_quant_metag",
+        10
+      ]
+    ],
+    "legacy_samplesheet_optional_columns": [
+      [
+        1,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        10,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        12,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        13,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        14,
+        "Data",
+        "extracted_sample_mass",
+        "calc_mass_sample_aliquot_input_g",
+        "check_has_extracted_sample_mass",
+        "syndna_pool_number"
+      ],
+      [
+        14,
+        "Data",
+        "extracted_sample_surface_area",
+        "sample_surface_area_cm2",
+        "check_has_extracted_sample_surface_area",
+        "syndna_pool_number"
+      ],
+      [
+        14,
+        "Data",
+        "extracted_sample_volume",
+        "sample_volume_ul",
+        "check_has_extracted_sample_volume",
+        "syndna_pool_number"
+      ],
+      [
+        14,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        14,
+        "Data",
+        "sequenced_gdna_mass",
+        "sequenced_sample_gdna_mass_ng",
+        "check_has_sequenced_gdna_mass",
+        "syndna_pool_number"
+      ],
+      [
+        2,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        3,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        4,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        5,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        8,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ],
+      [
+        9,
+        "Data",
+        "replicates",
+        "orig_name,destination_well_384",
+        "check_contains_replicates",
+        "Well_description"
+      ]
+    ],
+    "legacy_samplesheet_view": [
+      [
+        1,
+        "Bioinformatics",
+        3,
+        "omnibus_pacbio_absquant_v11_bioinformatics",
+        "tabular"
+      ],
+      [
+        1,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        1,
+        "Data",
+        2,
+        "omnibus_pacbio_absquant_v11_data",
+        "tabular"
+      ],
+      [
+        1,
+        "Header",
+        1,
+        "omnibus_pacbio_absquant_v11_header",
+        "header_kv"
+      ],
+      [
+        1,
+        "SampleContext",
+        5,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        10,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v101_bioinformatics",
+        "tabular"
+      ],
+      [
+        10,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        10,
+        "Data",
+        4,
+        "omnibus_abs_quant_metag_v10_data",
+        "tabular"
+      ],
+      [
+        10,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        10,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        10,
+        "SampleContext",
+        7,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        10,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        11,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v90_bioinformatics",
+        "tabular"
+      ],
+      [
+        11,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        11,
+        "Data",
+        4,
+        "omnibus_standard_metat_v10_data",
+        "tabular"
+      ],
+      [
+        11,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        11,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        11,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        12,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v101_bioinformatics",
+        "tabular"
+      ],
+      [
+        12,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        12,
+        "Data",
+        4,
+        "omnibus_tellseq_metag_v10_data",
+        "tabular"
+      ],
+      [
+        12,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        12,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        12,
+        "SampleContext",
+        7,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        12,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        13,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v101_bioinformatics",
+        "tabular"
+      ],
+      [
+        13,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        13,
+        "Data",
+        4,
+        "omnibus_tellseq_absquant_v10_data",
+        "tabular"
+      ],
+      [
+        13,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        13,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        13,
+        "SampleContext",
+        7,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        13,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        14,
+        "Bioinformatics",
+        3,
+        "omnibus_pacbio_absquant_v11_bioinformatics",
+        "tabular"
+      ],
+      [
+        14,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        14,
+        "Data",
+        2,
+        "omnibus_pacbio_absquant_v12_data",
+        "tabular"
+      ],
+      [
+        14,
+        "Header",
+        1,
+        "omnibus_pacbio_absquant_v11_header",
+        "header_kv"
+      ],
+      [
+        14,
+        "SampleContext",
+        5,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        2,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v101_bioinformatics",
+        "tabular"
+      ],
+      [
+        2,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        2,
+        "Data",
+        4,
+        "omnibus_standard_metag_v101_data",
+        "tabular"
+      ],
+      [
+        2,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        2,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        2,
+        "SampleContext",
+        7,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        2,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        3,
+        "Bioinformatics",
+        3,
+        "omnibus_pacbio_absquant_v11_bioinformatics",
+        "tabular"
+      ],
+      [
+        3,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        3,
+        "Data",
+        2,
+        "omnibus_pacbio_metag_v11_data",
+        "tabular"
+      ],
+      [
+        3,
+        "Header",
+        1,
+        "omnibus_pacbio_absquant_v11_header",
+        "header_kv"
+      ],
+      [
+        3,
+        "SampleContext",
+        5,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        4,
+        "Bioinformatics",
+        3,
+        "omnibus_pacbio_absquant_v11_bioinformatics",
+        "tabular"
+      ],
+      [
+        4,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        4,
+        "Data",
+        2,
+        "omnibus_pacbio_metag_v10_data",
+        "tabular"
+      ],
+      [
+        4,
+        "Header",
+        1,
+        "omnibus_pacbio_absquant_v11_header",
+        "header_kv"
+      ],
+      [
+        4,
+        "SampleContext",
+        5,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        5,
+        "Bioinformatics",
+        3,
+        "omnibus_pacbio_absquant_v11_bioinformatics",
+        "tabular"
+      ],
+      [
+        5,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        5,
+        "Data",
+        2,
+        "omnibus_pacbio_absquant_v10_data",
+        "tabular"
+      ],
+      [
+        5,
+        "Header",
+        1,
+        "omnibus_pacbio_absquant_v11_header",
+        "header_kv"
+      ],
+      [
+        5,
+        "SampleContext",
+        5,
+        "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        6,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v90_bioinformatics",
+        "tabular"
+      ],
+      [
+        6,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        6,
+        "Data",
+        4,
+        "omnibus_standard_metag_v90_data",
+        "tabular"
+      ],
+      [
+        6,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        6,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        6,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        7,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v90_bioinformatics",
+        "tabular"
+      ],
+      [
+        7,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        7,
+        "Data",
+        4,
+        "omnibus_standard_metag_v0_data",
+        "tabular"
+      ],
+      [
+        7,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        7,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        7,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        8,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v101_bioinformatics",
+        "tabular"
+      ],
+      [
+        8,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        8,
+        "Data",
+        4,
+        "omnibus_standard_metag_v101_data",
+        "tabular"
+      ],
+      [
+        8,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        8,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        8,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ],
+      [
+        9,
+        "Bioinformatics",
+        5,
+        "omnibus_standard_metag_v101_bioinformatics",
+        "tabular"
+      ],
+      [
+        9,
+        "Contact",
+        6,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        9,
+        "Data",
+        4,
+        "omnibus_abs_quant_metag_v10_data",
+        "tabular"
+      ],
+      [
+        9,
+        "Header",
+        1,
+        "omnibus_illumina_header",
+        "header_kv"
+      ],
+      [
+        9,
+        "Reads",
+        2,
+        "omnibus_illumina_reads",
+        "values_only"
+      ],
+      [
+        9,
+        "Settings",
+        3,
+        "omnibus_illumina_settings",
+        "header_kv"
+      ]
+    ],
+    "legacy_section_format": [
+      [
+        "header_kv"
+      ],
+      [
+        "tabular"
+      ],
+      [
+        "values_only"
+      ]
+    ],
+    "metagenomic_absquant_sample": [],
+    "metatranscriptomic_sample": [],
+    "pacbio_sample": [],
+    "prepped_sample": [
+      [
+        1,
+        1,
+        "A1",
+        null,
+        null,
+        "s1"
+      ],
+      [
+        2,
+        2,
+        "A2",
+        null,
+        null,
+        "s2"
+      ],
+      [
+        3,
+        3,
+        "A3",
+        null,
+        null,
+        "s3"
+      ],
+      [
+        4,
+        4,
+        "A4",
+        null,
+        null,
+        "s4"
+      ],
+      [
+        5,
+        5,
+        "A5",
+        null,
+        null,
+        "s5"
+      ],
+      [
+        6,
+        6,
+        "B6",
+        null,
+        null,
+        "s6"
+      ],
+      [
+        7,
+        7,
+        "B8",
+        null,
+        null,
+        "s7"
+      ]
+    ],
+    "processing_run": [
+      [
+        1,
+        "RKL0042c",
+        "2/26/20",
+        "Caballero",
+        "Unknown",
+        1,
+        1,
+        null,
+        "",
+        7,
+        null
+      ]
+    ],
+    "project": [
+      [
+        1,
+        "Project_1111",
+        "1111",
+        "test@lol.com",
+        0,
+        "Knight Lab Kapa HP",
+        "Eqiiperiment",
+        null
+      ],
+      [
+        2,
+        "Trojecp_666",
+        "666",
+        "tester@rofl.com",
+        0,
+        "Knight Lab Kapa HP",
+        "SomethingWitty",
+        null
+      ]
+    ],
+    "sample_type": [
+      [
+        1,
+        "standard"
+      ],
+      [
+        2,
+        "extraction_blank"
+      ],
+      [
+        3,
+        "katharoseq_cells_positive_control"
+      ]
+    ],
+    "sequencing_platform": [
+      [
+        1,
+        "Illumina"
+      ],
+      [
+        2,
+        "PacBio"
+      ]
+    ],
+    "tellseq_sample": []
+  },
+  "indexes": {
+    "sqlite_autoindex_assay_type_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "name"
+        ]
+      ],
+      "sql": "",
+      "table": "assay_type"
+    },
+    "sqlite_autoindex_legacy_extra_column_1": {
+      "columns": [
+        [
+          0,
+          0,
+          "prepped_sample_idx"
+        ],
+        [
+          1,
+          1,
+          "column_name"
+        ]
+      ],
+      "sql": "",
+      "table": "legacy_extra_column"
+    },
+    "sqlite_autoindex_legacy_samplesheet_format_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "legacy_sheet_type"
+        ],
+        [
+          1,
+          2,
+          "legacy_version"
+        ]
+      ],
+      "sql": "",
+      "table": "legacy_samplesheet_format"
+    },
+    "sqlite_autoindex_legacy_samplesheet_optional_columns_1": {
+      "columns": [
+        [
+          0,
+          0,
+          "legacy_format_idx"
+        ],
+        [
+          1,
+          1,
+          "section_name"
+        ],
+        [
+          2,
+          2,
+          "group_name"
+        ]
+      ],
+      "sql": "",
+      "table": "legacy_samplesheet_optional_columns"
+    },
+    "sqlite_autoindex_legacy_samplesheet_view_1": {
+      "columns": [
+        [
+          0,
+          0,
+          "legacy_format_idx"
+        ],
+        [
+          1,
+          1,
+          "section_name"
+        ]
+      ],
+      "sql": "",
+      "table": "legacy_samplesheet_view"
+    },
+    "sqlite_autoindex_legacy_section_format_1": {
+      "columns": [
+        [
+          0,
+          0,
+          "format_name"
+        ]
+      ],
+      "sql": "",
+      "table": "legacy_section_format"
+    },
+    "sqlite_autoindex_pacbio_sample_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "prepped_sample_idx"
+        ]
+      ],
+      "sql": "",
+      "table": "pacbio_sample"
+    },
+    "sqlite_autoindex_project_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "project_name"
+        ]
+      ],
+      "sql": "",
+      "table": "project"
+    },
+    "sqlite_autoindex_sample_type_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "name"
+        ]
+      ],
+      "sql": "",
+      "table": "sample_type"
+    },
+    "sqlite_autoindex_sequencing_platform_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "name"
+        ]
+      ],
+      "sql": "",
+      "table": "sequencing_platform"
+    },
+    "uq_illumina_cs_lane": {
+      "columns": [
+        [
+          0,
+          1,
+          "prepped_sample_idx"
+        ],
+        [
+          1,
+          -2,
+          null
+        ]
+      ],
+      "sql": "CREATE UNIQUE INDEX uq_illumina_cs_lane ON illumina_sample(prepped_sample_idx, COALESCE(lane, -1))",
+      "table": "illumina_sample"
+    },
+    "uq_tellseq_cs_lane": {
+      "columns": [
+        [
+          0,
+          1,
+          "prepped_sample_idx"
+        ],
+        [
+          1,
+          -2,
+          null
+        ]
+      ],
+      "sql": "CREATE UNIQUE INDEX uq_tellseq_cs_lane ON tellseq_sample(prepped_sample_idx, COALESCE(lane, -1))",
+      "table": "tellseq_sample"
+    }
+  },
+  "tables": {
+    "assay_type": {
+      "columns": [
+        [
+          0,
+          "assay_type_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "name",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "assay_type_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "name TEXT NOT NULL UNIQUE"
+      ],
+      "foreign_keys": []
+    },
+    "change_log": {
+      "columns": [
+        [
+          0,
+          "change_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "changed_at",
+          "TEXT",
+          1,
+          "datetime('now')",
+          0
+        ],
+        [
+          2,
+          "table_name",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "row_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "column_name",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "old_value",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "new_value",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          7,
+          "reason",
+          "TEXT",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "change_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "changed_at TEXT NOT NULL DEFAULT (datetime('now'))",
+        "column_name TEXT NOT NULL",
+        "new_value TEXT",
+        "old_value TEXT",
+        "reason TEXT",
+        "row_idx INTEGER NOT NULL",
+        "table_name TEXT NOT NULL"
+      ],
+      "foreign_keys": []
+    },
+    "compression_sample": {
+      "columns": [
+        [
+          0,
+          "compression_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "run_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "input_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "compression_well",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "compression_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "compression_well TEXT NOT NULL",
+        "input_sample_idx INTEGER NOT NULL REFERENCES input_sample(input_sample_idx)",
+        "run_idx INTEGER NOT NULL REFERENCES processing_run(run_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "input_sample",
+          "input_sample_idx",
+          "input_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ],
+        [
+          1,
+          0,
+          "processing_run",
+          "run_idx",
+          "run_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "illumina_run": {
+      "columns": [
+        [
+          0,
+          "run_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "read1_length",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "read2_length",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "reverse_complement",
+          "BOOLEAN",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "mask_short_reads",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          5,
+          "override_cycles",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "forward_adapter",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          7,
+          "reverse_adapter",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          8,
+          "barcodes_are_rc",
+          "BOOLEAN",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "barcodes_are_rc BOOLEAN",
+        "forward_adapter TEXT",
+        "mask_short_reads TEXT",
+        "override_cycles TEXT",
+        "read1_length INTEGER NOT NULL",
+        "read2_length INTEGER NOT NULL",
+        "reverse_adapter TEXT",
+        "reverse_complement BOOLEAN",
+        "run_idx INTEGER PRIMARY KEY REFERENCES processing_run(run_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "processing_run",
+          "run_idx",
+          "run_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "illumina_sample": {
+      "columns": [
+        [
+          0,
+          "illumina_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "prepped_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "i7_index_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "i7_sequence",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "i5_index_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "i5_sequence",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          6,
+          "lane",
+          "INTEGER",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "i5_index_id TEXT NOT NULL",
+        "i5_sequence TEXT NOT NULL",
+        "i7_index_id TEXT NOT NULL",
+        "i7_sequence TEXT NOT NULL",
+        "illumina_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "lane INTEGER",
+        "prepped_sample_idx INTEGER NOT NULL REFERENCES prepped_sample(prepped_sample_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "input_plate": {
+      "columns": [
+        [
+          0,
+          "input_plate_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "plate_name",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "primary_project_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "elution_vol",
+          "REAL",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "elution_vol REAL",
+        "input_plate_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "plate_name TEXT NOT NULL",
+        "primary_project_idx INTEGER NOT NULL REFERENCES project(project_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "project",
+          "primary_project_idx",
+          "project_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "input_sample": {
+      "columns": [
+        [
+          0,
+          "input_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "sample_name",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          2,
+          "input_plate_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "well",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "project_idx",
+          "INTEGER",
+          0,
+          null,
+          0
+        ],
+        [
+          5,
+          "sample_type_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          6,
+          "biosample_accession",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          7,
+          "do_not_use",
+          "BOOLEAN",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "definition": [
+        "CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)",
+        "biosample_accession TEXT",
+        "do_not_use BOOLEAN NOT NULL DEFAULT 0",
+        "input_plate_idx INTEGER NOT NULL REFERENCES input_plate(input_plate_idx)",
+        "input_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "project_idx INTEGER REFERENCES project(project_idx)",
+        "sample_name TEXT",
+        "sample_type_idx INTEGER NOT NULL REFERENCES sample_type(sample_type_idx)",
+        "well TEXT"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "sample_type",
+          "sample_type_idx",
+          "sample_type_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ],
+        [
+          1,
+          0,
+          "project",
+          "project_idx",
+          "project_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ],
+        [
+          2,
+          0,
+          "input_plate",
+          "input_plate_idx",
+          "input_plate_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "katharoseq_sample": {
+      "columns": [
+        [
+          0,
+          "input_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "rack_id",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          2,
+          "tube_code",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          3,
+          "number_of_cells",
+          "INTEGER",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "input_sample_idx INTEGER PRIMARY KEY REFERENCES input_sample(input_sample_idx)",
+        "number_of_cells INTEGER",
+        "rack_id TEXT",
+        "tube_code TEXT"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "input_sample",
+          "input_sample_idx",
+          "input_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "legacy_extra_column": {
+      "columns": [
+        [
+          0,
+          "prepped_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "column_name",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "column_value",
+          "TEXT",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "PRIMARY KEY (prepped_sample_idx, column_name)",
+        "column_name TEXT NOT NULL",
+        "column_value TEXT",
+        "prepped_sample_idx INTEGER NOT NULL REFERENCES prepped_sample(prepped_sample_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "legacy_samplesheet_format": {
+      "columns": [
+        [
+          0,
+          "legacy_format_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "legacy_sheet_type",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "legacy_version",
+          "INTEGER",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "UNIQUE(legacy_sheet_type, legacy_version)",
+        "legacy_format_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "legacy_sheet_type TEXT NOT NULL",
+        "legacy_version INTEGER NOT NULL"
+      ],
+      "foreign_keys": []
+    },
+    "legacy_samplesheet_optional_columns": {
+      "columns": [
+        [
+          0,
+          "legacy_format_idx",
+          "INTEGER",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "section_name",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "group_name",
+          "TEXT",
+          1,
+          null,
+          3
+        ],
+        [
+          3,
+          "column_names",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "check_function",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "insert_after",
+          "TEXT",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "PRIMARY KEY (legacy_format_idx, section_name, group_name)",
+        "check_function TEXT NOT NULL",
+        "column_names TEXT NOT NULL",
+        "group_name TEXT NOT NULL",
+        "insert_after TEXT",
+        "legacy_format_idx INTEGER NOT NULL REFERENCES legacy_samplesheet_format(legacy_format_idx)",
+        "section_name TEXT NOT NULL"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "legacy_samplesheet_format",
+          "legacy_format_idx",
+          "legacy_format_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "legacy_samplesheet_view": {
+      "columns": [
+        [
+          0,
+          "legacy_format_idx",
+          "INTEGER",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "section_name",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "section_order",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "view_name",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "section_format",
+          "TEXT",
+          1,
+          "'tabular'",
+          0
+        ]
+      ],
+      "definition": [
+        "PRIMARY KEY (legacy_format_idx, section_name)",
+        "legacy_format_idx INTEGER NOT NULL REFERENCES legacy_samplesheet_format(legacy_format_idx)",
+        "section_format TEXT NOT NULL DEFAULT 'tabular' REFERENCES legacy_section_format(format_name)",
+        "section_name TEXT NOT NULL",
+        "section_order INTEGER NOT NULL",
+        "view_name TEXT NOT NULL"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "legacy_section_format",
+          "section_format",
+          "format_name",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ],
+        [
+          1,
+          0,
+          "legacy_samplesheet_format",
+          "legacy_format_idx",
+          "legacy_format_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "legacy_section_format": {
+      "columns": [
+        [
+          0,
+          "format_name",
+          "TEXT",
+          0,
+          null,
+          1
+        ]
+      ],
+      "definition": [
+        "format_name TEXT PRIMARY KEY"
+      ],
+      "foreign_keys": []
+    },
+    "metagenomic_absquant_sample": {
+      "columns": [
+        [
+          0,
+          "prepped_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "syndna_pool_mass_ng",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          2,
+          "extracted_gdna_concentration",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          3,
+          "syndna_pool_number",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "sequenced_sample_gdna_mass_ng",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          5,
+          "extracted_sample_mass_g",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "extracted_sample_volume_ul",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          7,
+          "extracted_sample_surface_area_cm2",
+          "REAL",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "extracted_gdna_concentration REAL",
+        "extracted_sample_mass_g REAL",
+        "extracted_sample_surface_area_cm2 REAL",
+        "extracted_sample_volume_ul REAL",
+        "prepped_sample_idx INTEGER PRIMARY KEY REFERENCES prepped_sample(prepped_sample_idx)",
+        "sequenced_sample_gdna_mass_ng REAL",
+        "syndna_pool_mass_ng REAL",
+        "syndna_pool_number TEXT"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "metatranscriptomic_sample": {
+      "columns": [
+        [
+          0,
+          "prepped_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "total_rna_concentration_ng_ul",
+          "REAL",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "prepped_sample_idx INTEGER PRIMARY KEY REFERENCES prepped_sample(prepped_sample_idx)",
+        "total_rna_concentration_ng_ul REAL"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "pacbio_sample": {
+      "columns": [
+        [
+          0,
+          "pacbio_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "prepped_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "barcode_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "twist_adaptor_id",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "syndna_is_twisted",
+          "BOOLEAN",
+          0,
+          null,
+          0
+        ],
+        [
+          5,
+          "smrt_cell_well_sample_id",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "movie_context_id",
+          "TEXT",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "barcode_id TEXT NOT NULL",
+        "movie_context_id TEXT",
+        "pacbio_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "prepped_sample_idx INTEGER NOT NULL UNIQUE REFERENCES prepped_sample(prepped_sample_idx)",
+        "smrt_cell_well_sample_id TEXT CHECK (smrt_cell_well_sample_id GLOB '[12]_[A-D]01')",
+        "syndna_is_twisted BOOLEAN",
+        "twist_adaptor_id TEXT"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "prepped_sample": {
+      "columns": [
+        [
+          0,
+          "prepped_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "compression_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "prepped_well",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "sample_name",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "do_not_use",
+          "BOOLEAN",
+          0,
+          null,
+          0
+        ],
+        [
+          5,
+          "well_description",
+          "TEXT",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "compression_sample_idx INTEGER NOT NULL REFERENCES compression_sample(compression_sample_idx)",
+        "do_not_use BOOLEAN",
+        "prepped_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "prepped_well TEXT NOT NULL",
+        "sample_name TEXT",
+        "well_description TEXT"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "compression_sample",
+          "compression_sample_idx",
+          "compression_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "processing_run": {
+      "columns": [
+        [
+          0,
+          "run_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "experiment_name",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "run_date",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "investigator_name",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "instrument_type",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "assay_type_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          6,
+          "platform_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          7,
+          "compression_plate_name",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          8,
+          "description",
+          "TEXT",
+          0,
+          "''",
+          0
+        ],
+        [
+          9,
+          "legacy_format_idx",
+          "INTEGER",
+          0,
+          null,
+          0
+        ],
+        [
+          10,
+          "external_run_id",
+          "TEXT",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "assay_type_idx INTEGER NOT NULL REFERENCES assay_type(assay_type_idx)",
+        "compression_plate_name TEXT",
+        "description TEXT DEFAULT ''",
+        "experiment_name TEXT NOT NULL",
+        "external_run_id TEXT",
+        "instrument_type TEXT NOT NULL",
+        "investigator_name TEXT NOT NULL DEFAULT ''",
+        "legacy_format_idx INTEGER REFERENCES legacy_samplesheet_format(legacy_format_idx)",
+        "platform_idx INTEGER NOT NULL REFERENCES sequencing_platform(platform_idx)",
+        "run_date TEXT NOT NULL",
+        "run_idx INTEGER PRIMARY KEY AUTOINCREMENT"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "legacy_samplesheet_format",
+          "legacy_format_idx",
+          "legacy_format_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ],
+        [
+          1,
+          0,
+          "sequencing_platform",
+          "platform_idx",
+          "platform_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ],
+        [
+          2,
+          0,
+          "assay_type",
+          "assay_type_idx",
+          "assay_type_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "project": {
+      "columns": [
+        [
+          0,
+          "project_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "project_name",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "external_project_id",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          3,
+          "contact_email",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "human_filtering",
+          "BOOLEAN",
+          1,
+          "1",
+          0
+        ],
+        [
+          5,
+          "library_construction_protocol",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          6,
+          "experiment_design_description",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          7,
+          "bioproject_accession",
+          "TEXT",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)",
+        "bioproject_accession TEXT",
+        "contact_email TEXT",
+        "experiment_design_description TEXT NOT NULL",
+        "external_project_id TEXT",
+        "human_filtering BOOLEAN NOT NULL DEFAULT 1",
+        "library_construction_protocol TEXT NOT NULL",
+        "project_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "project_name TEXT NOT NULL UNIQUE"
+      ],
+      "foreign_keys": []
+    },
+    "sample_type": {
+      "columns": [
+        [
+          0,
+          "sample_type_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "name",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "name TEXT NOT NULL UNIQUE",
+        "sample_type_idx INTEGER PRIMARY KEY AUTOINCREMENT"
+      ],
+      "foreign_keys": []
+    },
+    "sequencing_platform": {
+      "columns": [
+        [
+          0,
+          "platform_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "name",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "name TEXT NOT NULL UNIQUE",
+        "platform_idx INTEGER PRIMARY KEY AUTOINCREMENT"
+      ],
+      "foreign_keys": []
+    },
+    "tellseq_sample": {
+      "columns": [
+        [
+          0,
+          "tellseq_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "prepped_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "barcode_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "lane",
+          "INTEGER",
+          0,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "barcode_id TEXT NOT NULL",
+        "lane INTEGER",
+        "prepped_sample_idx INTEGER NOT NULL REFERENCES prepped_sample(prepped_sample_idx)",
+        "tellseq_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    }
+  },
+  "triggers": {
+    "illumina_sample_index_invariance": "CREATE TRIGGER illumina_sample_index_invariance BEFORE INSERT ON illumina_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM illumina_sample existing WHERE existing.prepped_sample_idx = NEW.prepped_sample_idx AND (existing.i7_index_id != NEW.i7_index_id OR existing.i7_sequence != NEW.i7_sequence OR existing.i5_index_id != NEW.i5_index_id OR existing.i5_sequence != NEW.i5_sequence) ) THEN RAISE(ABORT, 'illumina_sample i5/i7 must be identical across rows sharing prepped_sample_idx') END; END",
+    "illumina_sample_lane_uniformity": "CREATE TRIGGER illumina_sample_lane_uniformity BEFORE INSERT ON illumina_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM illumina_sample existing WHERE (existing.lane IS NULL) != (NEW.lane IS NULL) ) THEN RAISE(ABORT, 'illumina_sample lane must be uniformly NULL or uniformly non-NULL within a database') END; END",
+    "one_run_per_db": "CREATE TRIGGER one_run_per_db BEFORE INSERT ON processing_run WHEN (SELECT COUNT(*) FROM processing_run) > 0 BEGIN SELECT RAISE(ABORT, 'a run-preflight database may contain at most one processing_run'); END",
+    "tellseq_sample_barcode_invariance": "CREATE TRIGGER tellseq_sample_barcode_invariance BEFORE INSERT ON tellseq_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM tellseq_sample existing WHERE existing.prepped_sample_idx = NEW.prepped_sample_idx AND existing.barcode_id != NEW.barcode_id ) THEN RAISE(ABORT, 'tellseq_sample barcode_id must be identical across rows sharing prepped_sample_idx') END; END",
+    "tellseq_sample_lane_uniformity": "CREATE TRIGGER tellseq_sample_lane_uniformity BEFORE INSERT ON tellseq_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM tellseq_sample existing WHERE (existing.lane IS NULL) != (NEW.lane IS NULL) ) THEN RAISE(ABORT, 'tellseq_sample lane must be uniformly NULL or uniformly non-NULL within a database') END; END"
+  },
+  "views": {
+    "control_project_associations": "CREATE VIEW control_project_associations AS SELECT s.input_sample_idx, s.sample_name, st.name AS control_type, pp.project_idx, p.project_name, p.external_project_id FROM input_sample s JOIN sample_type st ON s.sample_type_idx = st.sample_type_idx JOIN input_plate_projects pp ON s.input_plate_idx = pp.input_plate_idx JOIN project p ON pp.project_idx = p.project_idx WHERE s.project_idx IS NULL",
+    "input_plate_projects": "CREATE VIEW input_plate_projects AS SELECT DISTINCT input_plate_idx, project_idx FROM input_sample WHERE project_idx IS NOT NULL UNION SELECT input_plate_idx, primary_project_idx AS project_idx FROM input_plate",
+    "omnibus_abs_quant_metag_v10_data": "CREATE VIEW omnibus_abs_quant_metag_v10_data AS SELECT v101.run_idx, v101.\"Sample_ID\", v101.\"Sample_Name\", v101.\"Sample_Plate\", v101.\"well_id_384\", v101.\"I7_Index_ID\", v101.\"index\", v101.\"I5_Index_ID\", v101.\"index2\", v101.\"Sample_Project\", v101.\"Well_description\", ma.syndna_pool_mass_ng AS \"mass_syndna_input_ng\", ma.extracted_gdna_concentration AS \"extracted_gdna_concentration_ng_ul\", ip.elution_vol AS \"vol_extracted_elution_ul\", ma.syndna_pool_number AS \"syndna_pool_number\", v101.\"orig_name\", v101.\"destination_well_384\", v101.\"Lane\" FROM omnibus_standard_metag_v101_data v101 JOIN prepped_sample prs ON v101.\"Sample_ID\" = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx LEFT JOIN metagenomic_absquant_sample ma ON v101.\"Sample_ID\" = ma.prepped_sample_idx",
+    "omnibus_contact": "CREATE VIEW omnibus_contact AS SELECT cs.run_idx AS run_idx, p.project_name AS \"Sample_Project\", p.contact_email AS \"Email\" FROM project p JOIN input_sample ins ON ins.project_idx = p.project_idx JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx GROUP BY cs.run_idx, p.project_idx ORDER BY p.project_idx",
+    "omnibus_illumina_header": "CREATE VIEW omnibus_illumina_header AS SELECT sr.run_idx, 4 AS \"IEMFileVersion\", lf.legacy_sheet_type AS \"SheetType\", CAST(lf.legacy_version AS TEXT) AS \"SheetVersion\", sr.investigator_name AS \"Investigator Name\", sr.experiment_name AS \"Experiment Name\", sr.run_date AS \"Date\", 'GenerateFASTQ' AS \"Workflow\", 'FASTQ Only' AS \"Application\", at.name AS \"Assay\", sr.description AS \"Description\", 'Default' AS \"Chemistry\" FROM processing_run sr JOIN assay_type at ON sr.assay_type_idx = at.assay_type_idx JOIN legacy_samplesheet_format lf ON sr.legacy_format_idx = lf.legacy_format_idx",
+    "omnibus_illumina_reads": "CREATE VIEW omnibus_illumina_reads AS SELECT sr.run_idx, ir.read1_length AS \"read1_length\", ir.read2_length AS \"read2_length\" FROM processing_run sr JOIN illumina_run ir ON sr.run_idx = ir.run_idx",
+    "omnibus_illumina_settings": "CREATE VIEW omnibus_illumina_settings AS SELECT sr.run_idx, ir.reverse_complement AS \"ReverseComplement\", ir.mask_short_reads AS \"MaskShortReads\", ir.override_cycles AS \"OverrideCycles\" FROM processing_run sr JOIN illumina_run ir ON sr.run_idx = ir.run_idx",
+    "omnibus_pacbio_absquant_v10_data": "CREATE VIEW omnibus_pacbio_absquant_v10_data AS SELECT cs.run_idx, prs.prepped_sample_idx AS \"Sample_ID\", psn.sample_name AS \"Sample_Name\", ip.plate_name AS \"Sample_Plate\", prs.prepped_well AS \"Sample_Well\", ps.barcode_id AS \"barcode_id\", psp.project_name AS \"Sample_Project\", prs.well_description AS \"Well_description\", ma.syndna_pool_mass_ng AS \"mass_syndna_input_ng\", ma.extracted_gdna_concentration AS \"extracted_gdna_concentration_ng_ul\", ip.elution_vol AS \"vol_extracted_elution_ul\", ma.syndna_pool_number AS \"syndna_pool_number\", ins.sample_name AS \"orig_name\", prs.prepped_well AS \"destination_well_384\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx JOIN pacbio_sample ps ON prs.prepped_sample_idx = ps.prepped_sample_idx LEFT JOIN metagenomic_absquant_sample ma ON prs.prepped_sample_idx = ma.prepped_sample_idx",
+    "omnibus_pacbio_absquant_v11_bioinformatics": "CREATE VIEW omnibus_pacbio_absquant_v11_bioinformatics AS SELECT DISTINCT cs.run_idx, p.project_name AS \"Sample_Project\", p.external_project_id AS \"QiitaID\", p.human_filtering AS \"HumanFiltering\", p.library_construction_protocol AS \"library_construction_protocol\", p.experiment_design_description AS \"experiment_design_description\", EXISTS (SELECT 1 FROM replicated_samples rs WHERE rs.run_idx = cs.run_idx) AS \"contains_replicates\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN project p ON ins.project_idx = p.project_idx GROUP BY cs.run_idx, p.project_idx, p.project_name, p.external_project_id, p.human_filtering, p.library_construction_protocol, p.experiment_design_description",
+    "omnibus_pacbio_absquant_v11_data": "CREATE VIEW omnibus_pacbio_absquant_v11_data AS SELECT v10.run_idx, v10.\"Sample_ID\", v10.\"Sample_Name\", v10.\"Sample_Plate\", v10.\"Sample_Well\", v10.\"barcode_id\", ps.twist_adaptor_id AS \"twist_adaptor_id\", v10.\"Sample_Project\", v10.\"Well_description\", v10.\"mass_syndna_input_ng\", v10.\"extracted_gdna_concentration_ng_ul\", v10.\"vol_extracted_elution_ul\", v10.\"syndna_pool_number\", ps.syndna_is_twisted AS \"syndna_is_twisted\", v10.\"orig_name\", v10.\"destination_well_384\" FROM omnibus_pacbio_absquant_v10_data v10 JOIN pacbio_sample ps ON v10.\"Sample_ID\" = ps.prepped_sample_idx",
+    "omnibus_pacbio_absquant_v11_header": "CREATE VIEW omnibus_pacbio_absquant_v11_header AS SELECT sr.run_idx, lf.legacy_sheet_type AS \"SheetType\", CAST(lf.legacy_version AS TEXT) AS \"SheetVersion\", sr.investigator_name AS \"Investigator Name\", sr.experiment_name AS \"Experiment Name\", sr.run_date AS \"Date\", at.name AS \"Assay\", sr.description AS \"Description\" FROM processing_run sr JOIN assay_type at ON sr.assay_type_idx = at.assay_type_idx JOIN legacy_samplesheet_format lf ON sr.legacy_format_idx = lf.legacy_format_idx",
+    "omnibus_pacbio_absquant_v12_data": "CREATE VIEW omnibus_pacbio_absquant_v12_data AS SELECT v11.run_idx, v11.\"Sample_ID\", v11.\"Sample_Name\", v11.\"Sample_Plate\", v11.\"Sample_Well\", v11.\"barcode_id\", v11.\"twist_adaptor_id\", v11.\"Sample_Project\", v11.\"Well_description\", v11.\"mass_syndna_input_ng\", v11.\"extracted_gdna_concentration_ng_ul\", v11.\"vol_extracted_elution_ul\", v11.\"syndna_pool_number\", ma.sequenced_sample_gdna_mass_ng AS \"sequenced_sample_gdna_mass_ng\", ma.extracted_sample_mass_g AS \"calc_mass_sample_aliquot_input_g\", ma.extracted_sample_volume_ul AS \"sample_volume_ul\", ma.extracted_sample_surface_area_cm2 AS \"sample_surface_area_cm2\", v11.\"syndna_is_twisted\", v11.\"orig_name\", v11.\"destination_well_384\" FROM omnibus_pacbio_absquant_v11_data v11 LEFT JOIN metagenomic_absquant_sample ma ON v11.\"Sample_ID\" = ma.prepped_sample_idx",
+    "omnibus_pacbio_metag_v10_data": "CREATE VIEW omnibus_pacbio_metag_v10_data AS SELECT cs.run_idx, prs.prepped_sample_idx AS \"Sample_ID\", psn.sample_name AS \"Sample_Name\", ip.plate_name AS \"Sample_Plate\", prs.prepped_well AS \"Sample_Well\", ps.barcode_id AS \"barcode_id\", psp.project_name AS \"Sample_Project\", prs.well_description AS \"Well_description\", ins.sample_name AS \"orig_name\", prs.prepped_well AS \"destination_well_384\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx JOIN pacbio_sample ps ON prs.prepped_sample_idx = ps.prepped_sample_idx",
+    "omnibus_pacbio_metag_v11_data": "CREATE VIEW omnibus_pacbio_metag_v11_data AS SELECT v10.run_idx, v10.\"Sample_ID\", v10.\"Sample_Name\", v10.\"Sample_Plate\", v10.\"Sample_Well\", v10.\"barcode_id\", ps.twist_adaptor_id AS \"twist_adaptor_id\", v10.\"Sample_Project\", v10.\"Well_description\", v10.\"orig_name\", v10.\"destination_well_384\" FROM omnibus_pacbio_metag_v10_data v10 JOIN pacbio_sample ps ON v10.\"Sample_ID\" = ps.prepped_sample_idx",
+    "omnibus_sample_context": "CREATE VIEW omnibus_sample_context AS SELECT cs.run_idx AS run_idx, psn.sample_name AS \"sample_name\", CASE st.name WHEN 'extraction_blank' THEN 'control blank' WHEN 'katharoseq_cells_positive_control' THEN 'control katharoseq' ELSE 'control ' || st.name END AS \"sample_type\", pp.external_project_id AS \"primary_qiita_study\", GROUP_CONCAT( CASE WHEN op.project_idx != ip.primary_project_idx THEN op.external_project_id END ) AS \"secondary_qiita_studies\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx JOIN sample_type st ON ins.sample_type_idx = st.sample_type_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx JOIN project pp ON ip.primary_project_idx = pp.project_idx LEFT JOIN input_plate_projects ipp ON ins.input_plate_idx = ipp.input_plate_idx LEFT JOIN project op ON ipp.project_idx = op.project_idx WHERE ins.project_idx IS NULL GROUP BY cs.run_idx, prs.prepped_sample_idx, psn.sample_name, st.name, pp.external_project_id",
+    "omnibus_standard_metag_v0_data": "CREATE VIEW omnibus_standard_metag_v0_data AS SELECT v90.run_idx, v90.\"Sample_ID\", v90.\"Sample_Name\", v90.\"Sample_Plate\", cs.compression_well AS \"well_id_384\", v90.\"I7_Index_ID\", v90.\"index\", v90.\"I5_Index_ID\", v90.\"index2\", v90.\"Sample_Project\", v90.\"Well_description\", v90.\"Lane\" FROM omnibus_standard_metag_v90_data v90 JOIN prepped_sample prs ON v90.\"Sample_ID\" = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx",
+    "omnibus_standard_metag_v101_bioinformatics": "CREATE VIEW omnibus_standard_metag_v101_bioinformatics AS SELECT v90.*, EXISTS (SELECT 1 FROM replicated_samples rs WHERE rs.run_idx = v90.run_idx) AS \"contains_replicates\" FROM omnibus_standard_metag_v90_bioinformatics v90",
+    "omnibus_standard_metag_v101_data": "CREATE VIEW omnibus_standard_metag_v101_data AS SELECT v0.run_idx, v0.\"Sample_ID\", v0.\"Sample_Name\", v0.\"Sample_Plate\", v0.\"well_id_384\", v0.\"I7_Index_ID\", v0.\"index\", v0.\"I5_Index_ID\", v0.\"index2\", v0.\"Sample_Project\", v0.\"Well_description\", ins.sample_name AS \"orig_name\", prs.prepped_well AS \"destination_well_384\", v0.\"Lane\" FROM omnibus_standard_metag_v0_data v0 JOIN prepped_sample prs ON v0.\"Sample_ID\" = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx",
+    "omnibus_standard_metag_v90_bioinformatics": "CREATE VIEW omnibus_standard_metag_v90_bioinformatics AS SELECT DISTINCT cs.run_idx, p.project_name AS \"Sample_Project\", p.external_project_id AS \"QiitaID\", ir.barcodes_are_rc AS \"BarcodesAreRC\", ir.forward_adapter AS \"ForwardAdapter\", ir.reverse_adapter AS \"ReverseAdapter\", p.human_filtering AS \"HumanFiltering\", p.library_construction_protocol AS \"library_construction_protocol\", p.experiment_design_description AS \"experiment_design_description\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN project p ON ins.project_idx = p.project_idx JOIN processing_run sr ON cs.run_idx = sr.run_idx JOIN illumina_run ir ON sr.run_idx = ir.run_idx GROUP BY cs.run_idx, p.project_idx, p.project_name, p.external_project_id, ir.barcodes_are_rc, ir.forward_adapter, ir.reverse_adapter, p.human_filtering, p.library_construction_protocol, p.experiment_design_description",
+    "omnibus_standard_metag_v90_data": "CREATE VIEW omnibus_standard_metag_v90_data AS SELECT cs.run_idx, prs.prepped_sample_idx AS \"Sample_ID\", psn.sample_name AS \"Sample_Name\", ip.plate_name AS \"Sample_Plate\", prs.prepped_well AS \"Sample_Well\", ils.i7_index_id AS \"I7_Index_ID\", ils.i7_sequence AS \"index\", ils.i5_index_id AS \"I5_Index_ID\", ils.i5_sequence AS \"index2\", psp.project_name AS \"Sample_Project\", prs.well_description AS \"Well_description\", ils.lane AS \"Lane\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx JOIN illumina_sample ils ON prs.prepped_sample_idx = ils.prepped_sample_idx",
+    "omnibus_standard_metat_v10_data": "CREATE VIEW omnibus_standard_metat_v10_data AS SELECT v0.run_idx, v0.\"Sample_ID\", v0.\"Sample_Name\", v0.\"Sample_Plate\", v0.\"well_id_384\", v0.\"I7_Index_ID\", v0.\"index\", v0.\"I5_Index_ID\", v0.\"index2\", v0.\"Sample_Project\", mt.total_rna_concentration_ng_ul AS \"total_rna_concentration_ng_ul\", ip.elution_vol AS \"vol_extracted_elution_ul\", v0.\"Well_description\", v0.\"Lane\" FROM omnibus_standard_metag_v0_data v0 JOIN prepped_sample prs ON v0.\"Sample_ID\" = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx LEFT JOIN metatranscriptomic_sample mt ON v0.\"Sample_ID\" = mt.prepped_sample_idx",
+    "omnibus_tellseq_absquant_v10_data": "CREATE VIEW omnibus_tellseq_absquant_v10_data AS SELECT v10.run_idx, v10.\"Sample_ID\", v10.\"Sample_Name\", v10.\"Sample_Plate\", v10.\"well_id_384\", v10.\"barcode_id\", v10.\"Sample_Project\", v10.\"Well_description\", ma.syndna_pool_mass_ng AS \"mass_syndna_input_ng\", ma.extracted_gdna_concentration AS \"extracted_gdna_concentration_ng_ul\", ip.elution_vol AS \"vol_extracted_elution_ul\", ma.syndna_pool_number AS \"syndna_pool_number\", v10.\"orig_name\", v10.\"destination_well_384\", v10.\"Lane\" FROM omnibus_tellseq_metag_v10_data v10 JOIN prepped_sample prs ON v10.\"Sample_ID\" = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx LEFT JOIN metagenomic_absquant_sample ma ON v10.\"Sample_ID\" = ma.prepped_sample_idx",
+    "omnibus_tellseq_metag_v10_data": "CREATE VIEW omnibus_tellseq_metag_v10_data AS SELECT cs.run_idx, prs.prepped_sample_idx AS \"Sample_ID\", psn.sample_name AS \"Sample_Name\", ip.plate_name AS \"Sample_Plate\", cs.compression_well AS \"well_id_384\", ts.barcode_id AS \"barcode_id\", psp.project_name AS \"Sample_Project\", prs.well_description AS \"Well_description\", ins.sample_name AS \"orig_name\", prs.prepped_well AS \"destination_well_384\", ts.lane AS \"Lane\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx JOIN tellseq_sample ts ON prs.prepped_sample_idx = ts.prepped_sample_idx",
+    "prepped_sample_name": "CREATE VIEW prepped_sample_name AS SELECT prs.prepped_sample_idx, COALESCE(prs.sample_name, ins.sample_name) AS sample_name, (ins.do_not_use = 1 OR COALESCE(prs.do_not_use, 0) = 1) AS do_not_use FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx",
+    "prepped_sample_project": "CREATE VIEW prepped_sample_project AS SELECT prs.prepped_sample_idx, COALESCE(ins.project_idx, ip.primary_project_idx) AS project_idx, COALESCE(p.project_name, (SELECT p2.project_name FROM project p2 WHERE p2.project_idx = ip.primary_project_idx) ) AS project_name FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx LEFT JOIN project p ON ins.project_idx = p.project_idx",
+    "replicated_samples": "CREATE VIEW replicated_samples AS SELECT cs.run_idx, cs.compression_sample_idx, COUNT(*) AS copy_count FROM compression_sample cs JOIN prepped_sample prs ON cs.compression_sample_idx = prs.compression_sample_idx GROUP BY cs.run_idx, cs.compression_sample_idx HAVING COUNT(*) > 1",
+    "run_capability": "CREATE VIEW run_capability AS SELECT run_idx, 'absquant_mass' AS capability_name FROM run_capability_absquant_mass UNION ALL SELECT run_idx, 'absquant_volume' FROM run_capability_absquant_volume UNION ALL SELECT run_idx, 'absquant_surface_area' FROM run_capability_absquant_surface_area",
+    "run_capability_absquant_mass": "CREATE VIEW run_capability_absquant_mass AS SELECT DISTINCT cs.run_idx FROM metagenomic_absquant_sample ma JOIN prepped_sample prs ON ma.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx WHERE ma.extracted_sample_mass_g IS NOT NULL",
+    "run_capability_absquant_surface_area": "CREATE VIEW run_capability_absquant_surface_area AS SELECT DISTINCT cs.run_idx FROM metagenomic_absquant_sample ma JOIN prepped_sample prs ON ma.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx WHERE ma.extracted_sample_surface_area_cm2 IS NOT NULL",
+    "run_capability_absquant_volume": "CREATE VIEW run_capability_absquant_volume AS SELECT DISTINCT cs.run_idx FROM metagenomic_absquant_sample ma JOIN prepped_sample prs ON ma.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx WHERE ma.extracted_sample_volume_ul IS NOT NULL",
+    "run_derived_capability": "CREATE VIEW run_derived_capability AS -- absquant v1: run has at least one absquant metric capability SELECT DISTINCT run_idx, 'absquant' AS capability_family, 1 AS version FROM run_capability WHERE capability_name IN ('absquant_mass', 'absquant_volume', 'absquant_surface_area')",
+    "run_illumina_sample": "CREATE VIEW run_illumina_sample AS SELECT ils.illumina_sample_idx, ils.prepped_sample_idx, ils.lane, ils.i7_index_id, ils.i7_sequence, ils.i5_index_id, ils.i5_sequence, cs.run_idx, cs.input_sample_idx, psn.sample_name, psn.do_not_use, psp.project_name FROM illumina_sample ils JOIN prepped_sample prs ON ils.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN prepped_sample_name psn ON ils.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON ils.prepped_sample_idx = psp.prepped_sample_idx",
+    "run_pacbio_sample": "CREATE VIEW run_pacbio_sample AS SELECT ps.pacbio_sample_idx, ps.prepped_sample_idx, ps.barcode_id, ps.twist_adaptor_id, ps.syndna_is_twisted, ps.smrt_cell_well_sample_id, ps.movie_context_id, cs.run_idx, cs.input_sample_idx, psn.sample_name, psn.do_not_use, psp.project_name FROM pacbio_sample ps JOIN prepped_sample prs ON ps.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN prepped_sample_name psn ON ps.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON ps.prepped_sample_idx = psp.prepped_sample_idx"
+  }
+}

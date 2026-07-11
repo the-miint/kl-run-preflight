@@ -12,11 +12,13 @@ import pytest
 
 from run_preflight.db import create_db
 from run_preflight.updates import (
+    UNCHANGED,
     _set_illumina_run_column,
     set_bioproject_accession,
     set_biosample_accession,
     set_illumina_run_setting,
     set_input_sample_do_not_use,
+    set_pacbio_sample_run_details,
     set_prepped_sample_do_not_use,
     update_lane,
 )
@@ -65,6 +67,19 @@ def _add_illumina_row(
     ils_idx = _helpers.seed_illumina_sample(conn, prs_idx, lane=lane)
     conn.commit()
     return ils_idx
+
+
+def _add_pacbio_sample(
+    conn: sqlite3.Connection,
+    prs_idx: int,
+    smrt_cell_well_sample_id: str | None = None,
+) -> int:
+    """Insert one pacbio_sample row; return pacbio_sample_idx."""
+    ps_idx = _helpers.seed_pacbio_sample(
+        conn, prs_idx, smrt_cell_well_sample_id=smrt_cell_well_sample_id
+    )
+    conn.commit()
+    return ps_idx
 
 
 def _add_illumina_run(
@@ -460,7 +475,7 @@ class TestUpdateLane(_UpdatesTestBase):
     def test_update_lane_unsupported_platform(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Unsupported platform"),
+            pytest.raises(ValueError, match="Unsupported sample kind"),
         ):
             update_lane(conn, "pacbio", from_lane=1, to_lane=2)
 
@@ -960,3 +975,173 @@ class TestSetPreppedSampleDoNotUse(_UpdatesTestBase):
             pytest.raises(ValueError, match="No prepped_sample matches"),
         ):
             set_prepped_sample_do_not_use(conn, 999)
+
+
+class TestSetPacbioSampleRunDetails(_UpdatesTestBase):
+    def _seed_one(self, name="S1", well="A1", smrt_cell_well_sample_id=None):
+        """Seed one sample chain + pacbio_sample; return pacbio_sample_idx."""
+        with open_db(self.db_path) as conn:
+            _ins, prs = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, name, well
+            )
+            ps_idx = _add_pacbio_sample(conn, prs, smrt_cell_well_sample_id)
+        return ps_idx
+
+    def _read(self, ps_idx):
+        """Return (smrt_cell_well_sample_id, movie_context_id) for a row."""
+        with open_db(self.db_path) as conn:
+            return conn.execute(
+                "SELECT smrt_cell_well_sample_id, movie_context_id "
+                "FROM pacbio_sample WHERE pacbio_sample_idx = ?",
+                (ps_idx,),
+            ).fetchone()
+
+    def test_set_pacbio_sample_run_details_by_idx_both_fields(self):
+        ps_idx = self._seed_one()
+        with open_db(self.db_path) as conn:
+            set_pacbio_sample_run_details(
+                conn,
+                pacbio_sample_idx=ps_idx,
+                smrt_cell_well_sample_id="1_A01",
+                movie_context_id="m84",
+            )
+        self.assertEqual(self._read(ps_idx), ("1_A01", "m84"))
+
+    def test_set_pacbio_sample_run_details_by_sample_name(self):
+        ps_idx = self._seed_one(name="SN1")
+        with open_db(self.db_path) as conn:
+            set_pacbio_sample_run_details(
+                conn, sample_name="SN1", movie_context_id="m84"
+            )
+        self.assertEqual(self._read(ps_idx), (None, "m84"))
+
+    def test_set_pacbio_sample_run_details_single_field_leaves_other(self):
+        ps_idx = self._seed_one(smrt_cell_well_sample_id="1_A01")
+        with open_db(self.db_path) as conn:
+            set_pacbio_sample_run_details(
+                conn, pacbio_sample_idx=ps_idx, movie_context_id="m84"
+            )
+        self.assertEqual(self._read(ps_idx), ("1_A01", "m84"))
+
+    def test_set_pacbio_sample_run_details_unchanged_is_noop_for_field(self):
+        ps_idx = self._seed_one(smrt_cell_well_sample_id="1_A01")
+        with open_db(self.db_path) as conn:
+            set_pacbio_sample_run_details(
+                conn,
+                pacbio_sample_idx=ps_idx,
+                smrt_cell_well_sample_id=UNCHANGED,
+                movie_context_id="m84",
+            )
+        self.assertEqual(self._read(ps_idx), ("1_A01", "m84"))
+
+    def test_set_pacbio_sample_run_details_clear_with_none(self):
+        ps_idx = self._seed_one(smrt_cell_well_sample_id="1_A01")
+        with open_db(self.db_path) as conn:
+            set_pacbio_sample_run_details(
+                conn, pacbio_sample_idx=ps_idx, smrt_cell_well_sample_id=None
+            )
+        self.assertEqual(self._read(ps_idx), (None, None))
+
+    def test_set_pacbio_sample_run_details_invalid_smrt_cell_raises(self):
+        ps_idx = self._seed_one()
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(sqlite3.IntegrityError),
+        ):
+            set_pacbio_sample_run_details(
+                conn, pacbio_sample_idx=ps_idx, smrt_cell_well_sample_id="9_Z99"
+            )
+
+    def test_set_pacbio_sample_run_details_ambiguous_name_raises(self):
+        # Two input_samples share an effective Sample_Name -> two pacbio rows
+        with open_db(self.db_path) as conn:
+            _i1, prs1 = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "DUP", "A1"
+            )
+            _i2, prs2 = _add_sample(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "DUP", "A2"
+            )
+            _add_pacbio_sample(conn, prs1)
+            _add_pacbio_sample(conn, prs2)
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="ambiguous"),
+        ):
+            set_pacbio_sample_run_details(
+                conn, sample_name="DUP", movie_context_id="m84"
+            )
+
+    def test_set_pacbio_sample_run_details_no_match_raises(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="No pacbio_sample matches"),
+        ):
+            set_pacbio_sample_run_details(
+                conn, pacbio_sample_idx=999, movie_context_id="m84"
+            )
+
+    def test_set_pacbio_sample_run_details_requires_one_identifier(self):
+        ps_idx = self._seed_one()
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one of sample_name"),
+        ):
+            set_pacbio_sample_run_details(conn, movie_context_id="m84")
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one of sample_name"),
+        ):
+            set_pacbio_sample_run_details(
+                conn,
+                sample_name="S1",
+                pacbio_sample_idx=ps_idx,
+                movie_context_id="m84",
+            )
+
+    def test_set_pacbio_sample_run_details_requires_a_field(self):
+        ps_idx = self._seed_one()
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="At least one of"),
+        ):
+            set_pacbio_sample_run_details(conn, pacbio_sample_idx=ps_idx)
+
+    def test_set_pacbio_sample_run_details_rejects_empty_string(self):
+        ps_idx = self._seed_one()
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="must not be empty"),
+        ):
+            set_pacbio_sample_run_details(
+                conn, pacbio_sample_idx=ps_idx, movie_context_id=""
+            )
+
+    def test_set_pacbio_sample_run_details_audit_log(self):
+        ps_idx = self._seed_one(smrt_cell_well_sample_id="1_A01")
+        with open_db(self.db_path) as conn:
+            set_pacbio_sample_run_details(
+                conn,
+                pacbio_sample_idx=ps_idx,
+                smrt_cell_well_sample_id="2_B01",
+                movie_context_id="m84",
+                reason="loaded",
+            )
+        with open_db(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT table_name, row_idx, column_name, old_value, new_value, reason "
+                "FROM change_log ORDER BY change_idx"
+            ).fetchall()
+        self.assertEqual(
+            rows,
+            [
+                (
+                    "pacbio_sample",
+                    ps_idx,
+                    "smrt_cell_well_sample_id",
+                    "1_A01",
+                    "2_B01",
+                    "loaded",
+                ),
+                ("pacbio_sample", ps_idx, "movie_context_id", None, "m84", "loaded"),
+            ],
+        )

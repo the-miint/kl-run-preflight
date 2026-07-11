@@ -9,7 +9,7 @@ from pathlib import Path
 from run_preflight import migrate_legacy_csv_to_db_file
 from run_preflight.legacy.roundtrip import roundtrip_via_api
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent / "data" / "legacy"
 
 
 class TestRoundTrip(unittest.TestCase):
@@ -29,14 +29,14 @@ class TestRoundTrip(unittest.TestCase):
         self._assert_roundtrips("good_pacbio_absquantv11.csv")
 
     def test_pacbio_v11_absquant_unpooled(self):
-        self._assert_roundtrips("pacbio_v11_absquant_unpooled_sample_sheet.csv")
+        self._assert_roundtrips("good_pacbio_v11_absquant_unpooled_sample_sheet.csv")
 
     def test_skin_replicates_novaseq(self):
-        self._assert_roundtrips("Test1_Skin_replicates_15459_novaseq.csv")
+        self._assert_roundtrips("good_test1_Skin_replicates_15459_novaseq.csv")
 
     def test_celeste_adaptation_novaseq(self):
         self._assert_roundtrips(
-            "YYYY_MM_DD_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"
+            "good_yyyy_mm_dd_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"
         )
 
     def test_good_pacbio_metagv11(self):
@@ -80,13 +80,13 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_good_tellseq_absquantv10(self):
         self._assert_roundtrips(
-            "Tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv"
+            "good_tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv"
         )
 
     def test_standard_metagv100_w_replicates_rejected(self):
         # Pre-v101 files with replicates are unsupported and must be rejected
         # at load time before any DB writes happen
-        csv_path = DATA_DIR / "good_standard_metagv100_w_replicates.csv"
+        csv_path = DATA_DIR / "unsupported_standard_metagv100_w_replicates.csv"
         db_path = self.tmp_dir / "rejected.db"
         with self.assertRaisesRegex(
             ValueError, r"Replicates in legacy version.*v101 or later"

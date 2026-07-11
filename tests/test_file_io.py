@@ -21,7 +21,7 @@ from run_preflight.legacy import LegacyExtraColumnWarning
 
 from . import _helpers
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent / "data" / "legacy"
 GOOD_CSV = DATA_DIR / "good_standard_metagv90.csv"
 
 

@@ -10,7 +10,6 @@ database from each path and comparing full structure and content.
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from pathlib import Path
 
@@ -19,81 +18,10 @@ import pytest
 from run_preflight.db import create_db
 from run_preflight.migrate import apply_patches, get_latest_version
 
+from ._helpers import capture_db_snapshot
+
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
 _SCHEMA_V0 = _SCHEMA_DIR / "schema_v0.sql"
-
-
-def _normalize_sql(sql: str | None) -> str:
-    """Collapse whitespace for textual SQL comparison.
-
-    SQLite's stored CREATE statements may differ from the original file
-    in whitespace after ALTER TABLE rewrites.  Collapsing runs of
-    whitespace into single spaces lets functionally equivalent
-    definitions compare equal.
-    """
-    if sql is None:
-        return ""
-    return re.sub(r"\s+", " ", sql).strip()
-
-
-def _capture_schema(conn: sqlite3.Connection) -> dict:
-    """Return a deterministic snapshot of structure and seed data.
-
-    The snapshot is keyed by name throughout so that the order in which
-    objects were created (which differs between the schema.sql path and
-    the patch path) does not affect equality.
-    """
-    snapshot: dict = {
-        "tables": {},
-        "indexes": {},
-        "triggers": {},
-        "views": {},
-        "data": {},
-    }
-    cur = conn.cursor()
-
-    # Tables: column structure, foreign keys, and full row contents.
-    cur.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type='table' AND name NOT LIKE 'sqlite_%' "
-        "ORDER BY name"
-    )
-    table_names = [r[0] for r in cur.fetchall()]
-    for tname in table_names:
-        cols = cur.execute(f"PRAGMA table_info({tname})").fetchall()
-        fks = cur.execute(f"PRAGMA foreign_key_list({tname})").fetchall()
-        snapshot["tables"][tname] = {
-            "columns": [tuple(c) for c in cols],
-            "foreign_keys": sorted(tuple(f) for f in fks),
-        }
-        # Sort data rows so insertion order does not affect equality
-        rows = cur.execute(f"SELECT * FROM {tname}").fetchall()
-        snapshot["data"][tname] = sorted(tuple(r) for r in rows)
-
-    # Indexes: include auto-indexes from PK / UNIQUE constraints
-    cur.execute(
-        "SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index' ORDER BY name"
-    )
-    for name, tbl_name, sql in cur.fetchall():
-        cols = cur.execute(f"PRAGMA index_info({name})").fetchall()
-        snapshot["indexes"][name] = {
-            "table": tbl_name,
-            "sql": _normalize_sql(sql),
-            "columns": [tuple(c) for c in cols],
-        }
-
-    # Triggers and views: compare normalized SQL bodies
-    cur.execute(
-        "SELECT name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name"
-    )
-    for name, sql in cur.fetchall():
-        snapshot["triggers"][name] = _normalize_sql(sql)
-
-    cur.execute("SELECT name, sql FROM sqlite_master WHERE type='view' ORDER BY name")
-    for name, sql in cur.fetchall():
-        snapshot["views"][name] = _normalize_sql(sql)
-
-    return snapshot
 
 
 def _build_via_schema_sql() -> sqlite3.Connection:
@@ -118,8 +46,8 @@ def snapshots():
     conn_patches = _build_via_baseline_and_patches()
     try:
         yield (
-            _capture_schema(conn_schema),
-            _capture_schema(conn_patches),
+            capture_db_snapshot(conn_schema),
+            capture_db_snapshot(conn_patches),
         )
     finally:
         conn_schema.close()

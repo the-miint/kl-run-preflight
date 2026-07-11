@@ -40,6 +40,25 @@ def _discover_patches(patches_dir: Path) -> dict[int, Path]:
     return patches
 
 
+def _load_py_patch(patch_num: int, patch_path: Path):
+    """Import a ``.py`` patch module and return it.
+
+    The module must define an ``apply(conn)`` entry point; the caller runs
+    that inside the patch transaction.
+    """
+    # Load by file path rather than package import so patches need not be
+    # importable modules of the run_preflight package.
+    spec = importlib.util.spec_from_file_location(f"_patch_{patch_num:03d}", patch_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if not hasattr(module, "apply"):
+        raise AttributeError(
+            f"Patch {patch_path.name} must define an apply(conn) function"
+        )
+    return module
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -147,26 +166,29 @@ def apply_patches(
     pending = get_pending_patches(conn, patches_dir)
 
     for patch_num, patch_path in pending:
-        # Dispatch based on file type
-        if patch_path.suffix == ".sql":
-            conn.executescript(patch_path.read_text())
-        elif patch_path.suffix == ".py":
-            # Load the module by file path (not package import)
-            spec = importlib.util.spec_from_file_location(
-                f"_patch_{patch_num:03d}", patch_path
-            )
-            assert spec is not None and spec.loader is not None
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            # Validate patch defines the required entry point
-            if not hasattr(module, "apply"):
-                raise AttributeError(
-                    f"Patch {patch_path.name} must define an apply(conn) function"
+        # Apply the patch body and stamp its version inside a single
+        # transaction: SQLite DDL is transactional and PRAGMA user_version
+        # participates in it, so a statement failing part-way rolls the whole
+        # patch back rather than stranding a half-applied schema at the prior
+        # version (which would make every later open re-run and re-fail it).
+        try:
+            if patch_path.suffix == ".sql":
+                patch_sql = patch_path.read_text()
+                # executescript commits any open transaction first, then runs
+                # the script verbatim; wrapping in BEGIN/COMMIT makes it atomic.
+                conn.executescript(
+                    f"BEGIN;\n{patch_sql}\nPRAGMA user_version = {patch_num};\nCOMMIT;"
                 )
-            module.apply(conn)
-
-        # Runner owns version stamping
-        conn.execute(f"PRAGMA user_version = {patch_num}")
+            elif patch_path.suffix == ".py":
+                module = _load_py_patch(patch_num, patch_path)
+                conn.execute("BEGIN")
+                module.apply(conn)
+                conn.execute(f"PRAGMA user_version = {patch_num}")
+                conn.execute("COMMIT")
+        except Exception:
+            # Undo the partially-applied patch so a later retry starts clean
+            conn.rollback()
+            raise
 
     # Return final version without re-reading PRAGMA when patches were applied
     return pending[-1][0] if pending else get_schema_version(conn)

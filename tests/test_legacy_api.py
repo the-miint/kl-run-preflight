@@ -23,7 +23,7 @@ from run_preflight.legacy.validate import validate_omnibus
 from . import _helpers
 from ._helpers import open_db
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent / "data" / "legacy"
 GOOD_CSV = DATA_DIR / "good_pacbio_metagv11.csv"
 
 
@@ -113,7 +113,7 @@ class TestLegacyApi(unittest.TestCase):
         # Corrupt the Workflow value in a known-good Illumina v101 file;
         # validation must reject so the user is told at load time rather
         # than getting silently-replaced output from a round-trip
-        src = (DATA_DIR / "Test1_Skin_replicates_15459_novaseq.csv").read_text()
+        src = (DATA_DIR / "good_test1_Skin_replicates_15459_novaseq.csv").read_text()
         corrupted = src.replace("Workflow,GenerateFASTQ", "Workflow,bcl2fastq")
         bad_csv = self.tmp_dir / "bad.csv"
         bad_csv.write_text(corrupted)
@@ -268,7 +268,7 @@ class TestLegacyApi(unittest.TestCase):
     def test_load_legacy_csv_rejects_empty_qiita_id_cell(self):
         # An empty QiitaID would silently become external_project_id=''
         # in the DB; validation rejects at load time instead.
-        src = (DATA_DIR / "Test1_Skin_replicates_15459_novaseq.csv").read_text()
+        src = (DATA_DIR / "good_test1_Skin_replicates_15459_novaseq.csv").read_text()
         # Replace the (only) Bioinformatics QiitaID value with an empty
         # field; the surrounding row layout is preserved verbatim.
         corrupted = src.replace(

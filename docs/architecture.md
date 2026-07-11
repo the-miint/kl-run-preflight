@@ -1,8 +1,86 @@
-# Legacy Format Coverage Plan
+# Legacy Format Coverage and Schema Design Notes
 
-## Source of truth for class details
+## Core vs transitional
 
-`/Users/amandabirmingham/Work/Repositories/fork-kl-metapool/metapool/sample_sheet.py`
+The SQLite schema (`src/run_preflight/sql/schema.sql`) is the permanent,
+long-term core of the project. It defines the normalized domain model: runs,
+plates, samples, platform-specific extensions, and reference data.
+
+The parser (`legacy/parser.py`), reconstructor (`legacy/reconstruct.py`), and
+formatter (`legacy/formatting.py`) are transitional bridging code that exists
+to support the legacy omnibus CSV format during the migration period.
+
+## Schema as source of truth
+
+The DB schema drives behavior, not Python code. The **legacy format registry**
+(`legacy_samplesheet_format`, `legacy_samplesheet_view`,
+`legacy_samplesheet_optional_columns`) is a data-driven dispatch mechanism: the
+DB itself describes which sections a format contains, which SQL view produces
+each section, and which columns are optional. Both validation and
+reconstruction read this registry at runtime. Adding a new legacy format means
+adding rows and views to `schema.sql` — no new Python code paths are needed
+unless the format introduces structurally new data.
+
+## Platforms vs library prep protocols
+
+There are only two sequencing platforms: **Illumina** and **PacBio**. These are
+the physical instruments that perform sequencing. **TellSeq is a library prep
+protocol, not a sequencing platform** — TellSeq-prepared samples are sequenced
+on Illumina instruments. A TellSeq run therefore uses `illumina_run` config
+(read lengths, override cycles, etc.) because the instrument_type is Illumina.
+The `tellseq_sample` table captures the TellSeq-specific per-sample barcode,
+but the run-level configuration is Illumina.
+
+## Key domain rules
+
+- Controls have NULL `project_id` on `input_sample`; they inherit project
+  association via `input_plate`
+- `prepped_sample.sample_name` is NULL when identical to
+  `input_sample.sample_name`; populated only for replicates
+- `run_id` column in reconstruction views is a filter column excluded from
+  CSV output
+
+## Transitional workflows
+
+Consumer-facing entry points are exposed at the package root (see
+`__init__.py`); the per-step pipeline below describes the internal
+implementation.
+
+1) Read a legacy omnibus file into SQLite format:
+
+    - **Consumer call:** `migrate_legacy_csv_to_db_file(csv_path, db_path)` to
+      persist a file, or `load_legacy_csv(csv_path)` for an in-memory
+      connection.
+    - Internally: `db.create_db` → `db.get_section_formats` →
+      `parser.parse_omnibus` → `validate.validate_omnibus` → `db.populate_db`
+      (raises `ValueError` on validation failure). `migrate_legacy_csv_to_db_file`
+      then calls `file_io.save_db_file`, removing the partial DB file if any
+      step fails.
+
+2) Write a legacy omnibus file from SQLite format:
+
+    - **Consumer call:** open the DB (`open_db_file`, or the format-detecting
+      `open_file`) then `save_legacy_csv(conn, csv_path)`.
+    - Internally: confirm the DB holds exactly one `processing_run` (raises
+      `ValueError` if zero or multiple), reject any project with a NULL
+      `external_project_id`, then `reconstruct.reconstruct_omnibus` → write the
+      text to file.
+
+3) Round-trip a legacy omnibus file through SQLite format (used only for
+   testing):
+
+    - run workflow 1, then workflow 2
+    - normalize the input CSV (after workflow 1) to produce a known-good:
+      replace FALSE/TRUE with False/True; strip trailing `.0` from whole-number
+      floats (e.g. 1.0 → 1); reorder columns in tabular sections to match
+      reconstruction order; ensure a trailing newline
+    - directly compare the normalized known-good text to the output CSV
+    - the `roundtrip_via_api` helper in `legacy/roundtrip.py` packages the
+      load + write + normalize sequence for tests and dev scripts
+
+## Source of truth for legacy class details
+
+`kl-metapool: metapool/sample_sheet.py`
 
 ## Excluded classes
 
@@ -52,51 +130,11 @@ plate position (same across all replicates of a sample), while
 `destination_well_384` is the per-replicate final position on the compression
 plate.
 
-**Proposed schema change — `compression_sample` table:**
-Insert a new `compression_sample` entity between `input_sample` and
-`prepped_sample`. This table represents "this input sample was placed at
-position X on the compression plate for this run":
-
-```sql
-CREATE TABLE compression_sample (
-    compression_sample_idx    INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_idx          INTEGER NOT NULL REFERENCES processing_run(run_idx),
-    input_sample_idx INTEGER NOT NULL REFERENCES input_sample(input_sample_idx),
-    well            TEXT NOT NULL   -- well_id_384 / Sample_Well
-);
-```
-
-`prepped_sample` would then reference `compression_sample_idx` instead of
-`run_idx` + `input_sample_idx` directly:
-
-```sql
-CREATE TABLE prepped_sample (
-    prepped_sample_idx   INTEGER PRIMARY KEY AUTOINCREMENT,
-    compression_sample_idx            INTEGER NOT NULL
-        REFERENCES compression_sample(compression_sample_idx),
-    prepped_well        TEXT NOT NULL,  -- destination_well_384
-    sample_name             TEXT,
-    well_description        TEXT
-);
-```
-
-Benefits:
-
-- `well_id_384` is stored once per input sample per run (normalized)
-- Replicate detection becomes structural: a compression_sample with multiple
-  prepped_samples is a replicate — no heuristics needed
-- The existing `replicated_samples` view logic (COUNT > 1 per group)
-  transfers directly, just grouping by `compression_sample_idx` instead of
-  `input_sample_idx`
-- For non-replicates: one compression_sample → one prepped_sample,
-  `compression_sample.compression_well` = `prepped_sample.prepped_well`
-- For replicates: one compression_sample → multiple prepped_samples,
-  `compression_sample.compression_well` is shared, each `prepped_well` differs
-
-This change is implemented. The `compression_sample` table exists in
-`schema.sql`, all views join through it, and `db.py` populates it during
-legacy parsing. Pre-v101 files with replicates are rejected because their
-well semantics cannot be round-tripped correctly.
+The `compression_sample` table sits between `input_sample` and
+`prepped_sample`, recording that an input sample was placed at a given well
+on the compression plate for a run. All views join through it, `db.py`
+populates it during legacy parsing, and pre-v101 files with replicates are
+rejected because their well semantics cannot be round-tripped correctly.
 
 ## Multi-lane model
 
@@ -187,14 +225,7 @@ v0 can share it (same columns); v101 layers on top adding `orig_name`,
 Similarly for Bioinformatics: v90/v0 base (no `contains_replicates`); v101
 layers on top adding `contains_replicates`.
 
-**`_normalize_csv` changes needed for older formats:**
-
-- Reorder columns in tabular sections to canonical view output order
-- Boolean case normalization (already exists)
-- Whole-number float normalization (already exists)
-- Keep normalization format-agnostic — do NOT branch on format type
-
-## Data completeness enforcement — per-capability triggers
+## Data completeness enforcement — per-capability derived views
 
 ### Problem
 
@@ -263,6 +294,18 @@ Key properties:
   triggers was removed because metric columns are legitimately NULL for
   controls and failed samples, making per-row non-null constraints too
   strict.
+
+### The frozen v0 baseline
+
+`schema.sql` is the canonical current schema: `create_db` builds fresh
+databases from it and stamps them at the latest patch version.
+`schema_v0.sql` is the immutable baseline for the schema that shipped in
+databases already created in the wild. Because those v0 databases exist,
+`schema_v0.sql` is never edited again; every schema change is expressed as
+a numbered patch under `sql/patches/` **and** applied to `schema.sql`. A
+drift test builds one database from `schema_v0.sql` + all patches and
+another from `schema.sql`, asserting they are structurally identical and
+carry the same `user_version`, which keeps the two paths from diverging.
 
 ### Why custom migration code instead of an existing tool
 
@@ -338,17 +381,14 @@ the flag to avoid reading incomplete runs.
 
 ## Test files
 
-- v0: `tests/data/good_standard_metagv0_really_metat.csv`
-- v90: `tests/data/good_standard_metagv90.csv`
-- v100: `tests/data/good_standard_metagv100_wo_replicates.csv`
-- abs_quant_metag v10: `tests/data/good_abs_quant_metagv10.csv`
-- abs_quant_metag v11: `tests/data/good_abs_quant_metagv11.csv`
-- standard_metat v10: `tests/data/good_standard_metatv10.csv`
-- tellseq_metag v10: `tests/data/good_tellseq_metagv10.csv`
-- tellseq_absquant v10: `tests/data/Tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv`
-- v100 with extra columns (for ticket 014):
-  `fork-kl-metapool/metapool/tests/data/good_standard_metagv100_w_replicates.csv`
-  and `fork-kl-metapool/metapool/tests/data/sheet_wo_replicates.csv`
+- v0: `tests/data/legacy/good_standard_metagv0_really_metat.csv`
+- v90: `tests/data/legacy/good_standard_metagv90.csv`
+- v100: `tests/data/legacy/good_standard_metagv100_wo_replicates.csv`
+- abs_quant_metag v10: `tests/data/legacy/good_abs_quant_metagv10.csv`
+- abs_quant_metag v11: `tests/data/legacy/good_abs_quant_metagv11.csv`
+- standard_metat v10: `tests/data/legacy/good_standard_metatv10.csv`
+- tellseq_metag v10: `tests/data/legacy/good_tellseq_metagv10.csv`
+- tellseq_absquant v10: `tests/data/legacy/good_tellseq_absquant_samplesheet_spp_novaseqxplus_set_col19to24.csv`
 
 ### Group A — Illumina, no replicates, no SampleContext — SUPPORTED
 
@@ -376,6 +416,35 @@ the flag to avoid reading incomplete runs.
 | Class | SheetType / Version | Notes |
 |-------|-------------------|-------|
 | MetatranscriptomicSampleSheetv10 | standard_metat v10 | Extra Data columns (total_rna_concentration_ng_ul, vol_extracted_elution_ul). _ORDERED_BY_DATA_COLUMNS = True. No SampleContext |
+
+## Native fixtures and preflight stages
+
+A run preflight moves through stages as data accrues, and a consumer's code
+targets a particular stage. Rather than stamp a single linear stage label,
+each committed native fixture is classified by **content-derived facts** —
+independent booleans computed from what the database actually holds — because
+sequencing placement is platform-specific and can arrive separately from NCBI
+accessions:
+
+- **true preflight** — what a plain load of most legacy CSVs produces:
+  samples, plates, and QiitaID-keyed projects, but no NCBI accessions. For
+  Illumina this already includes `Lane`; for PacBio the SMRT Cell placement is
+  still absent.
+- **accessioned** (`biosample_accession` / `bioproject_accession` populated) —
+  the post-submission state, reached by calling `set_biosample_accession` /
+  `set_bioproject_accession`. The accession readers (`get_illumina_sample_info`
+  / `get_pacbio_sample_info`) require this state and raise otherwise.
+- **placed** (PacBio `smrt_cell_well_sample_id` / `movie_context_id`
+  populated) — the post-flight state for PacBio, reached via
+  `set_pacbio_sample_run_details`.
+
+Facts are surfaced through the fixture **filename**: a true preflight keeps its
+bare source stem (e.g. `good_pacbio_metagv11.sqlite`), and each populated fact
+appends a dot-delimited token (e.g. `good_pacbio_metagv11.accessioned.sqlite`).
+One source CSV may therefore back several fixtures at different stages. The
+facts are derived from DB content, never hand-maintained, and a guard test
+asserts every fixture's filename suffix matches its recomputed facts, so the
+signal cannot drift from reality.
 
 ## Key dimensions of variation across all formats
 
@@ -448,10 +517,7 @@ by `_add_data_to_sheet()` which iterates over a `lanes` list. This means any
 format's files may or may not contain a `Lane` column depending on how the file
 was generated.
 
-After ticket 015, Lane is a required column for all Illumina formats. The
-`contains_lane` optional-column rows were removed from every Illumina entry in
-the format registry, and the `CHECK_CONTAINS_LANE` check function was removed
-from the parser.
+`Lane` is a required column for all Illumina formats.
 
 ## Schema version vs data completeness
 

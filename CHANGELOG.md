@@ -15,15 +15,47 @@ until the first release is tagged.
 
 ### Added
 
-- Do-not-use flags on `input_sample` (hard floor) and `prepped_sample`
-  (per-replicate override), populated at legacy ingest by detecting a
-  `.donotuse.` dot-delimited token (case-insensitive) in sample names, and
-  settable for native runs via `set_input_sample_do_not_use` (by index or
-  biosample accession, the latter flagging all matches) and
-  `set_prepped_sample_do_not_use`. Sample fetchers
-  (`get_illumina_sample_rows`, `get_illumina_sample_info`,
-  `get_input_sample_project_info`) exclude flagged samples by default and
-  accept `include_do_not_use=True` to return them.
+- Nullable `smrt_cell_well_sample_id` column on `pacbio_sample` recording the SMRT Cell
+  position, constrained to `<1|2>_<A-D>01` (`GLOB '[12]_[A-D]01'`), plus a nullable
+  `movie_context_id` column, both surfaced by a new `run_pacbio_sample` view mirroring
+  `run_illumina_sample`. Shipped as the
+  first schema patch (`sql/patches/001_*`); `schema_v0.sql` is now the frozen
+  baseline for databases already in the wild, so every schema change flows
+  through a patch from here on.
+- `get_pacbio_sample_info`, returning per-`pacbio_sample` biosample and
+  bioproject accession info keyed by `pacbio_sample_idx` (control/secondary and
+  do-not-use handling identical to `get_illumina_sample_info`). Both info
+  functions return a `PlatformSampleInfo` NamedTuple per sample, carrying the
+  sample's `sample_type` (the DB `sample_type.name`, e.g. `standard` /
+  `extraction_blank`), its biosample and bioproject accessions, and the
+  platform-specific columns as a `PacbioSampleRow` / `IlluminaSampleRow`
+  `kind_row` — so a consumer gets the accession info, the sample type, and the
+  run-specific sample fields in one call. The `PacbioSampleRow.syndna_is_twisted`
+  column, a SQLite `BOOLEAN` stored as `0`/`1`/`NULL`, is surfaced to consumers
+  as `bool | None`. **Breaking:** `get_illumina_sample_info`'s return changes
+  from a bare tuple to a `PlatformSampleInfo` NamedTuple, so existing code
+  unpacking it positionally must be updated.
+- `set_pacbio_sample_run_details`, setting the post-creation PacBio
+  `smrt_cell_well_sample_id` and/or `movie_context_id` on one `pacbio_sample`,
+  addressed by `sample_name` or `pacbio_sample_idx` (a `sample_name` matching
+  more than one row raises, directing the caller to `pacbio_sample_idx`).
+  Exposes a public `UNCHANGED` sentinel so a field can be left untouched,
+  distinct from `None` which clears it; invalid `smrt_cell_well_sample_id`
+  values are rejected by the column CHECK.
+
+- Do-not-use flags on `input_sample` (two-state hard floor) and
+  `prepped_sample` (two-state per-replicate override: set = exclude this
+  replicate, NULL = inherit the input flag), populated at legacy ingest by
+  detecting a `.donotuse.` dot-delimited token (case-insensitive) in sample
+  names. Settable for native runs via `set_input_sample_do_not_use` (by index
+  or biosample accession, the latter flagging all matches in one transaction;
+  `value=False` clears the flag) and `set_prepped_sample_do_not_use`
+  (`value=True` flags, `value=None` clears to inherit; `False` is rejected).
+  Sample fetchers (`get_illumina_sample_rows`, `get_illumina_sample_info`,
+  `get_input_sample_project_info`) and the forward writers
+  (`save_bclconvert_v1_csv`, `save_legacy_sample_id_map_csv`) exclude flagged
+  samples by default and accept `include_do_not_use=True` to return them.
+  `save_legacy_csv` and `save_db_file` always include flagged records.
 - Standard Python project scaffolding: a root `.gitignore` and an installable
   `pyproject.toml` (setuptools + versioningit, generated `_version.py`,
   `environment.yml`, and a GitHub Actions CI workflow).
@@ -53,9 +85,38 @@ until the first release is tagged.
   `UNIQUE(prepped_sample_id, COALESCE(lane,-1))` indexes, per-tube consistency
   triggers (i5/i7, barcode, lane uniformity, one-run-per-DB), and a synthetic
   multi-lane round-trip fixture.
+- Committed native-format test files under `tests/data/native/`: for every
+  good_ legacy CSV, a SQLite database plus a JSON snapshot of its full
+  structure and contents, produced by `scripts/generate_native_test_files.py`.
+  The `.sqlite` files give downstream consumers ready-to-use native
+  run-preflight inputs; `tests/test_native_test_files.py` enforces that every
+  good_ legacy CSV has a native pair, that the native directory stays paired
+  (`.sqlite` ↔ snapshot), and that each committed `.sqlite` matches both its
+  snapshot and a fresh load of its source CSV.
+- Content-derived stage signalling for native fixtures: each committed
+  `.sqlite` carries a fact-based filename suffix — bare for a true preflight,
+  `.accessioned` once NCBI accessions are populated — derived from its contents
+  and guarded against drift, so a consumer can pick a fixture matching the
+  stage their code needs. Includes an accessioned PacBio fixture that reads
+  cleanly through `get_pacbio_sample_info` (a true-preflight fixture raises,
+  by design, until its accessions are set).
 
 ### Changed
 
+- Reorganized test data into `tests/data/legacy/` (legacy omnibus CSVs) and
+  `tests/data/native/` (native SQLite files and snapshots); renamed four
+  real-world-named good CSVs to the `good_` convention and the
+  reject-by-design pre-v101-replicates CSV to an `unsupported_` prefix so it
+  is excluded from the good_ sweep.
+- Collapsed `get_illumina_sample_info` and `get_pacbio_sample_info` onto one
+  parameterized helper keyed by a `PlatformSpecificSampleKind` (`illumina` /
+  `pacbio` / `tellseq`), deriving each kind's table, primary-key column, and
+  run view by naming convention rather than a hand-maintained lookup.
+- Renamed `update_lane`'s `platform` parameter to `sample_kind` and its
+  internal lane-target lookup to the Illumina-platform sample kinds
+  (`illumina`, `tellseq`), correcting the prior labelling of TellSeq (a library
+  prep, not a platform) as a platform. **Breaking:** callers passing
+  `platform=` by keyword must switch to `sample_kind=`.
 - Restructured the repository into a `src/run_preflight/` package layout, with
   the SQL schema living inside the package.
 - Switched the test runner from `unittest` to `pytest`.
@@ -83,6 +144,19 @@ until the first release is tagged.
 
 ### Fixed
 
+- Schema patch files under `sql/patches/` are now included in the built
+  package, so migrations apply from an installed wheel rather than only from an
+  editable checkout.
+- Schema patches now apply atomically: each patch body and its `user_version`
+  stamp run in one transaction, so a patch failing part-way rolls back instead
+  of stranding a half-migrated database that re-fails on every later open.
+- The database snapshot used by the drift and native-file guards now captures
+  each table's normalized definition, so CHECK, COLLATE, and table-level
+  constraints are compared rather than silently ignored.
+- Reconstruction now emits tabular Data rows in a deterministic lane-major
+  order (by `Lane`, then insertion order), matching the metapool writer's
+  layout. Previously multi-lane sheets round-tripped with samples grouped
+  and their lanes adjacent, which differed from the source row order.
 - Narrowed `cursor.lastrowid` handling at INSERT sites to eliminate Pyright
   `reportArgumentType` warnings.
 
