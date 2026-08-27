@@ -1,11 +1,16 @@
 """run_preflight — SQLite-backed representation of a sequencing run preflight."""
 
 from .db import (
+    AmpliconBarcodeRosterEntry,
     IlluminaSampleRow,
+    KatharoseqSampleInfo,
     PacbioSampleRow,
     PlatformSampleInfo,
+    add_katharoseq_sample,
     create_db,
+    get_amplicon_barcode_roster,
     get_illumina_sample_info,
+    get_katharoseq_sample_info,
     get_pacbio_sample_info,
 )
 from .file_io import open_db_file, save_bclconvert_v1_csv, save_db_file
@@ -29,10 +34,15 @@ from .updates import (
 
 __all__ = [
     "create_db",
+    "AmpliconBarcodeRosterEntry",
     "IlluminaSampleRow",
+    "KatharoseqSampleInfo",
     "PacbioSampleRow",
     "PlatformSampleInfo",
+    "add_katharoseq_sample",
+    "get_amplicon_barcode_roster",
     "get_illumina_sample_info",
+    "get_katharoseq_sample_info",
     "get_pacbio_sample_info",
     "open_db_file",
     "open_file",

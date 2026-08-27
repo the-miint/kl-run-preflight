@@ -159,11 +159,27 @@ PLATFORM_ILLUMINA = "Illumina"
 SEQUENCER_PACBIO_REVIO = "Pacbio_Revio"
 SEQUENCER_UNKNOWN = "Unknown"
 
+# assay_type reference value for the EMP 16S amplicon prep template.
+ASSAY_AMPLICON = "Amplicon"
+
+# Internal registry label + version for the flat amplicon prep template. The
+# sheet carries no SheetType/SheetVersion of its own (unlike the omnibus sheets),
+# so these tag the format in legacy_samplesheet_format and route reconstruction.
+SHEET_TYPE_AMPLICON = "amplicon"
+SHEET_VERSION_AMPLICON = 1
+
+# EMP V4 forward primer (515F). Its presence marks the EMP 515f-barcoded protocol,
+# whose Golay set is the reverse-complemented "515rcbc" set — i.e. the demux must
+# treat the barcodes as reverse-complemented (barcodes_are_rc = True). Interim
+# signal pending typed target_gene/target_subfragment (see
+# docs/amplicon-prep-template-schema-gaps.md, proposals 2 and 4).
+EMP_515F_PRIMER = "GTGYCAGCMGCCGCGGTAA"
+
 # The platform-specific per-sample kinds, one per ``<kind>_sample`` table.
-# tellseq is a library prep sequenced on Illumina, not a platform of its own;
-# each member is the lowercase table prefix from which the table, primary-key
-# column, and run view names are derived by convention.
-PlatformSpecificSampleKind = Literal["illumina", "pacbio", "tellseq"]
+# tellseq and amplicon are library preps sequenced on Illumina, not platforms of
+# their own; each member is the lowercase table prefix from which the table,
+# primary-key column, and run view names are derived by convention.
+PlatformSpecificSampleKind = Literal["illumina", "pacbio", "tellseq", "amplicon"]
 
 
 # ---------------------------------------------------------------------------
