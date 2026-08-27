@@ -1,5 +1,6 @@
 {
   "data": {
+    "amplicon_sample": [],
     "assay_type": [
       [
         1,
@@ -138,7 +139,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         10,
@@ -148,7 +150,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         11,
@@ -158,7 +161,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         12,
@@ -168,7 +172,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         13,
@@ -178,7 +183,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         14,
@@ -188,7 +194,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         15,
@@ -198,7 +205,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         16,
@@ -208,7 +216,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         2,
@@ -218,7 +227,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         3,
@@ -228,7 +238,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         4,
@@ -238,7 +249,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         5,
@@ -248,7 +260,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         6,
@@ -258,7 +271,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         7,
@@ -268,7 +282,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         8,
@@ -278,7 +293,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         9,
@@ -288,7 +304,8 @@
         2,
         1,
         null,
-        0
+        0,
+        null
       ]
     ],
     "katharoseq_sample": [],
@@ -404,6 +421,11 @@
         14,
         "pacbio_absquant",
         12
+      ],
+      [
+        15,
+        "amplicon",
+        1
       ],
       [
         2,
@@ -1613,6 +1635,7 @@
         null,
         "",
         1,
+        null,
         null
       ]
     ],
@@ -1665,6 +1688,17 @@
     "tellseq_sample": []
   },
   "indexes": {
+    "sqlite_autoindex_amplicon_sample_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "prepped_sample_idx"
+        ]
+      ],
+      "sql": "",
+      "table": "amplicon_sample"
+    },
     "sqlite_autoindex_assay_type_1": {
       "columns": [
         [
@@ -1834,6 +1868,51 @@
     }
   },
   "tables": {
+    "amplicon_sample": {
+      "columns": [
+        [
+          0,
+          "amplicon_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "prepped_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "barcode",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "amplicon_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "barcode TEXT NOT NULL",
+        "prepped_sample_idx INTEGER NOT NULL UNIQUE REFERENCES prepped_sample(prepped_sample_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
     "assay_type": {
       "columns": [
         [
@@ -2301,6 +2380,14 @@
           1,
           "0",
           0
+        ],
+        [
+          8,
+          "matrix_tube_id",
+          "TEXT",
+          0,
+          null,
+          0
         ]
       ],
       "definition": [
@@ -2309,6 +2396,7 @@
         "do_not_use BOOLEAN NOT NULL DEFAULT 0",
         "input_plate_idx INTEGER NOT NULL REFERENCES input_plate(input_plate_idx)",
         "input_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "matrix_tube_id TEXT",
         "project_idx INTEGER REFERENCES project(project_idx)",
         "sample_name TEXT",
         "sample_type_idx INTEGER NOT NULL REFERENCES sample_type(sample_type_idx)",
@@ -2367,14 +2455,6 @@
         ],
         [
           2,
-          "tube_code",
-          "TEXT",
-          0,
-          null,
-          0
-        ],
-        [
-          3,
           "number_of_cells",
           "INTEGER",
           0,
@@ -2385,8 +2465,7 @@
       "definition": [
         "input_sample_idx INTEGER PRIMARY KEY REFERENCES input_sample(input_sample_idx)",
         "number_of_cells INTEGER",
-        "rack_id TEXT",
-        "tube_code TEXT"
+        "rack_id TEXT"
       ],
       "foreign_keys": [
         [
@@ -3013,6 +3092,14 @@
           0,
           null,
           0
+        ],
+        [
+          11,
+          "flat_column_order",
+          "TEXT",
+          0,
+          null,
+          0
         ]
       ],
       "definition": [
@@ -3021,6 +3108,7 @@
         "description TEXT DEFAULT ''",
         "experiment_name TEXT NOT NULL",
         "external_run_id TEXT",
+        "flat_column_order TEXT",
         "instrument_type TEXT NOT NULL",
         "investigator_name TEXT NOT NULL DEFAULT ''",
         "legacy_format_idx INTEGER REFERENCES legacy_samplesheet_format(legacy_format_idx)",
