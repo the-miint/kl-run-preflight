@@ -15,6 +15,28 @@ until the first release is tagged.
 
 ### Added
 
+- **EMP amplicon prep-template support.** Adds the EMP amplicon prep template — a
+  flat TAB-delimited sheet (no `[Header]`/`SheetType`), a different style from the
+  sectioned omnibus sheets, whose column set/order varies between studies.
+  `legacy/flat.py` is **header-driven**: it accepts whatever columns a sheet has,
+  types the ones it recognises into their schema homes, keeps the rest verbatim in
+  the existing `legacy_extra_column`, and reconstructs in the sheet's own column
+  order (persisted on `processing_run.flat_column_order`, patch `004`) —
+  **byte-exact**, reachable through the same public entrypoints as the other
+  formats (`open_file`/`load_legacy_csv`/`save_legacy_csv`), registered as
+  `amplicon` v1 (patch `002`). Recognised columns: the Golay barcode → the new
+  `amplicon_sample` table (one per prepped_sample), `vol_extracted_elution_ul` →
+  `input_plate.elution_vol`, `sample_name`/`well`/`sample_plate`/`project_name`/
+  etc. → their existing tables, and blank/KatharoSeq → `input_sample.sample_type`
+  from the `BLANK.`/`KATHARO.` name prefix. Nothing is stored twice. A
+  `get_amplicon_barcode_roster` reader returns the per-sample `(sample_name,
+  biosample_accession, barcode, barcodes_are_rc, sample_type)` a demux consumer
+  needs (not accession-gated). Round-trip fixtures cover six real layouts (26–43
+  columns) from kl-metapool. See `docs/amplicon-prep-template-schema-gaps.md` for
+  the column→schema mapping and open normalization questions.
+- **`input_sample.matrix_tube_id`** (nullable) — the physical matrix/tube barcode,
+  moved off `katharoseq_sample.tube_code` since it is a per-sample fact, not
+  KatharoSeq-specific (schema patch `003`).
 - Nullable `smrt_cell_well_sample_id` column on `pacbio_sample` recording the SMRT Cell
   position, constrained to `<1|2>_<A-D>01` (`GLOB '[12]_[A-D]01'`), plus a nullable
   `movie_context_id` column, both surfaced by a new `run_pacbio_sample` view mirroring

@@ -455,3 +455,18 @@ def seed_pacbio_sample(
         (prs_idx, barcode_id, smrt_cell_well_sample_id),
     )
     return cur.lastrowid
+
+
+def seed_amplicon_sample(
+    conn: sqlite3.Connection,
+    prs_idx: int,
+    *,
+    barcode: str = "ACGTACGTACGT",
+) -> int:
+    """Insert one amplicon_sample row; return amplicon_sample_idx."""
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO amplicon_sample (prepped_sample_idx, barcode) VALUES (?, ?)",
+        (prs_idx, barcode),
+    )
+    return cur.lastrowid
