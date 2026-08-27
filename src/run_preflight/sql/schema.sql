@@ -311,6 +311,13 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'sample_surface_area_cm2',
      'check_has_extracted_sample_surface_area', 'syndna_pool_number');
 
+-- Format: amplicon v1. A flat TAB-delimited EMP 16S prep template (one row per
+-- sample), parsed and reconstructed by legacy/flat.py — NOT the omnibus section
+-- path, so it registers no legacy_samplesheet_view rows. The row exists so a run
+-- can be tagged (processing_run.legacy_format_idx) and reconstruction routed.
+INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
+    VALUES ('amplicon', 1);
+
 -- ============================================================
 -- Legacy Extra Columns
 -- ============================================================
@@ -360,6 +367,10 @@ CREATE TABLE input_sample (
         -- NCBI BioSample accession
     do_not_use          BOOLEAN NOT NULL DEFAULT 0,
         -- TRUE excludes the sample (and all its preps) from default fetches
+    -- physical matrix/tube barcode (nullable); the amplicon prep template's
+    -- TubeCode. Per-sample, so it lives here rather than on katharoseq_sample.
+    -- Appended last to match the ADD COLUMN patch (003) that brings v0 forward.
+    matrix_tube_id      TEXT,
     -- A sample is identified by sample_name, biosample_accession, or both
     CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)
 );
@@ -377,7 +388,11 @@ CREATE TABLE processing_run (
     legacy_format_idx    INTEGER
         REFERENCES legacy_samplesheet_format(legacy_format_idx),
         -- NULL for native DB-originated runs; non-NULL for ingested legacy files
-    external_run_id            TEXT
+    external_run_id            TEXT,
+    -- ordered tab-joined header of a flat prep template, so it reconstructs in
+    -- the sheet's own column order (NULL for non-flat runs). Appended last to
+    -- match the ADD COLUMN patch (004).
+    flat_column_order          TEXT
 );
 
 
@@ -516,6 +531,23 @@ BEGIN
     END;
 END;
 
+-- amplicon_sample: one row per (prepped_sample, lane) for EMP-style 16S runs
+-- carrying an in-line Golay barcode (illumina_sample models i5/i7 dual-index,
+-- not in-line barcodes). `barcode` is the barcode SEQUENCE itself, not a label:
+-- the downstream Qiita golay-demux builds its decode cloud from the sequence.
+-- barcodes_are_rc is run-level (illumina_run), the EMP convention. Controls
+-- (extraction_blank, katharoseq_cells_positive_control) carry a barcode too.
+-- One row per prepped_sample carrying its in-line Golay barcode SEQUENCE (the
+-- one field that is genuinely per-amplicon-sample; the primer/linker are
+-- run-level and stay verbatim). Mirrors pacbio_sample's one-per-prepped_sample
+-- shape.
+CREATE TABLE amplicon_sample (
+    amplicon_sample_idx      INTEGER PRIMARY KEY AUTOINCREMENT,
+    prepped_sample_idx   INTEGER NOT NULL UNIQUE
+        REFERENCES prepped_sample(prepped_sample_idx),
+    barcode                 TEXT NOT NULL
+);
+
 -- Lane uniformity: within the database, every row's lane is either
 -- uniformly NULL (CSV had no Lane column) or uniformly non-NULL (CSV
 -- had a Lane column with a value on every row).  Mixed states cannot
@@ -589,7 +621,6 @@ CREATE TABLE katharoseq_sample (
     input_sample_idx         INTEGER PRIMARY KEY
         REFERENCES input_sample(input_sample_idx),
     rack_id                 TEXT,
-    tube_code               TEXT,
     number_of_cells         INTEGER
 );
 

@@ -51,6 +51,7 @@ CATEGORIES: dict[str, dict] = {
             "illumina_sample",
             "tellseq_sample",
             "pacbio_sample",
+            "amplicon_sample",
         ],
         "x": 720,
         "color": "#f778ba",

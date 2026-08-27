@@ -1,5 +1,6 @@
 {
   "data": {
+    "amplicon_sample": [],
     "assay_type": [
       [
         1,
@@ -672,7 +673,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         10,
@@ -682,7 +684,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         11,
@@ -692,7 +695,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         12,
@@ -702,7 +706,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         13,
@@ -712,7 +717,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         14,
@@ -722,7 +728,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         15,
@@ -732,7 +739,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         16,
@@ -742,7 +750,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         17,
@@ -752,7 +761,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         18,
@@ -762,7 +772,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         19,
@@ -772,7 +783,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         2,
@@ -782,7 +794,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         20,
@@ -792,7 +805,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         21,
@@ -802,7 +816,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         22,
@@ -812,7 +827,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         23,
@@ -822,7 +838,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         24,
@@ -832,7 +849,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         25,
@@ -842,7 +860,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         26,
@@ -852,7 +871,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         27,
@@ -862,7 +882,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         28,
@@ -872,7 +893,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         29,
@@ -882,7 +904,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         3,
@@ -892,7 +915,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         30,
@@ -902,7 +926,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         31,
@@ -912,7 +937,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         32,
@@ -922,7 +948,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         33,
@@ -932,7 +959,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         34,
@@ -942,7 +970,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         35,
@@ -952,7 +981,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         36,
@@ -962,7 +992,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         37,
@@ -972,7 +1003,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         38,
@@ -982,7 +1014,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         39,
@@ -992,7 +1025,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         4,
@@ -1002,7 +1036,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         40,
@@ -1012,7 +1047,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         41,
@@ -1022,7 +1058,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         42,
@@ -1032,7 +1069,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         43,
@@ -1042,7 +1080,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         44,
@@ -1052,7 +1091,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         45,
@@ -1062,7 +1102,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         46,
@@ -1072,7 +1113,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         47,
@@ -1082,7 +1124,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         48,
@@ -1092,7 +1135,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         49,
@@ -1102,7 +1146,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         5,
@@ -1112,7 +1157,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         50,
@@ -1122,7 +1168,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         51,
@@ -1132,7 +1179,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         52,
@@ -1142,7 +1190,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         53,
@@ -1152,7 +1201,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         54,
@@ -1162,7 +1212,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         55,
@@ -1172,7 +1223,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         56,
@@ -1182,7 +1234,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         57,
@@ -1192,7 +1245,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         58,
@@ -1202,7 +1256,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         59,
@@ -1212,7 +1267,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         6,
@@ -1222,7 +1278,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         60,
@@ -1232,7 +1289,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         61,
@@ -1242,7 +1300,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         62,
@@ -1252,7 +1311,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         63,
@@ -1262,7 +1322,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         64,
@@ -1272,7 +1333,8 @@
         null,
         2,
         null,
-        0
+        0,
+        null
       ],
       [
         65,
@@ -1282,7 +1344,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         66,
@@ -1292,7 +1355,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         67,
@@ -1302,7 +1366,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         68,
@@ -1312,7 +1377,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         69,
@@ -1322,7 +1388,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         7,
@@ -1332,7 +1399,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         70,
@@ -1342,7 +1410,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         71,
@@ -1352,7 +1421,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         72,
@@ -1362,7 +1432,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         73,
@@ -1372,7 +1443,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         74,
@@ -1382,7 +1454,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         75,
@@ -1392,7 +1465,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         76,
@@ -1402,7 +1476,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         77,
@@ -1412,7 +1487,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         78,
@@ -1422,7 +1498,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         79,
@@ -1432,7 +1509,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         8,
@@ -1442,7 +1520,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         80,
@@ -1452,7 +1531,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         81,
@@ -1462,7 +1542,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         82,
@@ -1472,7 +1553,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         83,
@@ -1482,7 +1564,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         84,
@@ -1492,7 +1575,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         85,
@@ -1502,7 +1586,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         86,
@@ -1512,7 +1597,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         87,
@@ -1522,7 +1608,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         88,
@@ -1532,7 +1619,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         89,
@@ -1542,7 +1630,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         9,
@@ -1552,7 +1641,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         90,
@@ -1562,7 +1652,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         91,
@@ -1572,7 +1663,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         92,
@@ -1582,7 +1674,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         93,
@@ -1592,7 +1685,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         94,
@@ -1602,7 +1696,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         95,
@@ -1612,7 +1707,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         96,
@@ -1622,7 +1718,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ]
     ],
     "katharoseq_sample": [],
@@ -1657,6 +1754,11 @@
         14,
         "pacbio_absquant",
         12
+      ],
+      [
+        15,
+        "amplicon",
+        1
       ],
       [
         2,
@@ -4161,6 +4263,7 @@
         null,
         "",
         13,
+        null,
         null
       ]
     ],
@@ -4780,6 +4883,17 @@
     ]
   },
   "indexes": {
+    "sqlite_autoindex_amplicon_sample_1": {
+      "columns": [
+        [
+          0,
+          1,
+          "prepped_sample_idx"
+        ]
+      ],
+      "sql": "",
+      "table": "amplicon_sample"
+    },
     "sqlite_autoindex_assay_type_1": {
       "columns": [
         [
@@ -4949,6 +5063,51 @@
     }
   },
   "tables": {
+    "amplicon_sample": {
+      "columns": [
+        [
+          0,
+          "amplicon_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "prepped_sample_idx",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "barcode",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "amplicon_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "barcode TEXT NOT NULL",
+        "prepped_sample_idx INTEGER NOT NULL UNIQUE REFERENCES prepped_sample(prepped_sample_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
     "assay_type": {
       "columns": [
         [
@@ -5416,6 +5575,14 @@
           1,
           "0",
           0
+        ],
+        [
+          8,
+          "matrix_tube_id",
+          "TEXT",
+          0,
+          null,
+          0
         ]
       ],
       "definition": [
@@ -5424,6 +5591,7 @@
         "do_not_use BOOLEAN NOT NULL DEFAULT 0",
         "input_plate_idx INTEGER NOT NULL REFERENCES input_plate(input_plate_idx)",
         "input_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "matrix_tube_id TEXT",
         "project_idx INTEGER REFERENCES project(project_idx)",
         "sample_name TEXT",
         "sample_type_idx INTEGER NOT NULL REFERENCES sample_type(sample_type_idx)",
@@ -5482,14 +5650,6 @@
         ],
         [
           2,
-          "tube_code",
-          "TEXT",
-          0,
-          null,
-          0
-        ],
-        [
-          3,
           "number_of_cells",
           "INTEGER",
           0,
@@ -5500,8 +5660,7 @@
       "definition": [
         "input_sample_idx INTEGER PRIMARY KEY REFERENCES input_sample(input_sample_idx)",
         "number_of_cells INTEGER",
-        "rack_id TEXT",
-        "tube_code TEXT"
+        "rack_id TEXT"
       ],
       "foreign_keys": [
         [
@@ -6128,6 +6287,14 @@
           0,
           null,
           0
+        ],
+        [
+          11,
+          "flat_column_order",
+          "TEXT",
+          0,
+          null,
+          0
         ]
       ],
       "definition": [
@@ -6136,6 +6303,7 @@
         "description TEXT DEFAULT ''",
         "experiment_name TEXT NOT NULL",
         "external_run_id TEXT",
+        "flat_column_order TEXT",
         "instrument_type TEXT NOT NULL",
         "investigator_name TEXT NOT NULL DEFAULT ''",
         "legacy_format_idx INTEGER REFERENCES legacy_samplesheet_format(legacy_format_idx)",

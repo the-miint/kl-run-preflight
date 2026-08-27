@@ -17,6 +17,12 @@ from ..db import (
     populate_db,
 )
 from ..file_io import open_db_file, save_db_file
+from .flat import (
+    load_flat_amplicon,
+    looks_like_flat_amplicon,
+    run_is_flat_amplicon,
+    save_flat_amplicon,
+)
 from .parser import parse_omnibus
 from .reconstruct import reconstruct_omnibus
 from .validate import validate_omnibus
@@ -60,6 +66,12 @@ def load_legacy_csv(csv_path: str) -> sqlite3.Connection:
     Raises:
         ValueError: If the CSV fails validation against the format registry.
     """
+    # The flat amplicon prep template is a legacy sheet too, but a different
+    # (tab-delimited, section-less) style — route it to its own loader so it is
+    # reachable through the same public entrypoint as the omnibus formats.
+    if looks_like_flat_amplicon(csv_path):
+        return load_flat_amplicon(csv_path)
+
     # Build a fresh in-memory DB and tear it down on any downstream error
     conn = create_db(":memory:")
     try:
@@ -97,6 +109,12 @@ def save_legacy_csv(conn: sqlite3.Connection, csv_path: str) -> None:
     """
     # Confirm exactly one processing run before reconstructing
     run_idx = get_single_run_idx(conn)
+
+    # The flat amplicon format reconstructs to a tab-delimited prep template,
+    # not the omnibus CSV — route it to its own writer.
+    if run_is_flat_amplicon(conn):
+        save_flat_amplicon(conn, csv_path)
+        return
 
     # Legacy CSV's QiitaID column has no NULL representation; a NULL
     # external_project_id would silently round-trip as a blank cell.

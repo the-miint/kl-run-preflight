@@ -15,6 +15,7 @@ from typing import NamedTuple, get_args
 from .legacy import LegacyExtraColumnWarning
 from .migrate import get_latest_version
 from .constants import (
+    EMP_515F_PRIMER,
     COL_BARCODE_ID,
     COL_CONTAINS_REPLICATES,
     COL_EXTRACTED_SAMPLE_MASS,
@@ -833,6 +834,108 @@ def get_pacbio_sample_info(
     return _get_platform_specific_sample_info(
         conn, PacbioSampleRow, include_do_not_use=include_do_not_use
     )
+
+
+class KatharoseqSampleInfo(NamedTuple):
+    """One katharoseq positive-control sample's titration facts.
+
+    Keyed by input_sample (a control is a plate-level input_sample, not a
+    prepped_sample). ``number_of_cells`` is the known input for the
+    read-count-vs-cells curve KatharoSeq fits.
+    """
+
+    input_sample_idx: int
+    sample_name: str
+    number_of_cells: int | None
+    rack_id: str | None
+
+
+def add_katharoseq_sample(
+    conn: sqlite3.Connection,
+    input_sample_idx: int,
+    *,
+    number_of_cells: int | None,
+    rack_id: str | None = None,
+) -> None:
+    """Record the KatharoSeq titration facts for one control input_sample.
+
+    Makes a KatharoSeq run explicit: the input_sample should already be typed
+    ``katharoseq_cells_positive_control``. The tube barcode lives on
+    ``input_sample.matrix_tube_id``, not here. Does not commit; the caller owns
+    the transaction (matching the populate/seed helpers).
+    """
+    conn.execute(
+        "INSERT INTO katharoseq_sample "
+        "(input_sample_idx, rack_id, number_of_cells) "
+        "VALUES (?, ?, ?)",
+        (input_sample_idx, rack_id, number_of_cells),
+    )
+
+
+class AmpliconBarcodeRosterEntry(NamedTuple):
+    """One sample's row in the Golay barcode roster a demux consumer needs.
+
+    sample_name / biosample_accession are the JOIN KEYS to the consumer's own
+    identity (Qiita resolves biosample_accession -> its prep_sample_idx);
+    barcode is the Golay sequence; sample_type is standard/blank/katharoseq.
+    """
+
+    sample_name: str | None
+    biosample_accession: str | None
+    barcode: str
+    barcodes_are_rc: bool
+    sample_type: str
+
+
+def get_amplicon_barcode_roster(
+    conn: sqlite3.Connection,
+) -> list[AmpliconBarcodeRosterEntry]:
+    """Per-sample Golay barcode roster, ordered by amplicon_sample_idx.
+
+    NOT accession-gated (unlike get_amplicon_sample_info): a prep-template-only DB
+    whose accessions are not yet assigned still yields a roster, because demux
+    needs only the barcode plus a join key — so this is the reader a golay-demux
+    consumer calls.
+
+    barcodes_are_rc is derived from the assay: an EMP 515f forward primer marks the
+    reverse-complemented 515rcbc Golay set (True). The primer is kept verbatim
+    (it is run-level, not a per-sample typed field), so it is read from
+    legacy_extra_column. Interim signal pending typed target_gene/target_subfragment
+    (see the schema-gaps note)."""
+    cur = conn.execute(
+        "SELECT i.sample_name, i.biosample_accession, a.barcode, st.name, lec.column_value "
+        "FROM amplicon_sample a "
+        "JOIN prepped_sample p ON a.prepped_sample_idx = p.prepped_sample_idx "
+        "JOIN compression_sample c "
+        "  ON p.compression_sample_idx = c.compression_sample_idx "
+        "JOIN input_sample i ON c.input_sample_idx = i.input_sample_idx "
+        "JOIN sample_type st ON i.sample_type_idx = st.sample_type_idx "
+        "LEFT JOIN legacy_extra_column lec "
+        "  ON lec.prepped_sample_idx = a.prepped_sample_idx AND lec.column_name = 'primer' "
+        "ORDER BY a.amplicon_sample_idx"
+    )
+    return [
+        AmpliconBarcodeRosterEntry(
+            sample_name, biosample_accession, barcode,
+            primer == EMP_515F_PRIMER, sample_type,
+        )
+        for sample_name, biosample_accession, barcode, sample_type, primer
+        in cur.fetchall()
+    ]
+
+
+def get_katharoseq_sample_info(
+    conn: sqlite3.Connection,
+) -> list[KatharoseqSampleInfo]:
+    """Return one row per katharoseq_sample, joined to its input_sample name,
+    ordered by input_sample_idx."""
+    cur = conn.execute(
+        "SELECT k.input_sample_idx, ins.sample_name, k.number_of_cells, k.rack_id "
+        "FROM katharoseq_sample k "
+        "JOIN input_sample ins ON k.input_sample_idx = ins.input_sample_idx "
+        "ORDER BY k.input_sample_idx"
+    )
+    return [KatharoseqSampleInfo(*row) for row in cur.fetchall()]
 
 
 def get_illumina_sample_rows(
