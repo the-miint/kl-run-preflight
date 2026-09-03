@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 import unittest
 
+from run_preflight.constants import IN_MEMORY_PATH
 from run_preflight.db import create_db
 
 from . import _helpers
@@ -24,7 +25,7 @@ def _setup_run_and_sample(conn: sqlite3.Connection) -> tuple[int, int]:
 class TestRunCapabilityViews(unittest.TestCase):
     def setUp(self):
         # Create an in-memory DB with the full schema
-        self.conn = create_db(":memory:")
+        self.conn = create_db(IN_MEMORY_PATH)
         self.run_idx, self.prs_idx = _setup_run_and_sample(self.conn)
 
     def tearDown(self):
@@ -181,7 +182,7 @@ class TestRunCapabilityViews(unittest.TestCase):
 
 class TestRunDerivedCapability(unittest.TestCase):
     def setUp(self):
-        self.conn = create_db(":memory:")
+        self.conn = create_db(IN_MEMORY_PATH)
         self.run_idx, self.prs_idx = _setup_run_and_sample(self.conn)
 
     def tearDown(self):

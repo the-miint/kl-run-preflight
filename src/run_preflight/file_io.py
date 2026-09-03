@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import sqlite3
+import tempfile
 from pathlib import Path
 
 from .constants import (
@@ -15,12 +17,52 @@ from .constants import (
     COL_SAMPLE_NAME,
     COL_SAMPLE_PROJECT,
     FIELD_FILE_FORMAT_VERSION,
+    IN_MEMORY_PATH,
     SECTION_DATA,
     SECTION_HEADER,
     SECTION_SETTINGS,
+    SQLITE_MAGIC,
 )
 from .db import get_illumina_sample_rows, get_illumina_settings
 from .migrate import apply_patches
+
+# mkstemp creates its file at 0600; outputs are restored to the mode a
+# plain write produces under a standard umask.
+_OUTPUT_FILE_MODE = 0o644
+
+
+def atomic_write(path: str, data: bytes | str) -> None:
+    """Write *data* to *path* without ever leaving it partly written.
+
+    The content is staged in a temporary file in the target's own
+    directory and renamed into place, which is atomic within a
+    filesystem. A failure at any point before the rename leaves an
+    existing file at *path* untouched.
+
+    Args:
+        path: Filesystem path to write. Any existing file is replaced.
+        data: Payload to write, as bytes or as text.
+    """
+    target = Path(path)
+
+    # Stage beside the target so the rename stays on one filesystem
+    handle, tmp_name = tempfile.mkstemp(
+        dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
+    )
+    os.close(handle)
+    tmp_path = Path(tmp_name)
+
+    # Fill the staged file, give it the normal output mode, then swap it in
+    try:
+        if isinstance(data, bytes):
+            tmp_path.write_bytes(data)
+        else:
+            tmp_path.write_text(data)
+        os.chmod(tmp_path, _OUTPUT_FILE_MODE)
+        tmp_path.replace(target)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def save_bclconvert_v1_csv(
@@ -60,7 +102,7 @@ def save_bclconvert_v1_csv(
 
     # Format the CSV text in a DB-free path, then write it out
     text = _format_bclconvert_v1(settings, data_rows, include_sample_name)
-    Path(csv_path).write_text(text)
+    atomic_write(csv_path, text)
 
 
 def _format_bclconvert_v1(
@@ -109,14 +151,66 @@ def _format_bclconvert_v1(
     return output.getvalue()
 
 
-def open_db_file(
+def load_db_bytes(
+    blob: bytes,
+    patches_dir: Path | None = None,
+) -> sqlite3.Connection:
+    """Load a serialized SQLite database into a detached in-memory connection.
+
+    The returned connection is independent of wherever *blob* came from:
+    it sits at the latest schema version with foreign-key enforcement
+    enabled, and nothing done to it reaches the original bytes. Caller
+    owns and must close it, and must call output_db_file or
+    output_db_bytes to persist any change.
+
+    Args:
+        blob: The full contents of a SQLite database file.
+        patches_dir: Directory to scan for patches.  Defaults to the
+            built-in ``sql/patches/`` directory.
+
+    Returns:
+        sqlite3.Connection: A detached in-memory connection at the
+        latest schema version.
+
+    Raises:
+        ValueError: If *blob* does not carry the SQLite file header.
+        sqlite3.DatabaseError: If *blob* carries the header but is
+            truncated or otherwise unreadable.
+        SchemaVersionTooNewError: If the schema version exceeds the
+            shipped patch set.
+    """
+    # Reject non-database input up front so the failure names the real
+    # problem instead of surfacing as MemoryError or a mid-patch read error
+    if not blob.startswith(SQLITE_MAGIC):
+        raise ValueError("blob is not a SQLite database (missing file header)")
+
+    # Deserialize into a private in-memory DB and bring it to the latest
+    # schema version; the patches land in memory, leaving *blob* untouched
+    conn = sqlite3.connect(IN_MEMORY_PATH)
+    try:
+        conn.deserialize(blob)
+        conn.execute("PRAGMA foreign_keys = ON")
+        apply_patches(conn, patches_dir)
+    except Exception:
+        conn.close()
+        raise
+    return conn
+
+
+def load_db_file(
     db_path: str,
     patches_dir: Path | None = None,
 ) -> sqlite3.Connection:
-    """Open an existing SQLite database file and apply any pending patches.
+    """Load a SQLite database file into a detached in-memory connection.
 
-    Enables foreign-key enforcement, checks the schema version, and
-    applies patches as needed.
+    The file at *db_path* is read once and never written: pending schema
+    patches are applied to the in-memory copy, so a file behind the patch
+    set stays that way on disk until the caller persists the connection
+    with output_db_file. Caller owns and must close the connection.
+
+    NB: Reading the raw bytes bypasses SQLite crash recovery, so a hot
+    journal or WAL sidecar left by a crashed writer is ignored and the
+    database loads in its un-rolled-back state.
 
     Args:
         db_path: Filesystem path to the SQLite database file.
@@ -124,29 +218,54 @@ def open_db_file(
             built-in ``sql/patches/`` directory.
 
     Returns:
-        sqlite3.Connection: An open connection at the latest schema
-        version with foreign-key enforcement enabled.
+        sqlite3.Connection: A detached in-memory connection at the
+        latest schema version.
+
+    Raises:
+        FileNotFoundError: If *db_path* does not exist.
+        ValueError: If the file is not a SQLite database.
+        sqlite3.DatabaseError: If the file carries the SQLite header but
+            is truncated or otherwise unreadable.
+        SchemaVersionTooNewError: If the schema version exceeds the
+            shipped patch set.
     """
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    apply_patches(conn, patches_dir)
+    blob = Path(db_path).read_bytes()
+    conn = load_db_bytes(blob, patches_dir)
     return conn
 
 
-def save_db_file(conn: sqlite3.Connection, db_path: str) -> None:
-    """Serialize a live SQLite connection to a database file.
+def output_db_bytes(conn: sqlite3.Connection) -> bytes:
+    """Serialize a live SQLite connection to database file bytes.
 
     Works for both in-memory and file-backed source connections. The
-    caller retains ownership of *conn*. The copy is verbatim, including
-    any do_not_use-flagged records.
+    caller retains ownership of *conn*. The image is verbatim, including
+    any do_not_use-flagged records and any changes not yet committed.
+
+    Args:
+        conn: An open SQLite source connection.
+
+    Returns:
+        bytes: The contents of an equivalent SQLite database file.
+    """
+    blob = conn.serialize()
+    return blob
+
+
+def output_db_file(conn: sqlite3.Connection, db_path: str) -> None:
+    """Write a live SQLite connection out as a SQLite database file.
+
+    This is the durability boundary for the connections the load entry
+    points return: those are detached in-memory copies, so their contents
+    reach disk only through this call. Works for both in-memory and
+    file-backed source connections, and the caller retains ownership of
+    *conn*. The copy is verbatim, including any do_not_use-flagged
+    records.
 
     Args:
         conn: An open SQLite source connection.
         db_path: Filesystem path at which the database file will be
-            created. Any existing file is overwritten.
+            created. Any existing file is replaced atomically, and
+            survives unchanged if the write fails.
     """
-    target = sqlite3.connect(db_path)
-    try:
-        conn.backup(target)
-    finally:
-        target.close()
+    blob = output_db_bytes(conn)
+    atomic_write(db_path, blob)

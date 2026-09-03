@@ -8,6 +8,18 @@ defined in exactly one place.
 from typing import Literal
 
 # ---------------------------------------------------------------------------
+# SQLite path sentinels and file format markers
+# ---------------------------------------------------------------------------
+
+# Passed to sqlite3.connect to request a transient database held in RAM
+# rather than a file on disk.
+IN_MEMORY_PATH = ":memory:"
+
+# SQLite database files begin with this 16-byte magic header (see https://sqlite.org/fileformat.html)
+SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+# ---------------------------------------------------------------------------
 # Section names
 # ---------------------------------------------------------------------------
 

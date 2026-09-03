@@ -11,11 +11,12 @@ from run_preflight import (
     create_db,
     load_legacy_csv,
     migrate_legacy_csv_to_db_file,
-    open_db_file,
+    load_db_file,
     save_legacy_csv,
     save_legacy_sample_id_map_csv,
     set_input_sample_do_not_use,
 )
+from run_preflight.constants import IN_MEMORY_PATH
 from run_preflight.legacy import LegacyExtraColumnWarning
 from run_preflight.legacy.roundtrip import roundtrip_via_api
 from run_preflight.legacy.validate import validate_omnibus
@@ -41,8 +42,8 @@ class TestLegacyApi(unittest.TestCase):
         db_path = self.tmp_dir / "loaded.db"
         migrate_legacy_csv_to_db_file(str(GOOD_CSV), str(db_path))
 
-        # Inspect the populated DB via the public open_db_file entry point
-        conn = open_db_file(str(db_path))
+        # Inspect the populated DB via the public load_db_file entry point
+        conn = load_db_file(str(db_path))
         try:
             run_idxs = [
                 row[0] for row in conn.execute("SELECT run_idx FROM processing_run")
@@ -66,6 +67,21 @@ class TestLegacyApi(unittest.TestCase):
             migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
+    def test_migrate_legacy_csv_to_db_file_preserves_existing_file_on_failure(self):
+        # A load failure must not destroy whatever already sits at db_path;
+        # nothing was written there, so nothing may be removed
+        bad_csv = self.tmp_dir / "bad.csv"
+        bad_csv.write_text(
+            "[Header],,,\nSheetType,bogus_type,,\nSheetVersion,99,,\n,,,\n"
+        )
+        db_path = self.tmp_dir / "occupied.db"
+        db_path.write_bytes(b"pre-existing content the caller still needs")
+        before = db_path.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, r"Unknown format.*bogus_type"):
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
+        self.assertEqual(db_path.read_bytes(), before)
+
     def test_save_legacy_csv(self):
         # The written CSV should byte-equal the (normalized) original — a
         # weaker check (e.g. "starts with [Header]") would not catch
@@ -76,7 +92,7 @@ class TestLegacyApi(unittest.TestCase):
     def test_save_legacy_csv_no_runs(self):
         # Empty DB has the schema but no processing_run rows; the error
         # must report the actual found count (0)
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             out_path = self.tmp_dir / "out.csv"
             with self.assertRaisesRegex(
@@ -129,7 +145,7 @@ class TestLegacyApi(unittest.TestCase):
         # Settings keys may legitimately be absent: the reconstructor's
         # _write_header_kv NULL-skips on output, so missing Settings keys
         # round-trip cleanly. Header keys, by contrast, must remain required.
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             sections = {
                 "Header": {
@@ -171,7 +187,7 @@ class TestLegacyApi(unittest.TestCase):
         # omnibus_illumina_settings, all three keys (ReverseComplement,
         # MaskShortReads, OverrideCycles) are valid for v90 and v0 too,
         # not only v100/v101.
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             sections = {
                 "Header": {
@@ -196,7 +212,7 @@ class TestLegacyApi(unittest.TestCase):
         # SheetType drives format dispatch; absence must produce a clear
         # field-specific error rather than the misleading "Unknown
         # format:  v0" that the previous ("", 0) default lookup yielded.
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             sections = {"Header": {"SheetVersion": "101"}}
             errors = validate_omnibus(conn, sections)
@@ -208,7 +224,7 @@ class TestLegacyApi(unittest.TestCase):
     def test_validate_omnibus_errors_on_missing_sheet_version(self):
         # SheetVersion is also required for format dispatch; absence must
         # produce a clear field-specific error rather than a silent v0 default
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             sections = {"Header": {"SheetType": "standard_metag"}}
             errors = validate_omnibus(conn, sections)
@@ -220,7 +236,7 @@ class TestLegacyApi(unittest.TestCase):
     def test_validate_omnibus_errors_on_missing_header_section(self):
         # An entirely-missing [Header] section surfaces as both field-level
         # errors rather than a dedicated section-missing error
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             errors = validate_omnibus(conn, {})
         finally:
@@ -290,7 +306,7 @@ class TestLegacyApi(unittest.TestCase):
         # so the constant-preservation check must not fire for PacBio
         # even when a deviant value is supplied. Other errors may appear
         # (e.g. missing sections), but not the constant-preservation one.
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             sections = {
                 "Header": {
@@ -313,7 +329,7 @@ class TestSaveLegacySampleIdMapCsv(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp_dir = Path(self._tmp.name)
         self.out_path = self.tmp_dir / "out.csv"
-        self.conn = create_db(":memory:")
+        self.conn = create_db(IN_MEMORY_PATH)
 
     def tearDown(self):
         self.conn.close()

@@ -65,6 +65,7 @@ from .constants import (
     FIELD_REVERSE_COMPLEMENT,
     FIELD_SHEET_TYPE,
     FIELD_SHEET_VERSION,
+    IN_MEMORY_PATH,
     PLATFORM_ILLUMINA,
     PLATFORM_PACBIO,
     PlatformSpecificSampleKind,
@@ -137,13 +138,21 @@ def create_db(db_path: str) -> sqlite3.Connection:
 
     Args:
         db_path: Filesystem path where the SQLite database file will be
-            created. Any existing file at this path will be overwritten by
-            SQLite's default behaviour.
+            created, or ``:memory:`` for a transient database. An
+            existing file is rejected rather than reused or overwritten.
 
     Returns:
         sqlite3.Connection: An open connection to the new database with
         foreign-key enforcement enabled.
+
+    Raises:
+        FileExistsError: If a file already exists at *db_path*.
     """
+    # The schema DDL is unguarded, so reusing an existing file would either
+    # collide with its tables or graft a second schema onto foreign data
+    if db_path != IN_MEMORY_PATH and Path(db_path).exists():
+        raise FileExistsError(f"refusing to overwrite existing file: {db_path}")
+
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_load_schema_sql())

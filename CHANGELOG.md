@@ -15,6 +15,22 @@ until the first release is tagged.
 
 ### Added
 
+- `load_db_file` and `load_db_bytes`, which read a native run preflight into a
+  detached in-memory connection: pending schema patches are applied to the copy,
+  so the source file or blob is never written. Paired with `output_db_bytes`,
+  which serializes a connection to database-file bytes, they let a consumer hold
+  a run preflight as an opaque blob and decide separately whether to keep an
+  edit. Both reject input lacking the SQLite file header with a `ValueError`
+  naming the problem, rather than the `MemoryError` a raw deserialize produces;
+  input that carries the header but is truncated or otherwise unreadable gets
+  past that check and raises `sqlite3.DatabaseError`, which both entry points
+  document.
+- `SchemaVersionTooNewError`, raised when a database's schema version exceeds the
+  shipped patch set. It subclasses `ValueError`, so an existing handler still
+  catches it, but a consumer can now tell "this file came from a newer
+  run_preflight" apart from a malformed request. The neighbouring
+  "patch sequence has missing files" case stays a bare `ValueError`: it reports a
+  defect in the installed package, not a property of the caller's input.
 - Nullable `smrt_cell_well_sample_id` column on `pacbio_sample` recording the SMRT Cell
   position, constrained to `<1|2>_<A-D>01` (`GLOB '[12]_[A-D]01'`), plus a nullable
   `movie_context_id` column, both surfaced by a new `run_pacbio_sample` view mirroring
@@ -55,7 +71,7 @@ until the first release is tagged.
   `get_input_sample_project_info`) and the forward writers
   (`save_bclconvert_v1_csv`, `save_legacy_sample_id_map_csv`) exclude flagged
   samples by default and accept `include_do_not_use=True` to return them.
-  `save_legacy_csv` and `save_db_file` always include flagged records.
+  `save_legacy_csv` and `output_db_file` always include flagged records.
 - Standard Python project scaffolding: a root `.gitignore` and an installable
   `pyproject.toml` (setuptools + versioningit, generated `_version.py`,
   `environment.yml`, and a GitHub Actions CI workflow).
@@ -103,6 +119,44 @@ until the first release is tagged.
 
 ### Changed
 
+- **Breaking:** `open_db_file` is removed and `save_db_file` is renamed to
+  `output_db_file`. `open_db_file` connected directly to the caller's file and
+  committed schema patches into it, so merely reading a stored preflight rewrote
+  it — silently today, because patch `001` is the only patch and a current file
+  needs no work, and universally the day patch `002` ships. Replacing it with
+  `load_db_file` makes every load path detached and leaves `output_db_file` as
+  the one call that reaches disk. The schema upgrade is no longer sticky: a file
+  behind the patch set stays behind until someone saves it, which is the point of
+  the change rather than a side effect.
+- **Breaking:** `open_file` now returns a detached in-memory connection for both
+  input formats. Previously a legacy CSV yielded a detached connection while a
+  SQLite file yielded a file-backed one whose edits persisted without any save,
+  so a caller handling both formats could not write one correct save path.
+- `output_db_file` writes serialized bytes instead of calling `Connection.backup`.
+  `backup` retries indefinitely when the source connection holds an uncommitted
+  write transaction, which hangs the caller outright — and does so
+  uninterruptibly, since it blocks in C holding the GIL. A plain byte write has
+  no such failure mode.
+- Every file this package writes — `output_db_file`, `save_legacy_csv`,
+  `save_bclconvert_v1_csv`, and `save_legacy_sample_id_map_csv` — now goes
+  through `atomic_write`, which stages the content in a temporary file in the
+  target's own directory and renames it into place. A write that fails partway
+  leaves the caller's existing file untouched instead of truncated, so the
+  no-clobber posture that governs the load paths now covers the write paths too.
+- **Breaking:** `migrate_legacy_csv_to_db_file` no longer deletes `db_path` on
+  failure. Its cleanup ran in a `finally` that also covered the CSV load, so a
+  validation error destroyed whatever file already sat at `db_path` even though
+  nothing had been written there. With the write now atomic, a partial database
+  can never appear at that path, so the cleanup had nothing left to clean and the
+  data-loss path went with it.
+- **Breaking:** `create_db` now raises `FileExistsError` when a file already
+  exists at the requested path. Its docstring claimed an existing file "will be
+  overwritten by SQLite's default behaviour", which was untrue — `sqlite3.connect`
+  opens such a file, and the unguarded schema DDL then failed partway through with
+  a bare `table ... already exists`. The path is now refused up front, by name.
+- **Breaking:** the minimum supported Python is now 3.11, up from 3.9. The
+  detached-load implementation is built on `sqlite3.Connection.serialize` and
+  `.deserialize`, which are 3.11+.
 - Reorganized test data into `tests/data/legacy/` (legacy omnibus CSVs) and
   `tests/data/native/` (native SQLite files and snapshots); renamed four
   real-world-named good CSVs to the `good_` convention and the

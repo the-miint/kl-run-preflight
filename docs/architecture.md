@@ -54,13 +54,16 @@ implementation.
     - Internally: `db.create_db` → `db.get_section_formats` →
       `parser.parse_omnibus` → `validate.validate_omnibus` → `db.populate_db`
       (raises `ValueError` on validation failure). `migrate_legacy_csv_to_db_file`
-      then calls `file_io.save_db_file`, removing the partial DB file if any
-      step fails.
+      then calls `file_io.output_db_file`, which stages the bytes beside the
+      target and renames them into place, so `db_path` is written only on full
+      success and any file already there survives a failure unchanged.
 
 2) Write a legacy omnibus file from SQLite format:
 
-    - **Consumer call:** open the DB (`open_db_file`, or the format-detecting
-      `open_file`) then `save_legacy_csv(conn, csv_path)`.
+    - **Consumer call:** load the DB (`load_db_file`, `load_db_bytes`, or the
+      format-detecting `open_file`) then `save_legacy_csv(conn, csv_path)`. Every
+      load path returns a detached in-memory connection, so the source file is
+      never written; persisting an edit takes an explicit `output_db_file`.
     - Internally: confirm the DB holds exactly one `processing_run` (raises
       `ValueError` if zero or multiple), reject any project with a NULL
       `external_project_id`, then `reconstruct.reconstruct_omnibus` → write the
