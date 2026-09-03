@@ -6,6 +6,7 @@ import csv
 import io
 import os
 import sqlite3
+import stat
 import tempfile
 from pathlib import Path
 
@@ -26,9 +27,51 @@ from .constants import (
 from .db import get_illumina_sample_rows, get_illumina_settings
 from .migrate import apply_patches
 
-# mkstemp creates its file at 0600; outputs are restored to the mode a
-# plain write produces under a standard umask.
-_OUTPUT_FILE_MODE = 0o644
+# The mode an ordinary open() requests for a new file, before the umask
+# narrows it; mkstemp instead creates its file at 0600.
+_DEFAULT_OUTPUT_FILE_MODE = 0o666
+
+
+def _resolve_output_mode(target: Path) -> int:
+    """Determine the permissions an ordinary write to *target* would leave.
+
+    Args:
+        target: Path being written, which need not exist.
+
+    Returns:
+        int: The existing file's own mode, or for a new file the default
+        creation mode narrowed by the current umask.
+    """
+    # An existing target keeps whatever permissions it already carries
+    try:
+        target_stat = target.stat()
+    except FileNotFoundError:
+        target_stat = None
+    if target_stat is not None:
+        existing_mode = stat.S_IMODE(target_stat.st_mode)
+        return existing_mode
+
+    # A new file gets the default creation mode less the process umask,
+    # which is only readable by setting it and putting it back
+    current_umask = os.umask(0)
+    os.umask(current_umask)
+    new_mode = _DEFAULT_OUTPUT_FILE_MODE & ~current_umask
+    return new_mode
+
+
+def _require_sqlite_header(head: bytes, subject: str) -> None:
+    """Reject input that does not open with the SQLite file header.
+
+    Args:
+        head: Leading bytes of the candidate database, at least as many
+            as the header itself.
+        subject: How to name the rejected input in the message.
+
+    Raises:
+        ValueError: If *head* lacks the SQLite file header.
+    """
+    if not head.startswith(SQLITE_MAGIC):
+        raise ValueError(f"{subject} is not a SQLite database (missing file header)")
 
 
 def atomic_write(path: str, data: bytes | str) -> None:
@@ -37,7 +80,9 @@ def atomic_write(path: str, data: bytes | str) -> None:
     The content is staged in a temporary file in the target's own
     directory and renamed into place, which is atomic within a
     filesystem. A failure at any point before the rename leaves an
-    existing file at *path* untouched.
+    existing file at *path* untouched. An existing file's permissions
+    carry over to the replacement; a new file gets the permissions an
+    ordinary write would give it under the current umask.
 
     Args:
         path: Filesystem path to write. Any existing file is replaced.
@@ -52,13 +97,15 @@ def atomic_write(path: str, data: bytes | str) -> None:
     os.close(handle)
     tmp_path = Path(tmp_name)
 
-    # Fill the staged file, give it the normal output mode, then swap it in
+    # Fill the staged file, give it the mode a plain write would have
+    # produced, then swap it in
+    output_mode = _resolve_output_mode(target)
     try:
         if isinstance(data, bytes):
             tmp_path.write_bytes(data)
         else:
             tmp_path.write_text(data)
-        os.chmod(tmp_path, _OUTPUT_FILE_MODE)
+        os.chmod(tmp_path, output_mode)
         tmp_path.replace(target)
     except Exception:
         tmp_path.unlink(missing_ok=True)
@@ -181,8 +228,7 @@ def load_db_bytes(
     """
     # Reject non-database input up front so the failure names the real
     # problem instead of surfacing as MemoryError or a mid-patch read error
-    if not blob.startswith(SQLITE_MAGIC):
-        raise ValueError("blob is not a SQLite database (missing file header)")
+    _require_sqlite_header(blob, "blob")
 
     # Deserialize into a private in-memory DB and bring it to the latest
     # schema version; the patches land in memory, leaving *blob* untouched
@@ -229,7 +275,14 @@ def load_db_file(
         SchemaVersionTooNewError: If the schema version exceeds the
             shipped patch set.
     """
-    blob = Path(db_path).read_bytes()
+    # Check the header off the first read so a large non-database input
+    # is rejected by name instead of being pulled into memory first
+    with Path(db_path).open("rb") as db_handle:
+        head = db_handle.read(len(SQLITE_MAGIC))
+        _require_sqlite_header(head, db_path)
+        remainder = db_handle.read()
+    blob = head + remainder
+
     conn = load_db_bytes(blob, patches_dir)
     return conn
 
@@ -259,7 +312,7 @@ def output_db_file(conn: sqlite3.Connection, db_path: str) -> None:
     reach disk only through this call. Works for both in-memory and
     file-backed source connections, and the caller retains ownership of
     *conn*. The copy is verbatim, including any do_not_use-flagged
-    records.
+    records and any changes not yet committed.
 
     Args:
         conn: An open SQLite source connection.

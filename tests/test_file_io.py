@@ -3,7 +3,9 @@ bcl-convert v1 sample sheet writer."""
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import stat
 import tempfile
 import unittest
 import warnings
@@ -23,6 +25,7 @@ from run_preflight import (
 )
 from run_preflight.constants import IN_MEMORY_PATH, SQLITE_MAGIC
 from run_preflight.db import create_db
+from run_preflight.file_io import atomic_write
 from run_preflight.legacy import LegacyExtraColumnWarning
 
 from . import _helpers
@@ -224,6 +227,78 @@ class TestLoadAndOutputDbBytes(unittest.TestCase):
         finally:
             loaded.close()
         self.assertEqual(labels, ["uncommitted"])
+
+
+# ---------------------------------------------------------------------------
+# TestLoadDbFile
+# ---------------------------------------------------------------------------
+
+
+class TestLoadDbFile(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_load_db_file_not_a_database(self):
+        # The header is checked off the first read rather than after the
+        # whole file is in memory, and the rejection names the offending
+        # path so the caller knows which input was wrong
+        csv_path = self.tmp_dir / "not_a_db.csv"
+        csv_path.write_text("[Header],,,\nSheetType,standard_metag,,\n")
+        with self.assertRaisesRegex(ValueError, r"not_a_db\.csv is not a SQLite"):
+            load_db_file(str(csv_path))
+
+    def test_load_db_file_missing_path(self):
+        # A nonexistent path must still surface as FileNotFoundError, not
+        # as the not-a-database ValueError
+        missing = self.tmp_dir / "does_not_exist.db"
+        with self.assertRaises(FileNotFoundError):
+            load_db_file(str(missing))
+
+
+# ---------------------------------------------------------------------------
+# TestAtomicWrite
+# ---------------------------------------------------------------------------
+
+
+class TestAtomicWrite(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_atomic_write_new_file_honors_umask(self):
+        # Staging through mkstemp must not decide the output permissions:
+        # a new file gets what a plain write would have given it, so a
+        # restrictive umask is respected and a standard one is not widened
+        for test_umask, expected_mode in ((0o022, 0o644), (0o077, 0o600)):
+            with self.subTest(umask=oct(test_umask)):
+                out_path = self.tmp_dir / f"new_{test_umask:03o}.txt"
+                prior_umask = os.umask(test_umask)
+                try:
+                    atomic_write(str(out_path), "payload")
+                finally:
+                    os.umask(prior_umask)
+                actual_mode = stat.S_IMODE(out_path.stat().st_mode)
+                self.assertEqual(oct(actual_mode), oct(expected_mode))
+
+    def test_atomic_write_preserves_existing_mode(self):
+        # Replacing a file must not silently re-permission it, since the
+        # caller may have deliberately restricted or shared the target
+        out_path = self.tmp_dir / "existing.txt"
+        out_path.write_text("stale")
+        os.chmod(out_path, 0o640)
+
+        atomic_write(str(out_path), "fresh")
+
+        actual_mode = stat.S_IMODE(out_path.stat().st_mode)
+        self.assertEqual(oct(actual_mode), oct(0o640))
+        self.assertEqual(out_path.read_text(), "fresh")
 
 
 # ---------------------------------------------------------------------------

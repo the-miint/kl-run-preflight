@@ -157,6 +157,16 @@ until the first release is tagged.
 - **Breaking:** the minimum supported Python is now 3.11, up from 3.9. The
   detached-load implementation is built on `sqlite3.Connection.serialize` and
   `.deserialize`, which are 3.11+.
+- Written files now carry the permissions an ordinary write would have given
+  them: an existing file keeps its own mode, and a new one gets the default
+  creation mode narrowed by the process umask. `atomic_write` previously forced
+  every output to `0644`, which re-permissioned a deliberately restricted
+  target on overwrite and widened new files past what the caller's umask asked
+  for.
+- `load_db_file` checks the SQLite file header off its first read instead of
+  after pulling the whole file into memory, so a large non-database input is
+  rejected without the needless read. The rejection now names the offending
+  path rather than the generic `blob`.
 - Reorganized test data into `tests/data/legacy/` (legacy omnibus CSVs) and
   `tests/data/native/` (native SQLite files and snapshots); renamed four
   real-world-named good CSVs to the `good_` convention and the
