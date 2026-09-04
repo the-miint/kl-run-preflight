@@ -11,7 +11,7 @@ from pathlib import Path
 
 from typing import get_args
 
-from run_preflight.constants import PlatformSpecificSampleKind
+from run_preflight.constants import IN_MEMORY_PATH, PlatformSpecificSampleKind
 from run_preflight.db import (
     ERR_CATEGORY_INVARIANT,
     ERR_CATEGORY_MISSING_ACCESSION,
@@ -129,6 +129,38 @@ def _expected_illumina_row(sample_name: str) -> IlluminaSampleRow:
 def _expected_pacbio_row(sample_name: str) -> PacbioSampleRow:
     """Build the PacbioSampleRow _seed_pacbio produces for *sample_name*."""
     return PacbioSampleRow(f"bc_{sample_name}", None, None, None, None)
+
+
+class TestCreateDb(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_create_db_existing_file_raise_err(self):
+        # The schema DDL is unguarded, so an existing file must be refused
+        # by name rather than colliding partway through the script
+        conn = create_db(self.db_path)
+        conn.close()
+        before = Path(self.db_path).read_bytes()
+
+        with self.assertRaisesRegex(FileExistsError, r"refusing to overwrite"):
+            create_db(self.db_path)
+        self.assertEqual(Path(self.db_path).read_bytes(), before)
+
+    def test_create_db_dangling_symlink_raise_err(self):
+        # The guard tests the path itself, not what it resolves to: a link
+        # to a not-yet-existing file would otherwise be followed and a full
+        # database created through it at a place the caller never named
+        link_target = Path(self.tmpdir.name) / "not_yet_there.db"
+        link_path = Path(self.tmpdir.name) / "link.db"
+        link_path.symlink_to(link_target)
+
+        with self.assertRaisesRegex(FileExistsError, r"refusing to overwrite"):
+            create_db(str(link_path))
+        self.assertFalse(link_target.exists())
 
 
 class TestGetIlluminaSampleInfo(unittest.TestCase):
@@ -1072,7 +1104,7 @@ class TestRunPacbioSampleView(unittest.TestCase):
     """run_pacbio_sample surfaces the pacbio-specific columns."""
 
     def test_run_pacbio_sample_exposes_pacbio_columns(self):
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             cols = [r[1] for r in conn.execute("PRAGMA table_info(run_pacbio_sample)")]
         finally:
@@ -1087,7 +1119,7 @@ class TestSampleKindNamingConvention(unittest.TestCase):
     def test_sample_kind_names_match_schema(self):
         # Guards the derive-by-convention contract: adding a kind without its
         # table/idx column fails here rather than at runtime.
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         try:
             for kind in get_args(PlatformSpecificSampleKind):
                 names = sample_kind_names(kind)

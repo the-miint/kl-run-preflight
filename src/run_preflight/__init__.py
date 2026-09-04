@@ -8,14 +8,23 @@ from .db import (
     get_illumina_sample_info,
     get_pacbio_sample_info,
 )
-from .file_io import open_db_file, save_bclconvert_v1_csv, save_db_file
+from .file_io import (
+    dump_db_bytes,
+    load_db_bytes,
+    load_db_file,
+    save_bclconvert_v1_csv,
+    save_db_file,
+)
 from .legacy.api import (
+    load_file,
     load_legacy_csv,
+    load_legacy_csv_text,
     migrate_legacy_csv_to_db_file,
     open_file,
     save_legacy_csv,
     save_legacy_sample_id_map_csv,
 )
+from .migrate import SchemaVersionTooNewError
 from .updates import (
     UNCHANGED,
     set_bioproject_accession,
@@ -34,10 +43,15 @@ __all__ = [
     "PlatformSampleInfo",
     "get_illumina_sample_info",
     "get_pacbio_sample_info",
-    "open_db_file",
+    "load_db_bytes",
+    "load_db_file",
+    "load_file",
+    "load_legacy_csv_text",
     "open_file",
-    "save_bclconvert_v1_csv",
+    "dump_db_bytes",
     "save_db_file",
+    "save_bclconvert_v1_csv",
+    "SchemaVersionTooNewError",
     "load_legacy_csv",
     "save_legacy_csv",
     "save_legacy_sample_id_map_csv",

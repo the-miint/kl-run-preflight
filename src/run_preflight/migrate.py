@@ -17,6 +17,19 @@ _PATCH_PATTERN = re.compile(r"^(\d{3})_.+\.(sql|py)$")
 
 
 # ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
+class SchemaVersionTooNewError(ValueError):
+    """A database was written by a newer run_preflight than is installed.
+
+    Subclasses ValueError so a caller that does not distinguish this
+    case still catches it alongside the other bad-input errors.
+    """
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
@@ -117,8 +130,10 @@ def get_pending_patches(
         ascending version order.
 
     Raises:
+        SchemaVersionTooNewError: If the database version exceeds the
+            latest patch.
         ValueError: If a patch file is missing from the expected
-            sequence or the database version exceeds the latest patch.
+            sequence.
     """
     resolved = _resolve_patches_dir(patches_dir)
     patches = _discover_patches(resolved)
@@ -127,7 +142,7 @@ def get_pending_patches(
 
     # Check for DB newer than code
     if current > latest:
-        raise ValueError(
+        raise SchemaVersionTooNewError(
             f"Database version {current} exceeds latest patch {latest}; "
             f"update the run_preflight package"
         )
@@ -162,6 +177,12 @@ def apply_patches(
 
     Returns:
         int: The new schema version after all patches are applied.
+
+    Raises:
+        SchemaVersionTooNewError: If the database version exceeds the
+            latest patch.
+        ValueError: If a patch file is missing from the expected
+            sequence.
     """
     pending = get_pending_patches(conn, patches_dir)
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ..constants import FORMAT_TABULAR
 from ..db import get_section_formats
-from ..file_io import open_db_file, save_db_file
+from ..file_io import load_db_file, save_db_file
 from .api import load_legacy_csv, save_legacy_csv
 from .parser import (
     extract_section_name,
@@ -177,18 +177,18 @@ def roundtrip_via_api(csv_path: Path, tmp_dir: Path) -> tuple[str, str]:
     db_path = tmp_dir / f"{csv_path.stem}.db"
     out_path = tmp_dir / f"{csv_path.stem}.out.csv"
 
-    # Load into :memory: then persist to disk to exercise the full
-    # in-memory → file → reopened-conn persistence cycle
+    # Load into memory then persist to disk to exercise the full
+    # in-memory → file → loaded-back persistence cycle
     conn = load_legacy_csv(str(csv_path))
     try:
         save_db_file(conn, str(db_path))
     finally:
         conn.close()
 
-    # Reopen the on-disk DB and reconstruct the CSV from it; pull
+    # Load the on-disk DB back and reconstruct the CSV from it; pull
     # section_formats so the original can be normalized using the same
     # registry the reconstructor used
-    conn = open_db_file(str(db_path))
+    conn = load_db_file(str(db_path))
     try:
         section_formats = get_section_formats(conn)
         save_legacy_csv(conn, str(out_path))

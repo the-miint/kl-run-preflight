@@ -7,6 +7,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 
+from run_preflight.constants import IN_MEMORY_PATH
 from run_preflight.db import create_db, get_section_formats, populate_db
 from run_preflight.legacy.parser import parse_omnibus
 
@@ -30,7 +31,7 @@ class TestMultiLaneSchemaIntegrity(unittest.TestCase):
     """Direct-SQL tests of the new schema constraints and triggers."""
 
     def setUp(self):
-        self.conn = create_db(":memory:")
+        self.conn = create_db(IN_MEMORY_PATH)
         self.run_idx, self.prs_idx = _setup_run_and_prs(self.conn)
 
     def tearDown(self):
@@ -142,7 +143,7 @@ class TestMultiLanePopulate(unittest.TestCase):
 
     def _parse_and_populate(self, csv_name):
         # Run the legacy parse → populate pipeline against an in-memory DB
-        conn = create_db(":memory:")
+        conn = create_db(IN_MEMORY_PATH)
         section_formats = get_section_formats(conn)
         sections = parse_omnibus(str(DATA_DIR / csv_name), section_formats)
         populate_db(conn, sections)

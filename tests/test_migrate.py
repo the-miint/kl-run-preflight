@@ -4,17 +4,44 @@ from __future__ import annotations
 
 import sqlite3
 import textwrap
+from pathlib import Path
 
 import pytest
 
+from run_preflight.constants import IN_MEMORY_PATH
 from run_preflight.db import create_db
-from run_preflight.file_io import open_db_file
+from run_preflight.file_io import load_db_file
+from run_preflight.legacy.api import load_file
 from run_preflight.migrate import (
+    SchemaVersionTooNewError,
     apply_patches,
     get_latest_version,
     get_pending_patches,
     get_schema_version,
 )
+
+
+def _seed_v0_db_with_pending_patch(tmp_path) -> tuple[str, Path]:
+    """Create a version-0 DB file plus a one-patch dir; return both paths.
+
+    The patch adds a ``tag`` column to the DB's single ``base`` table, so a
+    caller can assert either that the patch landed on the connection or
+    that the source file was left alone.
+    """
+    db_path = str(tmp_path / "test.db")
+    patches_subdir = tmp_path / "patches"
+    patches_subdir.mkdir()
+
+    # Minimal DB deliberately left at version 0 so the patch stays pending
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE base (id INTEGER PRIMARY KEY)")
+    conn.execute("PRAGMA user_version = 0")
+    conn.close()
+
+    (patches_subdir / "001_add_col.sql").write_text(
+        "ALTER TABLE base ADD COLUMN tag TEXT;"
+    )
+    return db_path, patches_subdir
 
 
 class TestGetLatestVersion:
@@ -41,7 +68,7 @@ class TestGetPendingPatches:
         """DB at version 0 with patches 001+002 returns both in order."""
         (tmp_path / "001_a.sql").write_text("SELECT 1;")
         (tmp_path / "002_b.sql").write_text("SELECT 1;")
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         result = get_pending_patches(conn, tmp_path)
         expected = [
             (1, tmp_path / "001_a.sql"),
@@ -53,7 +80,7 @@ class TestGetPendingPatches:
         """DB at version 1 returns only patch 002."""
         (tmp_path / "001_a.sql").write_text("SELECT 1;")
         (tmp_path / "002_b.sql").write_text("SELECT 1;")
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         conn.execute("PRAGMA user_version = 1")
         result = get_pending_patches(conn, tmp_path)
         expected = [(2, tmp_path / "002_b.sql")]
@@ -62,16 +89,16 @@ class TestGetPendingPatches:
     def test_get_pending_patches_version_gap(self, tmp_path):
         """Missing patch 001 with 002 present raises ValueError."""
         (tmp_path / "002_b.sql").write_text("SELECT 1;")
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         with pytest.raises(ValueError, match="missing"):
             get_pending_patches(conn, tmp_path)
 
     def test_get_pending_patches_db_newer_than_code(self, tmp_path):
-        """DB version exceeds latest patch number raises ValueError."""
+        """DB version exceeds latest patch number raises SchemaVersionTooNewError."""
         (tmp_path / "001_a.sql").write_text("SELECT 1;")
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         conn.execute("PRAGMA user_version = 5")
-        with pytest.raises(ValueError, match="exceeds"):
+        with pytest.raises(SchemaVersionTooNewError, match="exceeds"):
             get_pending_patches(conn, tmp_path)
 
 
@@ -81,7 +108,7 @@ class TestApplyPatches:
         (tmp_path / "001_add_test_table.sql").write_text(
             "CREATE TABLE test_table (id INTEGER PRIMARY KEY);"
         )
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         result = apply_patches(conn, tmp_path)
         # Verify table exists
         cur = conn.execute(
@@ -95,7 +122,7 @@ class TestApplyPatches:
     def test_apply_patches_py(self, tmp_path):
         """Python patch with apply(conn) adds a column; version set by runner."""
         # Create a base table first
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         conn.execute("CREATE TABLE base (id INTEGER PRIMARY KEY)")
 
         # Write synthetic .py patch
@@ -124,7 +151,7 @@ class TestApplyPatches:
         """)
         (tmp_path / "002_add_label.py").write_text(patch_code)
 
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         result = apply_patches(conn, tmp_path)
         # Verify both changes applied
         cur = conn.execute("PRAGMA table_info(mixed)")
@@ -136,7 +163,7 @@ class TestApplyPatches:
     def test_apply_patches_already_current(self, tmp_path):
         """No-op when DB is already at latest version."""
         (tmp_path / "001_a.sql").write_text("CREATE TABLE should_not_run (id INT);")
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         conn.execute("PRAGMA user_version = 1")
         result = apply_patches(conn, tmp_path)
         assert result == 1
@@ -150,66 +177,85 @@ class TestApplyPatches:
     def test_apply_patches_version_gap(self, tmp_path):
         """Error on missing patch in sequence."""
         (tmp_path / "002_b.sql").write_text("SELECT 1;")
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         with pytest.raises(ValueError, match="missing"):
             apply_patches(conn, tmp_path)
 
     def test_apply_patches_db_newer_than_code(self, tmp_path):
-        """Error when DB version exceeds latest patch."""
+        """SchemaVersionTooNewError when DB version exceeds latest patch."""
         (tmp_path / "001_a.sql").write_text("SELECT 1;")
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         conn.execute("PRAGMA user_version = 5")
-        with pytest.raises(ValueError, match="exceeds"):
+        with pytest.raises(SchemaVersionTooNewError, match="exceeds"):
             apply_patches(conn, tmp_path)
 
     def test_apply_patches_py_missing_apply(self, tmp_path):
         """Python patch without apply() raises AttributeError."""
         patch_code = "def wrong_name(conn):\n    pass\n"
         (tmp_path / "001_bad.py").write_text(patch_code)
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
         with pytest.raises(AttributeError, match="must define an apply"):
             apply_patches(conn, tmp_path)
 
 
-class TestOpenDbFile:
-    def test_open_db_file_current_version(self, tmp_path):
-        """Opening a current-version DB is a no-op."""
+class TestLoadDbFile:
+    def test_load_db_file_current_version(self, tmp_path):
+        """Loading a current-version DB applies no patches."""
         db_path = str(tmp_path / "test.db")
         # Create fresh DB (already at latest version)
         conn = create_db(db_path)
         conn.close()
-        # Reopen via open_db_file
-        conn = open_db_file(db_path)
+        # Load via load_db_file
+        conn = load_db_file(db_path)
         assert get_schema_version(conn) == get_latest_version()
         # Verify foreign keys enabled
         fk = conn.execute("PRAGMA foreign_keys").fetchone()
         assert fk[0] == 1
         conn.close()
 
-    def test_open_db_file_applies_patches(self, tmp_path):
-        """Opening a DB with lowered version applies pending patches."""
-        db_path = str(tmp_path / "test.db")
-        patches_subdir = tmp_path / "patches"
-        patches_subdir.mkdir()
+    def test_load_db_file_applies_patches(self, tmp_path):
+        """Loading a DB with lowered version applies pending patches."""
+        db_path, patches_subdir = _seed_v0_db_with_pending_patch(tmp_path)
 
-        # Create a minimal DB at version 0
-        conn = sqlite3.connect(db_path)
-        conn.execute("CREATE TABLE base (id INTEGER PRIMARY KEY)")
-        conn.execute("PRAGMA user_version = 0")
-        conn.close()
-
-        # Write a patch that adds a column
-        (patches_subdir / "001_add_col.sql").write_text(
-            "ALTER TABLE base ADD COLUMN tag TEXT;"
-        )
-
-        conn = open_db_file(db_path, patches_dir=patches_subdir)
+        conn = load_db_file(db_path, patches_dir=patches_subdir)
         assert get_schema_version(conn) == 1
         # Verify column added
         cur = conn.execute("PRAGMA table_info(base)")
         col_names = [row[1] for row in cur.fetchall()]
         assert col_names == ["id", "tag"]
         conn.close()
+
+    def test_load_db_file_does_not_modify_source(self, tmp_path):
+        """Patching on load leaves the source file byte-identical."""
+        db_path, patches_subdir = _seed_v0_db_with_pending_patch(tmp_path)
+        before = Path(db_path).read_bytes()
+
+        # The returned connection is upgraded even though the file is not
+        conn = load_db_file(db_path, patches_dir=patches_subdir)
+        try:
+            assert get_schema_version(conn) == 1
+        finally:
+            conn.close()
+        assert Path(db_path).read_bytes() == before
+
+
+class TestLoadFile:
+    def test_load_file_does_not_modify_source(self, tmp_path):
+        """Loading a native file through load_file leaves it byte-identical.
+
+        Sits beside the load_db_file test rather than in test_file_io.py
+        because it needs the same pre-patch seed fixture.
+        """
+        db_path, patches_subdir = _seed_v0_db_with_pending_patch(tmp_path)
+        before = Path(db_path).read_bytes()
+
+        # The returned connection is upgraded even though the file is not
+        conn = load_file(db_path, patches_dir=patches_subdir)
+        try:
+            assert get_schema_version(conn) == 1
+        finally:
+            conn.close()
+        assert Path(db_path).read_bytes() == before
 
 
 class TestCreateDbVersion:

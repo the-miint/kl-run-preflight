@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from run_preflight.constants import IN_MEMORY_PATH
 from run_preflight.db import create_db
 from run_preflight.migrate import apply_patches, get_latest_version
 
@@ -26,12 +27,12 @@ _SCHEMA_V0 = _SCHEMA_DIR / "schema_v0.sql"
 
 def _build_via_schema_sql() -> sqlite3.Connection:
     """Create an in-memory DB the same way production create_db does."""
-    return create_db(":memory:")
+    return create_db(IN_MEMORY_PATH)
 
 
 def _build_via_baseline_and_patches() -> sqlite3.Connection:
     """Create an in-memory DB from schema_v0.sql, then apply all patches."""
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(IN_MEMORY_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SCHEMA_V0.read_text())
     # Baseline starts at user_version 0; apply_patches brings it forward

@@ -46,8 +46,27 @@ def parse_omnibus(filepath: str, section_formats: dict[str, str]) -> dict:
           - list[str] for values-only sections (e.g. Reads)
           - list[dict] for tabular sections (e.g. Data, Contact)
     """
+    text = read_omnibus_text(filepath)
+    sections = parse_omnibus_text(text, section_formats)
+    return sections
+
+
+def read_omnibus_text(filepath: str) -> str:
+    """Read an omnibus CSV file into text.
+
+    The single place that decides how an omnibus CSV file on disk becomes
+    a string. ``newline=""`` leaves embedded line endings intact so the
+    csv module sees the file's own quoting and row breaks.
+
+    Args:
+        filepath: Path to the omnibus CSV file on disk.
+
+    Returns:
+        str: The full file content.
+    """
     with open(filepath, newline="") as fh:
-        return parse_omnibus_text(fh.read(), section_formats)
+        text = fh.read()
+    return text
 
 
 def parse_omnibus_text(text: str, section_formats: dict[str, str]) -> dict:

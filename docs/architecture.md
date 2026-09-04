@@ -40,6 +40,32 @@ but the run-level configuration is Illumina.
 - `run_id` column in reconstruction views is a filter column excluded from
   CSV output
 
+## Native load and output
+
+Native run preflights are SQLite databases, and the load and write paths
+are permanent rather than transitional.
+
+- Every load path — `load_db_file`, `load_db_bytes`, `load_legacy_csv`,
+  `load_legacy_csv_text`, and the format-detecting `load_file` — returns a
+  detached in-memory connection
+  at the latest schema version. Pending patches are applied to that copy,
+  so a file behind the patch set stays behind on disk until someone
+  saves it. `save_db_file` is the only call that reaches disk.
+- A preflight can be held as an opaque blob: `dump_db_bytes(conn)`
+  serializes a connection to database-file bytes and `load_db_bytes`
+  reads them back, so a consumer can carry or store a preflight without
+  a filesystem path and decide separately whether to keep an edit.
+  `load_legacy_csv_text` is the legacy-format counterpart, taking `str`
+  because the caller owns how its bytes became text.
+- `SchemaVersionTooNewError` marks a database written by a newer
+  run_preflight than is installed. It subclasses `ValueError`, so a
+  caller that does not distinguish the case still catches it alongside
+  the other bad-input errors.
+- Loading reads the file's raw bytes, which bypasses SQLite crash
+  recovery: a hot journal left behind by a crashed writer is ignored, and
+  the database loads in its un-rolled-back state rather than the state
+  `sqlite3.connect` would have recovered.
+
 ## Transitional workflows
 
 Consumer-facing entry points are exposed at the package root (see
@@ -54,13 +80,16 @@ implementation.
     - Internally: `db.create_db` → `db.get_section_formats` →
       `parser.parse_omnibus` → `validate.validate_omnibus` → `db.populate_db`
       (raises `ValueError` on validation failure). `migrate_legacy_csv_to_db_file`
-      then calls `file_io.save_db_file`, removing the partial DB file if any
-      step fails.
+      then calls `file_io.save_db_file`, which stages the bytes beside the
+      target and renames them into place, so `db_path` is written only on full
+      success and any file already there survives a failure unchanged.
 
 2) Write a legacy omnibus file from SQLite format:
 
-    - **Consumer call:** open the DB (`open_db_file`, or the format-detecting
-      `open_file`) then `save_legacy_csv(conn, csv_path)`.
+    - **Consumer call:** load the DB (`load_db_file`, `load_db_bytes`, or the
+      format-detecting `load_file`) then `save_legacy_csv(conn, csv_path)`. Every
+      load path returns a detached in-memory connection, so the source file is
+      never written; persisting an edit takes an explicit `save_db_file`.
     - Internally: confirm the DB holds exactly one `processing_run` (raises
       `ValueError` if zero or multiple), reject any project with a NULL
       `external_project_id`, then `reconstruct.reconstruct_omnibus` → write the
