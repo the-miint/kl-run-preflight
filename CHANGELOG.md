@@ -163,6 +163,8 @@ until the first release is tagged.
   every output to `0644`, which re-permissioned a deliberately restricted
   target on overwrite and widened new files past what the caller's umask asked
   for.
+- The lint rule set is now declared in `pyproject.toml` as
+  `select = ["E4", "E7", "E9", "F"]` because ruff's default selection changing in 0.16 altered what CI enforced and failed the lint step on unmodified code.
 - `load_db_file` checks the SQLite file header off its first read instead of
   after pulling the whole file into memory, so a large non-database input is
   rejected without the needless read. The rejection now names the offending
