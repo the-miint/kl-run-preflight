@@ -11,6 +11,7 @@ import pytest
 from run_preflight.constants import IN_MEMORY_PATH
 from run_preflight.db import create_db
 from run_preflight.file_io import load_db_file
+from run_preflight.legacy.api import load_file
 from run_preflight.migrate import (
     SchemaVersionTooNewError,
     apply_patches,
@@ -231,6 +232,25 @@ class TestLoadDbFile:
 
         # The returned connection is upgraded even though the file is not
         conn = load_db_file(db_path, patches_dir=patches_subdir)
+        try:
+            assert get_schema_version(conn) == 1
+        finally:
+            conn.close()
+        assert Path(db_path).read_bytes() == before
+
+
+class TestLoadFile:
+    def test_load_file_does_not_modify_source(self, tmp_path):
+        """Loading a native file through load_file leaves it byte-identical.
+
+        Sits beside the load_db_file test rather than in test_file_io.py
+        because it needs the same pre-patch seed fixture.
+        """
+        db_path, patches_subdir = _seed_v0_db_with_pending_patch(tmp_path)
+        before = Path(db_path).read_bytes()
+
+        # The returned connection is upgraded even though the file is not
+        conn = load_file(db_path, patches_dir=patches_subdir)
         try:
             assert get_schema_version(conn) == 1
         finally:

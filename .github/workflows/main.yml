@@ -26,7 +26,7 @@ jobs:
 
     - name: Install conda environment
       run: |
-        sed -i -E 's/^( *- )python(=[0-9.]+)?$/\1python=${{ matrix.python-version }}/' environment.yml
+        sed -i -E 's/^( *- )python([><=!]*[0-9.]*)?$/\1python=${{ matrix.python-version }}/' environment.yml
         grep -q -- '- python=${{ matrix.python-version }}' environment.yml
         conda env create -n run-preflight -f environment.yml
 

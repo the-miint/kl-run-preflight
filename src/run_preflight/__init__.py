@@ -9,14 +9,16 @@ from .db import (
     get_pacbio_sample_info,
 )
 from .file_io import (
+    dump_db_bytes,
     load_db_bytes,
     load_db_file,
-    output_db_bytes,
-    output_db_file,
     save_bclconvert_v1_csv,
+    save_db_file,
 )
 from .legacy.api import (
+    load_file,
     load_legacy_csv,
+    load_legacy_csv_text,
     migrate_legacy_csv_to_db_file,
     open_file,
     save_legacy_csv,
@@ -43,9 +45,11 @@ __all__ = [
     "get_pacbio_sample_info",
     "load_db_bytes",
     "load_db_file",
+    "load_file",
+    "load_legacy_csv_text",
     "open_file",
-    "output_db_bytes",
-    "output_db_file",
+    "dump_db_bytes",
+    "save_db_file",
     "save_bclconvert_v1_csv",
     "SchemaVersionTooNewError",
     "load_legacy_csv",

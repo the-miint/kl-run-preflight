@@ -6,6 +6,7 @@ read and edited independently of the Python code.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import warnings
 from itertools import groupby
@@ -150,7 +151,7 @@ def create_db(db_path: str) -> sqlite3.Connection:
     """
     # The schema DDL is unguarded, so reusing an existing file would either
     # collide with its tables or graft a second schema onto foreign data
-    if db_path != IN_MEMORY_PATH and Path(db_path).exists():
+    if db_path != IN_MEMORY_PATH and os.path.lexists(db_path):
         raise FileExistsError(f"refusing to overwrite existing file: {db_path}")
 
     conn = sqlite3.connect(db_path)

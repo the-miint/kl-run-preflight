@@ -75,7 +75,7 @@ def _require_sqlite_header(head: bytes, subject: str) -> None:
 
 
 def atomic_write(path: str, data: bytes | str) -> None:
-    """Write *data* to *path* without ever leaving it partly written.
+    """Write *data* to *path* so that a failed call leaves it unchanged.
 
     The content is staged in a temporary file in the target's own
     directory and renamed into place, which is atomic within a
@@ -83,6 +83,10 @@ def atomic_write(path: str, data: bytes | str) -> None:
     existing file at *path* untouched. An existing file's permissions
     carry over to the replacement; a new file gets the permissions an
     ordinary write would give it under the current umask.
+
+    NB: the rename is atomic against what a concurrent reader sees, not
+    against power loss. Nothing here is fsynced, so a crash can still
+    lose a write this call has already reported as complete.
 
     Args:
         path: Filesystem path to write. Any existing file is replaced.
@@ -98,9 +102,10 @@ def atomic_write(path: str, data: bytes | str) -> None:
     tmp_path = Path(tmp_name)
 
     # Fill the staged file, give it the mode a plain write would have
-    # produced, then swap it in
-    output_mode = _resolve_output_mode(target)
+    # produced, then swap it in; anything that goes wrong from here on
+    # discards the staged file rather than stranding it beside the target
     try:
+        output_mode = _resolve_output_mode(target)
         if isinstance(data, bytes):
             tmp_path.write_bytes(data)
         else:
@@ -207,8 +212,8 @@ def load_db_bytes(
     The returned connection is independent of wherever *blob* came from:
     it sits at the latest schema version with foreign-key enforcement
     enabled, and nothing done to it reaches the original bytes. Caller
-    owns and must close it, and must call output_db_file or
-    output_db_bytes to persist any change.
+    owns and must close it, and must call save_db_file or
+    dump_db_bytes to persist any change.
 
     Args:
         blob: The full contents of a SQLite database file.
@@ -226,8 +231,9 @@ def load_db_bytes(
         SchemaVersionTooNewError: If the schema version exceeds the
             shipped patch set.
     """
-    # Reject non-database input up front so the failure names the real
-    # problem instead of surfacing as MemoryError or a mid-patch read error
+    # Reject non-database input up front so the failure names the input
+    # itself, rather than arriving as a bare "file is not a database" or,
+    # for empty input, as MemoryError out of the deserialize
     _require_sqlite_header(blob, "blob")
 
     # Deserialize into a private in-memory DB and bring it to the latest
@@ -252,7 +258,7 @@ def load_db_file(
     The file at *db_path* is read once and never written: pending schema
     patches are applied to the in-memory copy, so a file behind the patch
     set stays that way on disk until the caller persists the connection
-    with output_db_file. Caller owns and must close the connection.
+    with save_db_file. Caller owns and must close the connection.
 
     NB: Reading the raw bytes bypasses SQLite crash recovery, so a hot
     journal or WAL sidecar left by a crashed writer is ignored and the
@@ -287,7 +293,7 @@ def load_db_file(
     return conn
 
 
-def output_db_bytes(conn: sqlite3.Connection) -> bytes:
+def dump_db_bytes(conn: sqlite3.Connection) -> bytes:
     """Serialize a live SQLite connection to database file bytes.
 
     Works for both in-memory and file-backed source connections. The
@@ -304,7 +310,7 @@ def output_db_bytes(conn: sqlite3.Connection) -> bytes:
     return blob
 
 
-def output_db_file(conn: sqlite3.Connection, db_path: str) -> None:
+def save_db_file(conn: sqlite3.Connection, db_path: str) -> None:
     """Write a live SQLite connection out as a SQLite database file.
 
     This is the durability boundary for the connections the load entry
@@ -320,5 +326,5 @@ def output_db_file(conn: sqlite3.Connection, db_path: str) -> None:
             created. Any existing file is replaced atomically, and
             survives unchanged if the write fails.
     """
-    blob = output_db_bytes(conn)
+    blob = dump_db_bytes(conn)
     atomic_write(db_path, blob)

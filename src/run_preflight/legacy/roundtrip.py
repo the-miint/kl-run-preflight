@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ..constants import FORMAT_TABULAR
 from ..db import get_section_formats
-from ..file_io import load_db_file, output_db_file
+from ..file_io import load_db_file, save_db_file
 from .api import load_legacy_csv, save_legacy_csv
 from .parser import (
     extract_section_name,
@@ -181,7 +181,7 @@ def roundtrip_via_api(csv_path: Path, tmp_dir: Path) -> tuple[str, str]:
     # in-memory → file → loaded-back persistence cycle
     conn = load_legacy_csv(str(csv_path))
     try:
-        output_db_file(conn, str(db_path))
+        save_db_file(conn, str(db_path))
     finally:
         conn.close()
 

@@ -30,6 +30,7 @@ from pathlib import Path
 # Make the tests package importable when run as a standalone script
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from run_preflight.file_io import atomic_write  # noqa: E402
 from run_preflight import (  # noqa: E402
     migrate_legacy_csv_to_db_file,
     set_biosample_accession,
@@ -124,7 +125,7 @@ def _promote_if_changed(temp_db: Path, base_stem: str) -> None:
         print(f"unchanged {target_db.name}")
         return
     shutil.move(str(temp_db), str(target_db))
-    target_snapshot.write_text(json_text)
+    atomic_write(str(target_snapshot), json_text)
     print(f"wrote {target_db.name}")
 
 

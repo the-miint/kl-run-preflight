@@ -1,4 +1,4 @@
-"""Tests for the format-detecting open_file entry point and the
+"""Tests for the format-detecting load_file entry point and the
 bcl-convert v1 sample sheet writer."""
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import warnings
 from pathlib import Path
+from unittest import mock
 
 from run_preflight import (
     SchemaVersionTooNewError,
@@ -17,9 +18,10 @@ from run_preflight import (
     load_db_file,
     load_legacy_csv,
     migrate_legacy_csv_to_db_file,
+    load_file,
     open_file,
-    output_db_bytes,
-    output_db_file,
+    dump_db_bytes,
+    save_db_file,
     save_bclconvert_v1_csv,
     set_prepped_sample_do_not_use,
 )
@@ -90,11 +92,11 @@ def _seed_prepped_sample(
 
 
 # ---------------------------------------------------------------------------
-# TestOpenFile
+# TestLoadFile
 # ---------------------------------------------------------------------------
 
 
-class TestOpenFile(unittest.TestCase):
+class TestLoadFile(unittest.TestCase):
     def setUp(self):
         # Per-test scratch dir for any intermediate DB files
         self._tmp = tempfile.TemporaryDirectory()
@@ -103,12 +105,12 @@ class TestOpenFile(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def test_open_file_csv(self):
+    def test_load_file_csv(self):
         # A legacy omnibus CSV must dispatch through load_legacy_csv and
         # return a populated in-memory connection
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", LegacyExtraColumnWarning)
-            conn = open_file(str(GOOD_CSV))
+            conn = load_file(str(GOOD_CSV))
         try:
             run_idxs = [
                 row[0] for row in conn.execute("SELECT run_idx FROM processing_run")
@@ -117,7 +119,7 @@ class TestOpenFile(unittest.TestCase):
             conn.close()
         self.assertEqual(run_idxs, [1])
 
-    def test_open_file_db(self):
+    def test_load_file_db(self):
         # A SQLite DB file must be detected via the magic header and
         # dispatch through load_db_file
         db_path = self.tmp_dir / "loaded.db"
@@ -126,8 +128,8 @@ class TestOpenFile(unittest.TestCase):
             migrate_legacy_csv_to_db_file(str(GOOD_CSV), str(db_path))
         before = db_path.read_bytes()
 
-        # Re-opening the DB via open_file should yield the same single run row
-        conn = open_file(str(db_path))
+        # Re-opening the DB via load_file should yield the same single run row
+        conn = load_file(str(db_path))
         try:
             run_idxs = [
                 row[0] for row in conn.execute("SELECT run_idx FROM processing_run")
@@ -138,19 +140,36 @@ class TestOpenFile(unittest.TestCase):
         # The returned connection is detached, so the source is untouched
         self.assertEqual(db_path.read_bytes(), before)
 
-    def test_open_file_missing_path(self):
+    def test_load_file_missing_path(self):
         # A nonexistent path must raise FileNotFoundError with a clear message
         missing = self.tmp_dir / "does_not_exist.csv"
         with self.assertRaisesRegex(FileNotFoundError, r"No such file"):
-            open_file(str(missing))
+            load_file(str(missing))
 
-    def test_open_file_empty_file(self):
+    def test_load_file_empty_file(self):
         # An empty file cannot be SQLite (no magic header) so it falls
         # through to the legacy parser, which must reject it via ValueError
         empty = self.tmp_dir / "empty.csv"
         empty.write_text("")
         with self.assertRaises(ValueError):
-            open_file(str(empty))
+            load_file(str(empty))
+
+    def test_open_file_deprecated(self):
+        # The old name still works but must announce itself, so a consumer
+        # tracking this branch learns to move before it is removed
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            conn = open_file(str(GOOD_CSV))
+            try:
+                run_idxs = [
+                    row[0] for row in conn.execute("SELECT run_idx FROM processing_run")
+                ]
+            finally:
+                conn.close()
+        deprecations = [w for w in caught if w.category is DeprecationWarning]
+        self.assertEqual(len(deprecations), 1)
+        self.assertIn("use load_file", str(deprecations[0].message))
+        self.assertEqual(run_idxs, [1])
 
 
 # ---------------------------------------------------------------------------
@@ -160,13 +179,13 @@ class TestOpenFile(unittest.TestCase):
 
 class TestLoadAndOutputDbBytes(unittest.TestCase):
     def test_load_db_bytes(self):
-        # output_db_bytes → load_db_bytes must reproduce the whole database,
+        # dump_db_bytes → load_db_bytes must reproduce the whole database,
         # so a consumer can hold a run preflight as an opaque blob
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", LegacyExtraColumnWarning)
             src_conn = load_legacy_csv(str(GOOD_CSV))
         try:
-            blob = output_db_bytes(src_conn)
+            blob = dump_db_bytes(src_conn)
             expected = _helpers.capture_db_snapshot(src_conn)
         finally:
             src_conn.close()
@@ -179,8 +198,9 @@ class TestLoadAndOutputDbBytes(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_load_db_bytes_not_a_database(self):
-        # Bytes without the SQLite header must be rejected by name rather
-        # than surfacing as MemoryError or a mid-patch DatabaseError
+        # Bytes without the SQLite header must be rejected by name: empty
+        # input would otherwise raise MemoryError and non-empty garbage a
+        # bare "file is not a database", neither naming the real problem
         for blob in (b"", b"[Header],,,\nSheetType,standard_metag,,\n"):
             with self.subTest(blob=blob[:16]):
                 with self.assertRaisesRegex(ValueError, r"not a SQLite database"):
@@ -199,14 +219,14 @@ class TestLoadAndOutputDbBytes(unittest.TestCase):
         conn = create_db(IN_MEMORY_PATH)
         try:
             conn.execute("PRAGMA user_version = 999")
-            blob = output_db_bytes(conn)
+            blob = dump_db_bytes(conn)
         finally:
             conn.close()
 
         with self.assertRaisesRegex(SchemaVersionTooNewError, r"exceeds latest patch"):
             load_db_bytes(blob)
 
-    def test_output_db_bytes_uncommitted_changes(self):
+    def test_dump_db_bytes_uncommitted_changes(self):
         # The image is documented as verbatim including uncommitted work,
         # so an open write transaction must be visible in the output. A
         # bare table keeps the check clear of schema and patch machinery.
@@ -216,7 +236,7 @@ class TestLoadAndOutputDbBytes(unittest.TestCase):
             conn.commit()
             conn.execute("BEGIN")
             conn.execute("INSERT INTO t (label) VALUES ('uncommitted')")
-            blob = output_db_bytes(conn)
+            blob = dump_db_bytes(conn)
         finally:
             conn.close()
 
@@ -300,6 +320,32 @@ class TestAtomicWrite(unittest.TestCase):
         self.assertEqual(oct(actual_mode), oct(0o640))
         self.assertEqual(out_path.read_text(), "fresh")
 
+    def test_atomic_write_failure_between_staging_and_rename(self):
+        # Atomicity only bites once staging has begun: a failure after the
+        # temp file is filled must leave the target byte-identical and take
+        # the staged content with it rather than half-replacing anything
+        target = self.tmp_dir / "out.db"
+        target.write_bytes(b"existing content that must survive")
+        before = target.read_bytes()
+
+        with mock.patch("run_preflight.file_io.os.chmod", side_effect=OSError("boom")):
+            with self.assertRaises(OSError):
+                atomic_write(str(target), b"replacement")
+
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual([p.name for p in self.tmp_dir.iterdir()], ["out.db"])
+
+    def test_atomic_write_unstattable_target_leaves_no_staging_file(self):
+        # Resolving the output mode stats the target, which can fail for
+        # reasons other than absence; the staged file must not outlive it
+        target = self.tmp_dir / "cycle.txt"
+        os.symlink(target, target)
+
+        with self.assertRaises(OSError):
+            atomic_write(str(target), "payload")
+
+        self.assertEqual([p.name for p in self.tmp_dir.iterdir()], ["cycle.txt"])
+
 
 # ---------------------------------------------------------------------------
 # TestOutputDbFile
@@ -314,15 +360,15 @@ class TestOutputDbFile(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def test_output_db_file_overwrites_existing(self):
-        # output_db_file replaces an existing file, deliberately unlike
+    def test_save_db_file_overwrites_existing(self):
+        # save_db_file replaces an existing file, deliberately unlike
         # create_db, which refuses one
         db_path = self.tmp_dir / "out.db"
         db_path.write_bytes(b"stale content that must not survive")
 
         conn = create_db(IN_MEMORY_PATH)
         try:
-            output_db_file(conn, str(db_path))
+            save_db_file(conn, str(db_path))
             expected = _helpers.capture_db_snapshot(conn)
         finally:
             conn.close()
@@ -334,13 +380,14 @@ class TestOutputDbFile(unittest.TestCase):
             loaded.close()
         self.assertEqual(actual, expected)
 
-    def test_output_db_file_failure_preserves_existing(self):
-        # The write is staged and renamed, so a failure partway through
-        # must leave the caller's existing file byte-identical
+    def test_save_db_file_failure_preserves_existing(self):
+        # Serialization runs before any staging, so a failure there must
+        # leave the existing file byte-identical and write nothing at all;
+        # failures after staging begins are covered in TestAtomicWrite
         db_path = self.tmp_dir / "out.db"
         conn = create_db(IN_MEMORY_PATH)
         try:
-            output_db_file(conn, str(db_path))
+            save_db_file(conn, str(db_path))
         finally:
             conn.close()
         before = db_path.read_bytes()
@@ -350,7 +397,7 @@ class TestOutputDbFile(unittest.TestCase):
         dead_conn = create_db(IN_MEMORY_PATH)
         dead_conn.close()
         with self.assertRaises(sqlite3.ProgrammingError):
-            output_db_file(dead_conn, str(db_path))
+            save_db_file(dead_conn, str(db_path))
 
         self.assertEqual(db_path.read_bytes(), before)
         # No staging file may be left behind

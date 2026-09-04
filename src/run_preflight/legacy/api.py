@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import sqlite3
+import warnings
 from pathlib import Path
 
 from ..constants import (
@@ -21,25 +22,36 @@ from ..db import (
     get_single_run_idx,
     populate_db,
 )
-from ..file_io import atomic_write, load_db_file, output_db_file
-from .parser import parse_omnibus
+from ..file_io import atomic_write, load_db_bytes, save_db_file
+from .parser import parse_omnibus_text, read_omnibus_text
 from .reconstruct import reconstruct_omnibus
 from .validate import validate_omnibus
 
 
-def open_file(path: str) -> sqlite3.Connection:
-    """Open a run preflight from either a legacy omnibus CSV or a SQLite DB file.
+def load_file(path: str, patches_dir: Path | None = None) -> sqlite3.Connection:
+    """Load a run preflight from either a legacy omnibus CSV or a SQLite DB file.
 
     Detects the format from the file's first 16 bytes (SQLite magic
     header). Either branch returns a detached in-memory connection, so
     *path* is never written to and persisting any change requires an
-    explicit output_db_file call. Caller owns and must close the
+    explicit save_db_file call. Caller owns and must close the
     returned connection.
+
+    NB: a SQLite input is read as raw bytes, bypassing crash recovery, so
+    a hot journal left by a crashed writer is ignored.
+
+    Args:
+        path: Filesystem path to the run preflight file.
+        patches_dir: Directory to scan for patches.  Defaults to the
+            built-in ``sql/patches/`` directory.  Has no effect on legacy
+            CSV input, which is built at the latest version.
 
     Raises:
         FileNotFoundError: If *path* does not exist.
         ValueError: If the file is detected as legacy CSV but fails
             parsing or validation.
+        sqlite3.DatabaseError: If the file carries the SQLite header but
+            is truncated or otherwise unreadable.
         SchemaVersionTooNewError: If the file is a SQLite database whose
             schema version exceeds the shipped patch set.
     """
@@ -48,21 +60,52 @@ def open_file(path: str) -> sqlite3.Connection:
     if not p.is_file():
         raise FileNotFoundError(f"No such file: {path}")
 
-    # Read just enough bytes to identify the SQLite magic header
+    # Sniff and read a native file through one handle, so the bytes acted
+    # on are the ones the header check actually saw
     with p.open("rb") as fh:
         head = fh.read(len(SQLITE_MAGIC))
+        if head == SQLITE_MAGIC:
+            blob = head + fh.read()
+            return load_db_bytes(blob, patches_dir)
 
-    # Dispatch on detected format
-    if head == SQLITE_MAGIC:
-        return load_db_file(path)
-    return load_legacy_csv(path)
+    # A legacy CSV goes to the path-taking loader, which reads it as text
+    # under the same rules every other omnibus read uses
+    conn = load_legacy_csv(path)
+    return conn
+
+
+def open_file(path: str, patches_dir: Path | None = None) -> sqlite3.Connection:
+    """Deprecated alias for load_file."""
+    warnings.warn(
+        "open_file is deprecated; use load_file instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    conn = load_file(path, patches_dir)
+    return conn
 
 
 def load_legacy_csv(csv_path: str) -> sqlite3.Connection:
-    """Parse a legacy omnibus CSV into a fresh in-memory SQLite connection.
+    """Parse a legacy omnibus CSV file into a fresh in-memory SQLite connection.
 
     The returned connection is at the latest schema version with
     foreign-key enforcement enabled. Caller owns and must close it.
+
+    Raises:
+        ValueError: If the CSV fails validation against the format registry.
+    """
+    text = read_omnibus_text(csv_path)
+    conn = load_legacy_csv_text(text)
+    return conn
+
+
+def load_legacy_csv_text(text: str) -> sqlite3.Connection:
+    """Parse legacy omnibus CSV text into a fresh in-memory SQLite connection.
+
+    Takes content already decoded, so the caller owns any decision about
+    how bytes became text. The returned connection is at the latest
+    schema version with foreign-key enforcement enabled. Caller owns and
+    must close it.
 
     Raises:
         ValueError: If the CSV fails validation against the format registry.
@@ -74,7 +117,7 @@ def load_legacy_csv(csv_path: str) -> sqlite3.Connection:
         section_formats = get_section_formats(conn)
 
         # Parse and validate against the registry before any writes
-        sections = parse_omnibus(csv_path, section_formats)
+        sections = parse_omnibus_text(text, section_formats)
         errors = validate_omnibus(conn, sections)
         if errors:
             raise ValueError("Validation errors:\n  " + "\n  ".join(errors))
@@ -167,6 +210,6 @@ def migrate_legacy_csv_to_db_file(csv_path: str, db_path: str) -> None:
     """
     conn = load_legacy_csv(csv_path)
     try:
-        output_db_file(conn, db_path)
+        save_db_file(conn, db_path)
     finally:
         conn.close()

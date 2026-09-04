@@ -10,6 +10,7 @@ from pathlib import Path
 from run_preflight import (
     create_db,
     load_legacy_csv,
+    load_legacy_csv_text,
     migrate_legacy_csv_to_db_file,
     load_db_file,
     save_legacy_csv,
@@ -26,6 +27,29 @@ from ._helpers import open_db
 
 DATA_DIR = Path(__file__).parent / "data" / "legacy"
 GOOD_CSV = DATA_DIR / "good_pacbio_metagv11.csv"
+
+
+class TestLoadLegacyCsvText(unittest.TestCase):
+    def test_load_legacy_csv_text(self):
+        # Parsing already-decoded text must produce the same database as
+        # parsing the file, so a caller holding the content in memory is
+        # not forced through a temporary file
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", LegacyExtraColumnWarning)
+            from_path = load_legacy_csv(str(GOOD_CSV))
+            try:
+                expected = _helpers.capture_db_snapshot(from_path)
+            finally:
+                from_path.close()
+
+            with open(GOOD_CSV, newline="") as fh:
+                text = fh.read()
+            from_text = load_legacy_csv_text(text)
+            try:
+                actual = _helpers.capture_db_snapshot(from_text)
+            finally:
+                from_text.close()
+        self.assertEqual(actual, expected)
 
 
 class TestLegacyApi(unittest.TestCase):

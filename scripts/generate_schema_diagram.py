@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from run_preflight.db import _SCHEMA_PATH  # noqa: E402
+from run_preflight.file_io import atomic_write  # noqa: E402
 
 # ============================================================
 # Category definitions — update this dict when adding new
@@ -951,7 +952,7 @@ def main():
         view_positions_js,
         used_categories,
     )
-    _OUTPUT_PATH.write_text(html)
+    atomic_write(str(_OUTPUT_PATH), html)
     print(f"Generated {_OUTPUT_PATH}")
 
 

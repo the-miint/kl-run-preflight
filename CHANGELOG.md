@@ -17,14 +17,24 @@ until the first release is tagged.
 
 - `load_db_file` and `load_db_bytes`, which read a native run preflight into a
   detached in-memory connection: pending schema patches are applied to the copy,
-  so the source file or blob is never written. Paired with `output_db_bytes`,
+  so the source file or blob is never written. Paired with `dump_db_bytes`,
   which serializes a connection to database-file bytes, they let a consumer hold
   a run preflight as an opaque blob and decide separately whether to keep an
   edit. Both reject input lacking the SQLite file header with a `ValueError`
-  naming the problem, rather than the `MemoryError` a raw deserialize produces;
-  input that carries the header but is truncated or otherwise unreadable gets
-  past that check and raises `sqlite3.DatabaseError`, which both entry points
-  document.
+  naming the offending input, where a raw deserialize would report only a bare
+  `sqlite3.DatabaseError: file is not a database` (or, for empty input, a
+  `MemoryError`). Input that carries the header but is truncated or otherwise
+  unreadable gets past that check and raises `sqlite3.DatabaseError`, which
+  both entry points document.
+- `load_file`, which loads a run preflight from either supported format by
+  detecting the file's type, replacing `open_file`. A native file is sniffed and
+  read through a single handle, so the bytes loaded are the ones the header
+  check saw.
+- `load_legacy_csv_text`, which parses legacy omnibus CSV content already
+  decoded to text, so a consumer holding the content in memory need not write a
+  temporary file. It is the text counterpart to `load_db_bytes`, and it takes
+  `str` rather than `bytes` because the caller owns any decision about how its
+  bytes became text.
 - `SchemaVersionTooNewError`, raised when a database's schema version exceeds the
   shipped patch set. It subclasses `ValueError`, so an existing handler still
   catches it, but a consumer can now tell "this file came from a newer
@@ -71,7 +81,7 @@ until the first release is tagged.
   `get_input_sample_project_info`) and the forward writers
   (`save_bclconvert_v1_csv`, `save_legacy_sample_id_map_csv`) exclude flagged
   samples by default and accept `include_do_not_use=True` to return them.
-  `save_legacy_csv` and `output_db_file` always include flagged records.
+  `save_legacy_csv` and `save_db_file` always include flagged records.
 - Standard Python project scaffolding: a root `.gitignore` and an installable
   `pyproject.toml` (setuptools + versioningit, generated `_version.py`,
   `environment.yml`, and a GitHub Actions CI workflow).
@@ -119,30 +129,46 @@ until the first release is tagged.
 
 ### Changed
 
-- **Breaking:** `open_db_file` is removed and `save_db_file` is renamed to
-  `output_db_file`. `open_db_file` connected directly to the caller's file and
-  committed schema patches into it, so merely reading a stored preflight rewrote
-  it — silently today, because patch `001` is the only patch and a current file
-  needs no work, and universally the day patch `002` ships. Replacing it with
-  `load_db_file` makes every load path detached and leaves `output_db_file` as
-  the one call that reaches disk. The schema upgrade is no longer sticky: a file
-  behind the patch set stays behind until someone saves it, which is the point of
-  the change rather than a side effect.
-- **Breaking:** `open_file` now returns a detached in-memory connection for both
-  input formats. Previously a legacy CSV yielded a detached connection while a
+- **Breaking:** `open_db_file` is removed. It connected directly to the caller's
+  file and committed schema patches into it, so merely reading a stored preflight
+  rewrote it — silently today, because patch `001` is the only patch and a
+  current file needs no work, and universally the day patch `002` ships.
+  Replacing it with `load_db_file` makes every load path detached and leaves
+  `save_db_file`, which keeps its name, as the one call that reaches disk. The
+  schema upgrade is no longer sticky: a file behind the patch set stays behind
+  until someone saves it, which is the point of the change rather than a side
+  effect.
+- **Breaking:** loading a file of either format now returns a detached in-memory
+  connection. Previously a legacy CSV yielded a detached connection while a
   SQLite file yielded a file-backed one whose edits persisted without any save,
   so a caller handling both formats could not write one correct save path.
-- `output_db_file` writes serialized bytes instead of calling `Connection.backup`.
+- Loading a native file reads its raw bytes instead of connecting to it, which
+  skips SQLite's crash recovery. A hot journal left by a writer that died
+  mid-transaction is no longer replayed, so the database loads in its
+  un-rolled-back state: against a 50,000-row table SIGKILLed mid-update, the
+  load reports 49,707 rows carrying the uncommitted change where a
+  `sqlite3.connect` would have rolled all of them back and reported none. The
+  image is torn rather than merely stale, so a file left behind by a crashed
+  writer needs checking before it is trusted.
+- `save_db_file` writes serialized bytes instead of calling `Connection.backup`.
   `backup` retries indefinitely when the source connection holds an uncommitted
   write transaction, which hangs the caller outright — and does so
-  uninterruptibly, since it blocks in C holding the GIL. A plain byte write has
-  no such failure mode.
-- Every file this package writes — `output_db_file`, `save_legacy_csv`,
+  uninterruptibly, since it blocks in C holding the GIL — measured on CPython
+  3.14, where a committed source returns in under a millisecond and an
+  uncommitted one survives SIGINT and needs SIGKILL. A plain byte write has no
+  such failure mode.
+- Every file this package writes — `save_db_file`, `save_legacy_csv`,
   `save_bclconvert_v1_csv`, and `save_legacy_sample_id_map_csv` — now goes
   through `atomic_write`, which stages the content in a temporary file in the
   target's own directory and renames it into place. A write that fails partway
   leaves the caller's existing file untouched instead of truncated, so the
   no-clobber posture that governs the load paths now covers the write paths too.
+- Staging and renaming changes what a write does to a symlink or a hardlink.
+  A plain write followed the link and updated its target, and updated every
+  name pointing at a hardlinked file; the rename replaces the link itself with
+  a regular file, leaving the old target untouched, and breaks the hardlink so
+  the other names keep the previous content. Anywhere a stable pointer such as
+  `latest.csv` is kept, the pointer is now the file that gets replaced.
 - **Breaking:** `migrate_legacy_csv_to_db_file` no longer deletes `db_path` on
   failure. Its cleanup ran in a `finally` that also covered the CSV load, so a
   validation error destroyed whatever file already sat at `db_path` even though
@@ -153,18 +179,23 @@ until the first release is tagged.
   exists at the requested path. Its docstring claimed an existing file "will be
   overwritten by SQLite's default behaviour", which was untrue — `sqlite3.connect`
   opens such a file, and the unguarded schema DDL then failed partway through with
-  a bare `table ... already exists`. The path is now refused up front, by name.
+  a bare `table ... already exists`. The path is now refused up front, by name,
+  and the check tests the path itself rather than what it resolves to, so a
+  symlink is refused whether or not it currently points at anything.
 - **Breaking:** the minimum supported Python is now 3.11, up from 3.9. The
   detached-load implementation is built on `sqlite3.Connection.serialize` and
-  `.deserialize`, which are 3.11+.
-- Written files now carry the permissions an ordinary write would have given
-  them: an existing file keeps its own mode, and a new one gets the default
-  creation mode narrowed by the process umask. `atomic_write` previously forced
-  every output to `0644`, which re-permissioned a deliberately restricted
-  target on overwrite and widened new files past what the caller's umask asked
-  for.
-- The lint rule set is now declared in `pyproject.toml` as
-  `select = ["E4", "E7", "E9", "F"]` because ruff's default selection changing in 0.16 altered what CI enforced and failed the lint step on unmodified code.
+  `.deserialize`, which are 3.11+. `environment.yml` now declares the floor
+  too, so a local `conda env create` resolves an interpreter the package can
+  actually run on rather than whatever conda picks.
+- Written files carry the permissions an ordinary write would have given them:
+  an existing file keeps its own mode, and a new one gets the default creation
+  mode narrowed by the process umask. Staging would otherwise have decided the
+  result, since `mkstemp` creates its file at `0600`, so the mode a plain write
+  would have produced is resolved and applied before the rename.
+- The lint rule set is declared explicitly in `pyproject.toml` as
+  `select = ["E4", "E7", "E9", "F"]` rather than inherited, because ruff's
+  implicit default selection changes between releases, which would otherwise
+  keep changing what CI enforces without any change to this project.
 - `load_db_file` checks the SQLite file header off its first read instead of
   after pulling the whole file into memory, so a large non-database input is
   rejected without the needless read. The rejection now names the offending
@@ -207,6 +238,13 @@ until the first release is tagged.
 - Renamed the `project.qiita_id` DB column to `external_project_id`, preserving
   the `QiitaID` / `primary_qiita_study` / `secondary_qiita_studies` CSV emit
   aliases and carrying the change to existing DBs via a rename patch.
+
+### Deprecated
+
+- `open_file` is now a thin alias for `load_file` and emits a
+  `DeprecationWarning`. Every read entry point is named `load_*`, and `open`
+  implied a handle on the caller's file that no load path has returned since
+  the detached-load change. The alias delegates, so behaviour is identical.
 
 ### Fixed
 

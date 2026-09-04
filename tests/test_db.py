@@ -150,6 +150,18 @@ class TestCreateDb(unittest.TestCase):
             create_db(self.db_path)
         self.assertEqual(Path(self.db_path).read_bytes(), before)
 
+    def test_create_db_dangling_symlink_raise_err(self):
+        # The guard tests the path itself, not what it resolves to: a link
+        # to a not-yet-existing file would otherwise be followed and a full
+        # database created through it at a place the caller never named
+        link_target = Path(self.tmpdir.name) / "not_yet_there.db"
+        link_path = Path(self.tmpdir.name) / "link.db"
+        link_path.symlink_to(link_target)
+
+        with self.assertRaisesRegex(FileExistsError, r"refusing to overwrite"):
+            create_db(str(link_path))
+        self.assertFalse(link_target.exists())
+
 
 class TestGetIlluminaSampleInfo(unittest.TestCase):
     """End-to-end tests for get_illumina_sample_info."""
