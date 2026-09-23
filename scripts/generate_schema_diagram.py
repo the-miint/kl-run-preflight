@@ -59,8 +59,10 @@ CATEGORIES: dict[str, dict] = {
     "workflow": {
         "label": "Workflow",
         "tables": [
+            "amplicon_run",
             "metagenomic_absquant_sample",
             "metatranscriptomic_sample",
+            "amplicon_sample",
             "katharoseq_sample",
         ],
         "x": 1020,

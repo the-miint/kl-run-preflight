@@ -1,4 +1,4 @@
-"""Consumer-facing wrappers for legacy omnibus CSV operations."""
+"""Consumer-facing wrappers for legacy sample-sheet operations."""
 
 from __future__ import annotations
 
@@ -23,13 +23,22 @@ from ..db import (
     populate_db,
 )
 from ..file_io import atomic_write, load_db_bytes, save_db_file
-from .parser import parse_omnibus_text, read_omnibus_text
+from .parser import parse_amplicon_prep, parse_omnibus_text, read_omnibus_text
 from .reconstruct import reconstruct_omnibus
-from .validate import validate_omnibus
+from .validate import validate_sections
+
+
+def _has_section_labels(text: str) -> bool:
+    """True if the sheet's first non-blank line is a [Section] label."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped.startswith("[")
+    return False
 
 
 def load_file(path: str, patches_dir: Path | None = None) -> sqlite3.Connection:
-    """Load a run preflight from either a legacy omnibus CSV or a SQLite DB file.
+    """Load a run preflight from either a legacy sample sheet or a SQLite DB file.
 
     Detects the format from the file's first 16 bytes (SQLite magic
     header). Either branch returns a detached in-memory connection, so
@@ -86,13 +95,16 @@ def open_file(path: str, patches_dir: Path | None = None) -> sqlite3.Connection:
 
 
 def load_legacy_csv(csv_path: str) -> sqlite3.Connection:
-    """Parse a legacy omnibus CSV file into a fresh in-memory SQLite connection.
+    """Parse a legacy sample sheet into a fresh in-memory SQLite connection.
 
-    The returned connection is at the latest schema version with
-    foreign-key enforcement enabled. Caller owns and must close it.
+    Handles both the sectioned omnibus CSVs and the flat, section-less
+    amplicon prep templates; the two differ only in how their sections are
+    recovered, after which they share one validate and populate path. The
+    returned connection is at the latest schema version with foreign-key
+    enforcement enabled. Caller owns and must close it.
 
     Raises:
-        ValueError: If the CSV fails validation against the format registry.
+        ValueError: If the sheet fails validation against the format registry.
     """
     text = read_omnibus_text(csv_path)
     conn = load_legacy_csv_text(text)
@@ -100,25 +112,30 @@ def load_legacy_csv(csv_path: str) -> sqlite3.Connection:
 
 
 def load_legacy_csv_text(text: str) -> sqlite3.Connection:
-    """Parse legacy omnibus CSV text into a fresh in-memory SQLite connection.
+    """Parse legacy sample sheet content into a fresh in-memory SQLite connection.
 
     Takes content already decoded, so the caller owns any decision about
-    how bytes became text. The returned connection is at the latest
-    schema version with foreign-key enforcement enabled. Caller owns and
-    must close it.
+    how bytes became text. Accepts either sheet shape, sectioned or flat.
+    The returned connection is at the latest schema version with
+    foreign-key enforcement enabled. Caller owns and must close it.
 
     Raises:
-        ValueError: If the CSV fails validation against the format registry.
+        ValueError: If the sheet fails validation against the format registry.
     """
     # Build a fresh in-memory DB and tear it down on any downstream error
     conn = create_db(IN_MEMORY_PATH)
     try:
-        # Pull section format definitions from the freshly-created DB
-        section_formats = get_section_formats(conn)
+        # A sheet with no [Section] label lines carries its sections spread
+        # across the columns of a single table, and is regrouped rather than
+        # split apart.
+        if _has_section_labels(text):
+            section_formats = get_section_formats(conn)
+            sections = parse_omnibus_text(text, section_formats)
+        else:
+            sections = parse_amplicon_prep(text, conn)
 
-        # Parse and validate against the registry before any writes
-        sections = parse_omnibus_text(text, section_formats)
-        errors = validate_omnibus(conn, sections)
+        # Validate against the registry before any writes
+        errors = validate_sections(conn, sections)
         if errors:
             raise ValueError("Validation errors:\n  " + "\n  ".join(errors))
 

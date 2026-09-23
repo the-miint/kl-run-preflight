@@ -171,6 +171,21 @@ PLATFORM_ILLUMINA = "Illumina"
 SEQUENCER_PACBIO_REVIO = "Pacbio_Revio"
 SEQUENCER_UNKNOWN = "Unknown"
 
+# assay_type reference value for the EMP 16S amplicon prep template.
+ASSAY_AMPLICON = "Amplicon"
+
+# Internal registry label for the flat amplicon prep template. The sheet carries
+# no SheetType of its own (unlike the omnibus sheets), so this tags its formats in
+# legacy_samplesheet_format; the specific layout (v1/v2/v3) is resolved from the
+# column header (see db.get_amplicon_format_for_header).
+SHEET_TYPE_AMPLICON = "amplicon"
+
+# EMP V4 forward primer (515F). Its presence marks the EMP 515f-barcoded protocol,
+# whose Golay set is the reverse-complemented "515rcbc" set, so the demux treats
+# the barcodes as reverse-complemented. Read at ingest to infer and store
+# amplicon_run.barcodes_are_rc (see db._barcodes_are_rc_for_primer).
+EMP_515F_PRIMER = "GTGYCAGCMGCCGCGGTAA"
+
 # The platform-specific per-sample kinds, one per ``<kind>_sample`` table.
 # tellseq is a library prep sequenced on Illumina, not a platform of its own;
 # each member is the lowercase table prefix from which the table, primary-key
@@ -256,3 +271,60 @@ DB_COL_TELLSEQ_SAMPLE_IDX = "tellseq_sample_idx"
 DB_COL_PACBIO_SAMPLE_IDX = "pacbio_sample_idx"
 DB_COL_RUN_IDX = "run_idx"
 DB_COL_PROJECT_IDX = "project_idx"
+
+
+# ---------------------------------------------------------------------------
+# Reserved reconstruction-view columns
+# ---------------------------------------------------------------------------
+
+# Columns a reconstruction view may carry for the pipeline's own use and that
+# never reach the output: run_idx scopes a query to one run, and
+# prepped_sample_idx identifies the row for a view that emits no printable key
+# of its own. Introspection strips both from a view's column list.
+RESERVED_VIEW_COLUMNS: frozenset[str] = frozenset(
+    {COL_RUN_IDX, DB_COL_PREPPED_SAMPLE_IDX}
+)
+
+
+# ---------------------------------------------------------------------------
+# Amplicon prep-template Data column names
+# ---------------------------------------------------------------------------
+
+# Run-constant prep facts; the wet lab does not mix primers within a run.
+COL_AMPLICON_PRIMER = "primer"
+COL_AMPLICON_LINKER = "linker"
+COL_AMPLICON_TARGET_GENE = "target_gene"
+COL_AMPLICON_TARGET_SUBFRAGMENT = "target_subfragment"
+COL_AMPLICON_PCR_PRIMERS = "pcr_primers"
+COL_AMPLICON_SEQUENCING_METH = "sequencing_meth"
+
+# Per-sample amplicon facts.
+COL_AMPLICON_BARCODE = "barcode"
+COL_MATRIX_TUBE_ID = "TubeCode"
+COL_KATHAROSEQ_RACK_ID = "Kathseq_RackID"
+COL_KATHAROSEQ_NUMBER_OF_CELLS = "number_of_cells"
+
+# Plate-constant prep facts, carried on input_plate.
+COL_PRIMER_PLATE = "primer_plate"
+COL_PLATING = "plating"
+COL_EXTRACTIONKIT_LOT = "extractionkit_lot"
+COL_EXTRACTION_ROBOT = "extraction_robot"
+COL_PLATEMAP_GENERATION_DATE = "platemap_generation_date"
+COL_PLATE_CONTENTS_DESCRIPTION = "experiment_design_description"
+
+COL_CONTROL_DESCRIPTION = "control_description"
+
+# The prep template's control_description value for each SampleContext type;
+# a standard sample carries an empty value.
+CONTROL_DESCRIPTION_FOR_CONTEXT_TYPE: dict[str | None, str] = {
+    CONTEXT_TYPE_CONTROL_BLANK: "negative_control",
+    CONTEXT_TYPE_CONTROL_KATHAROSEQ: "positive_control",
+    None: "",
+}
+
+# The 96-well input-plate position, which only the prep template records; the
+# omnibus formats carry no such column and leave input_sample.well NULL.
+COL_WELL_ID_96 = "well_id_96"
+
+# The instrument a sheet names, overriding its format's declared default.
+COL_INSTRUMENT_MODEL = "instrument_model"

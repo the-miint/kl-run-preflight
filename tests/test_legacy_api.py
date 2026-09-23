@@ -20,7 +20,7 @@ from run_preflight import (
 from run_preflight.constants import IN_MEMORY_PATH
 from run_preflight.legacy import LegacyExtraColumnWarning
 from run_preflight.legacy.roundtrip import roundtrip_via_api
-from run_preflight.legacy.validate import validate_omnibus
+from run_preflight.legacy.validate import validate_sections
 
 from . import _helpers
 from ._helpers import open_db
@@ -165,7 +165,7 @@ class TestLegacyApi(unittest.TestCase):
             migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
-    def test_validate_omnibus_allows_missing_settings_keys(self):
+    def test_validate_sections_allows_missing_settings_keys(self):
         # Settings keys may legitimately be absent: the reconstructor's
         # _write_header_kv NULL-skips on output, so missing Settings keys
         # round-trip cleanly. Header keys, by contrast, must remain required.
@@ -178,7 +178,7 @@ class TestLegacyApi(unittest.TestCase):
                 },
                 "Settings": {"ReverseComplement": "0"},
             }
-            errors = validate_omnibus(conn, sections)
+            errors = validate_sections(conn, sections)
         finally:
             conn.close()
 
@@ -206,7 +206,7 @@ class TestLegacyApi(unittest.TestCase):
             conn.close()
         self.assertIsNone(rc)
 
-    def test_validate_omnibus_accepts_all_settings_keys_in_v90(self):
+    def test_validate_sections_accepts_all_settings_keys_in_v90(self):
         # After unifying the per-version Settings views into
         # omnibus_illumina_settings, all three keys (ReverseComplement,
         # MaskShortReads, OverrideCycles) are valid for v90 and v0 too,
@@ -224,7 +224,7 @@ class TestLegacyApi(unittest.TestCase):
                     "OverrideCycles": "Y150;I8N2;I8N16;Y150",
                 },
             }
-            errors = validate_omnibus(conn, sections)
+            errors = validate_sections(conn, sections)
         finally:
             conn.close()
 
@@ -232,37 +232,37 @@ class TestLegacyApi(unittest.TestCase):
         settings_errors = [e for e in errors if e.startswith("[Settings]")]
         self.assertEqual(settings_errors, [])
 
-    def test_validate_omnibus_errors_on_missing_sheet_type(self):
+    def test_validate_sections_errors_on_missing_sheet_type(self):
         # SheetType drives format dispatch; absence must produce a clear
         # field-specific error rather than the misleading "Unknown
         # format:  v0" that the previous ("", 0) default lookup yielded.
         conn = create_db(IN_MEMORY_PATH)
         try:
             sections = {"Header": {"SheetVersion": "101"}}
-            errors = validate_omnibus(conn, sections)
+            errors = validate_sections(conn, sections)
         finally:
             conn.close()
 
         self.assertEqual(errors, ["[Header] missing required field: SheetType"])
 
-    def test_validate_omnibus_errors_on_missing_sheet_version(self):
+    def test_validate_sections_errors_on_missing_sheet_version(self):
         # SheetVersion is also required for format dispatch; absence must
         # produce a clear field-specific error rather than a silent v0 default
         conn = create_db(IN_MEMORY_PATH)
         try:
             sections = {"Header": {"SheetType": "standard_metag"}}
-            errors = validate_omnibus(conn, sections)
+            errors = validate_sections(conn, sections)
         finally:
             conn.close()
 
         self.assertEqual(errors, ["[Header] missing required field: SheetVersion"])
 
-    def test_validate_omnibus_errors_on_missing_header_section(self):
+    def test_validate_sections_errors_on_missing_header_section(self):
         # An entirely-missing [Header] section surfaces as both field-level
         # errors rather than a dedicated section-missing error
         conn = create_db(IN_MEMORY_PATH)
         try:
-            errors = validate_omnibus(conn, {})
+            errors = validate_sections(conn, {})
         finally:
             conn.close()
 
@@ -325,7 +325,7 @@ class TestLegacyApi(unittest.TestCase):
             migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
-    def test_validate_omnibus_skips_constant_check_for_pacbio(self):
+    def test_validate_sections_skips_constant_check_for_pacbio(self):
         # PacBio uses a different Header view with no hardcoded literals,
         # so the constant-preservation check must not fire for PacBio
         # even when a deviant value is supplied. Other errors may appear
@@ -339,7 +339,7 @@ class TestLegacyApi(unittest.TestCase):
                     "Workflow": "bcl2fastq",
                 },
             }
-            errors = validate_omnibus(conn, sections)
+            errors = validate_sections(conn, sections)
         finally:
             conn.close()
 

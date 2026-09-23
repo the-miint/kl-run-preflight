@@ -23,10 +23,46 @@ import csv
 import io
 
 from ..constants import (
+    ASSAY_AMPLICON,
+    COL_EMAIL,
+    COL_HUMAN_FILTERING,
+    COL_LIBRARY_CONSTRUCTION_PROTOCOL,
+    COL_QIITA_ID,
+    COL_SAMPLE_PROJECT,
+    COL_SC_SAMPLE_NAME,
+    COL_SC_SAMPLE_TYPE,
+    CONTEXT_TYPE_CONTROL_BLANK,
+    CONTEXT_TYPE_CONTROL_KATHAROSEQ,
+    FIELD_ASSAY,
+    FIELD_DATE,
+    FIELD_EXPERIMENT_NAME,
+    FIELD_SHEET_TYPE,
+    FIELD_SHEET_VERSION,
     FORMAT_HEADER_KV,
     FORMAT_TABULAR,
     FORMAT_VALUES_ONLY,
+    SECTION_BIOINFORMATICS,
+    SECTION_CONTACT,
+    SECTION_DATA,
+    SECTION_HEADER,
+    SECTION_SAMPLE_CONTEXT,
+    SHEET_TYPE_AMPLICON,
 )
+from ..db import get_amplicon_format_for_header
+
+# Prefixes marking a control in an amplicon prep template's sample_name,
+# matched case-insensitively because sheets differ on capitalisation:
+# KatharoSeq controls appear as both "KATHARO." and "katharo.".
+_CONTROL_PREFIXES: dict[str, str] = {
+    "BLANK.": CONTEXT_TYPE_CONTROL_BLANK,
+    "KATHARO.": CONTEXT_TYPE_CONTROL_KATHAROSEQ,
+}
+
+# Columns whose value is constant per project and lifted into [Bioinformatics].
+_AMPLICON_PROJECT_COLUMN = "project_name"
+_AMPLICON_PROTOCOL_COLUMN = "library_construction_protocol"
+_AMPLICON_SAMPLE_NAME_COLUMN = "sample_name"
+_AMPLICON_RUN_DATE_COLUMN = "run_date"
 
 
 def parse_omnibus(filepath: str, section_formats: dict[str, str]) -> dict:
@@ -199,3 +235,125 @@ def _finalize_section(
             record[col] = row[i] if i < len(row) else ""
         result.append(record)
     return result
+
+
+def control_context_type_for(sample_name: str) -> str | None:
+    """Return the SampleContext type for a control, or None for a real sample.
+
+    Matching is case-insensitive but otherwise literal. A name such as
+    "BLANK2.2A" is deliberately NOT matched: whether a numbered prefix marks a
+    blank is a question about the sheet's convention, not one to settle here.
+    """
+    upper = sample_name.upper()
+    for prefix, context_type in _CONTROL_PREFIXES.items():
+        if upper.startswith(prefix):
+            return context_type
+    return None
+
+
+def _split_prep_template(text: str, delimiter: str) -> list[list[str]]:
+    """Split flat prep-template content into rows, rejecting a malformed sheet.
+
+    The format has no quoting and no embedded delimiters or newlines, so a
+    manual split is exact.
+
+    Raises:
+        ValueError: If the content has no data rows, or any row's width
+            differs from the header's.
+    """
+    lines = text.splitlines()
+    while lines and lines[-1] == "":
+        lines.pop()
+    rows = [line.split(delimiter) for line in lines]
+    if len(rows) < 2:
+        raise ValueError(
+            "prep template has a header but no sample rows; nothing to load"
+        )
+
+    width = len(rows[0])
+    for line_number, row in enumerate(rows[1:], start=2):
+        if len(row) != width:
+            raise ValueError(
+                f"prep template line {line_number} has {len(row)} columns, "
+                f"expected {width}"
+            )
+    return rows
+
+
+def parse_amplicon_prep(text: str, conn) -> dict:
+    """Parse flat amplicon prep-template content and return the same sections
+    a sectioned sheet parses into.
+
+    The sheet is one table with no [Section] labels, so the sections other
+    than Data are lifted out of its columns: project-grain facts become
+    Bioinformatics and Contact rows, and controls -- identified by their
+    sample_name prefix -- become SampleContext rows. Data keeps the sheet's
+    own column names, which the format declares.
+
+    Raises:
+        ValueError: If the content is malformed or its header matches no
+            registered amplicon format.
+    """
+    cur = conn.cursor()
+    delimiter = cur.execute(
+        "SELECT delimiter FROM legacy_samplesheet_format "
+        "WHERE legacy_sheet_type = ? LIMIT 1",
+        (SHEET_TYPE_AMPLICON,),
+    ).fetchone()[0]
+
+    rows = _split_prep_template(text, delimiter)
+    header, data_rows = rows[0], rows[1:]
+    _, version = get_amplicon_format_for_header(cur, header)
+    data = [dict(zip(header, row)) for row in data_rows]
+
+    # Project-grain facts repeat on every row; collapse them to one entry each.
+    first_by_project: dict[str, dict] = {}
+    for row in data:
+        first_by_project.setdefault(row[_AMPLICON_PROJECT_COLUMN], row)
+
+    # The Qiita study id is the trailing token of the project name, which is
+    # the only place these sheets record it.
+    bioinformatics = [
+        {
+            COL_SAMPLE_PROJECT: project_name,
+            COL_QIITA_ID: project_name.rsplit("_", 1)[-1],
+            # The sheet records nothing about human filtering; the section
+            # carries the schema's default so it matches its view.
+            COL_HUMAN_FILTERING: "True",
+            COL_LIBRARY_CONSTRUCTION_PROTOCOL: row[_AMPLICON_PROTOCOL_COLUMN],
+        }
+        for project_name, row in first_by_project.items()
+    ]
+
+    # The sheet records no contact address; the column exists so the section
+    # matches its view, and an empty value round-trips as an empty one.
+    contact = [
+        {COL_SAMPLE_PROJECT: project_name, COL_EMAIL: ""}
+        for project_name in first_by_project
+    ]
+
+    sample_context = []
+    for row in data:
+        context_type = control_context_type_for(row[_AMPLICON_SAMPLE_NAME_COLUMN])
+        if context_type is not None:
+            sample_context.append(
+                {
+                    COL_SC_SAMPLE_NAME: row[_AMPLICON_SAMPLE_NAME_COLUMN],
+                    COL_SC_SAMPLE_TYPE: context_type,
+                }
+            )
+
+    first_row = data[0]
+    return {
+        SECTION_HEADER: {
+            FIELD_SHEET_TYPE: SHEET_TYPE_AMPLICON,
+            FIELD_SHEET_VERSION: str(version),
+            FIELD_ASSAY: ASSAY_AMPLICON,
+            FIELD_EXPERIMENT_NAME: first_row[_AMPLICON_PROJECT_COLUMN],
+            FIELD_DATE: first_row.get(_AMPLICON_RUN_DATE_COLUMN, ""),
+        },
+        SECTION_DATA: data,
+        SECTION_BIOINFORMATICS: bioinformatics,
+        SECTION_CONTACT: contact,
+        SECTION_SAMPLE_CONTEXT: sample_context,
+    }

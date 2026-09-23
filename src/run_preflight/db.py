@@ -16,15 +16,27 @@ from typing import NamedTuple, get_args
 from .legacy import LegacyExtraColumnWarning
 from .migrate import get_latest_version
 from .constants import (
+    EMP_515F_PRIMER,
+    COL_AMPLICON_BARCODE,
+    COL_AMPLICON_LINKER,
+    COL_AMPLICON_PCR_PRIMERS,
+    COL_AMPLICON_PRIMER,
+    COL_AMPLICON_SEQUENCING_METH,
+    COL_AMPLICON_TARGET_GENE,
+    COL_AMPLICON_TARGET_SUBFRAGMENT,
     COL_BARCODE_ID,
     COL_CONTAINS_REPLICATES,
     COL_EXTRACTED_SAMPLE_MASS,
     COL_EXTRACTED_SAMPLE_SURFACE_AREA,
     COL_EXTRACTED_SAMPLE_VOLUME,
+    COL_EXTRACTION_ROBOT,
+    COL_EXTRACTIONKIT_LOT,
     COL_SEQUENCED_SAMPLE_GDNA_MASS,
     LEGACY_COLUMN_ALIASES,
+    COL_KATHAROSEQ_NUMBER_OF_CELLS,
+    COL_KATHAROSEQ_RACK_ID,
     COL_LANE,
-    COL_RUN_IDX,
+    RESERVED_VIEW_COLUMNS,
     COL_BARCODES_ARE_RC,
     COL_DESTINATION_WELL_384,
     COL_EMAIL,
@@ -36,15 +48,18 @@ from .constants import (
     COL_I7_INDEX_ID,
     COL_INDEX,
     COL_INDEX2,
+    COL_INSTRUMENT_MODEL,
     COL_LIBRARY_CONSTRUCTION_PROTOCOL,
     COL_MASS_SYNDNA_INPUT,
+    COL_MATRIX_TUBE_ID,
+    COL_PLATE_CONTENTS_DESCRIPTION,
+    COL_PLATEMAP_GENERATION_DATE,
+    COL_PLATING,
+    COL_PRIMER_PLATE,
     COL_ORIG_NAME,
     COL_QIITA_ID,
     COL_REVERSE_ADAPTER,
-    COL_SAMPLE_NAME,
-    COL_SAMPLE_PLATE,
     COL_SAMPLE_PROJECT,
-    COL_SAMPLE_WELL,
     COL_SC_SAMPLE_NAME,
     COL_SC_SAMPLE_TYPE,
     COL_SYNDNA_IS_TWISTED,
@@ -52,8 +67,7 @@ from .constants import (
     COL_TOTAL_RNA_CONC,
     COL_TWIST_ADAPTOR_ID,
     COL_VOL_EXTRACTED_ELUTION,
-    COL_WELL_DESCRIPTION,
-    COL_WELL_ID_384,
+    COL_WELL_ID_96,
     CONTEXT_TYPE_MAP,
     DO_NOT_USE_TOKEN,
     FIELD_ASSAY,
@@ -68,7 +82,6 @@ from .constants import (
     FIELD_SHEET_VERSION,
     IN_MEMORY_PATH,
     PLATFORM_ILLUMINA,
-    PLATFORM_PACBIO,
     PlatformSpecificSampleKind,
     SAMPLE_TYPE_STANDARD,
     SECTION_BIOINFORMATICS,
@@ -78,8 +91,7 @@ from .constants import (
     SECTION_READS,
     SECTION_SAMPLE_CONTEXT,
     SECTION_SETTINGS,
-    SEQUENCER_PACBIO_REVIO,
-    SEQUENCER_UNKNOWN,
+    SHEET_TYPE_AMPLICON,
 )
 
 # ---------------------------------------------------------------------------
@@ -167,7 +179,7 @@ def create_db(db_path: str) -> sqlite3.Connection:
 # ---------------------------------------------------------------------------
 
 
-def introspect_view(cur, view_name: str) -> tuple[list[str], bool]:
+def introspect_view(cur, view_name: str) -> tuple[list[str], frozenset[str]]:
     """Return column names (excluding run_idx) and whether run_idx exists.
 
     Args:
@@ -175,25 +187,26 @@ def introspect_view(cur, view_name: str) -> tuple[list[str], bool]:
         view_name: Name of the SQL view to introspect.
 
     Returns:
-        tuple[list[str], bool]: (column names sans run_idx, has_run_idx).
+        tuple[list[str], frozenset[str]]: the view's emitted column names,
+        and which reserved columns it carries.
     """
     cur.execute(f"PRAGMA table_info({view_name})")
-    all_info = cur.fetchall()
-    has_run_idx = any(row[1] == COL_RUN_IDX for row in all_info)
-    cols = [row[1] for row in all_info if row[1] != COL_RUN_IDX]
-    return cols, has_run_idx
+    names = [row[1] for row in cur.fetchall()]
+    cols = [name for name in names if name not in RESERVED_VIEW_COLUMNS]
+    reserved_present = RESERVED_VIEW_COLUMNS & set(names)
+    return cols, reserved_present
 
 
 def get_view_columns(cur, view_name: str) -> list[str]:
-    """Return the column names of a SQL view, excluding run_idx.
+    """Return the column names a SQL view emits, excluding reserved ones.
 
     Args:
         cur: An open SQLite cursor.
         view_name: Name of the SQL view to introspect.
 
     Returns:
-        list[str]: Ordered list of column names from the view, with
-        run_idx omitted.
+        list[str]: Ordered list of column names from the view, with the
+        reserved columns omitted.
     """
     cols, _ = introspect_view(cur, view_name)
     return cols
@@ -343,6 +356,117 @@ def get_legacy_format_idx(cur, sheet_type: str, sheet_version: int) -> int | Non
     )
     row = cur.fetchone()
     return row[0] if row else None
+
+
+class FormatLoadConfig(NamedTuple):
+    """What a legacy format declares about loading a file of that format.
+
+    sample_kind is None for a format whose runs have no platform-specific
+    per-sample rows; callers populate no such table in that case. The
+    *_column fields name the Data columns this format uses for each fact,
+    which differ between formats.
+    """
+
+    platform_idx: int
+    platform_name: str
+    default_instrument_type: str
+    sample_kind: str | None
+    sample_name_column: str
+    plate_column: str
+    project_column: str
+    well_description_column: str
+    well_column: str
+    replicates_supported: bool
+
+
+def get_format_load_config(cur, legacy_format_idx: int) -> FormatLoadConfig:
+    """Return the load configuration a legacy format declares.
+
+    Raises:
+        ValueError: If the format is unknown, or declares no platform or
+            instrument. A guard test keeps every registered row complete,
+            so this signals a registry gap rather than a caller error.
+    """
+    cur.execute(
+        "SELECT f.platform_idx, sp.name, f.default_instrument_type, f.sample_kind, "
+        " f.sample_name_column, f.plate_column, f.project_column, "
+        " f.well_description_column, f.well_column, f.replicates_supported "
+        "FROM legacy_samplesheet_format f "
+        "JOIN sequencing_platform sp ON f.platform_idx = sp.platform_idx "
+        "WHERE f.legacy_format_idx = ?",
+        (legacy_format_idx,),
+    )
+    row = cur.fetchone()
+    if row is None or row[0] is None or row[2] is None:
+        raise ValueError(
+            f"Legacy format {legacy_format_idx} declares no platform or "
+            "instrument; it cannot be loaded"
+        )
+    config = FormatLoadConfig(*row)
+    return config
+
+
+def get_amplicon_format_for_header(cur, header: list[str]) -> tuple[int, int]:
+    """Resolve a flat amplicon prep template's header to its registered format.
+
+    These sheets carry no SheetType or SheetVersion, so the column header is
+    the only signal. A format matches when its Data view's typed columns --
+    minus any optional group the sheet omits -- are all present in *header*;
+    the match declaring the most typed columns wins, which resolves the case
+    of one layout's typed set being a subset of a later layout's.
+
+    Returns:
+        tuple[int, int]: the legacy_format_idx and legacy_version.
+
+    Raises:
+        ValueError: If no registered format matches, naming the header so the
+            unrecognised layout can be registered.
+    """
+    header_set = set(header)
+    formats = cur.execute(
+        "SELECT f.legacy_format_idx, f.legacy_version, lv.view_name "
+        "FROM legacy_samplesheet_format f "
+        "JOIN legacy_samplesheet_view lv ON f.legacy_format_idx = lv.legacy_format_idx "
+        "WHERE f.legacy_sheet_type = ? AND lv.section_name = ? "
+        "ORDER BY f.legacy_version",
+        (SHEET_TYPE_AMPLICON, SECTION_DATA),
+    ).fetchall()
+
+    # Widest match wins; an optional group the sheet omits is subtracted first.
+    best: tuple[int, int, int] | None = None
+    for legacy_format_idx, version, view_name in formats:
+        typed = set(get_view_columns(cur, view_name))
+        optional = get_optional_columns_by_section(cur, legacy_format_idx)
+        candidate = typed - (optional.get(SECTION_DATA, set()) - header_set)
+        if candidate <= header_set and (best is None or len(candidate) > best[2]):
+            best = (legacy_format_idx, version, len(candidate))
+
+    if best is None:
+        raise ValueError(
+            "No registered amplicon format matches this prep template's header; "
+            f"columns were: {header}"
+        )
+    return best[0], best[1]
+
+
+def get_format_file_shape(cur, legacy_format_idx: int) -> tuple[str, bool]:
+    """Return a format's field delimiter and whether it carries section labels.
+
+    Args:
+        cur: An open SQLite cursor.
+        legacy_format_idx: The legacy format identifier.
+
+    Returns:
+        tuple[str, bool]: the delimiter, and whether the file labels its
+        sections. A file with no labels holds exactly one written section.
+    """
+    cur.execute(
+        "SELECT delimiter, has_section_labels FROM legacy_samplesheet_format "
+        "WHERE legacy_format_idx = ?",
+        (legacy_format_idx,),
+    )
+    delimiter, has_section_labels = cur.fetchone()
+    return delimiter, bool(has_section_labels)
 
 
 def get_format_sections(cur, legacy_format_idx: int) -> list[tuple[str, str, str]]:
@@ -605,6 +729,11 @@ class PacbioSampleRow(NamedTuple):
         return "pacbio"
 
     @classmethod
+    def source_names(cls) -> _SampleKindNames:
+        """DB object names for the sample source this row reads from."""
+        return sample_kind_names(cls.sample_kind())
+
+    @classmethod
     def from_run_view(cls, values: tuple) -> PacbioSampleRow:
         """Build from a run_pacbio_sample value tuple in field order."""
         row = cls._make(values)
@@ -637,12 +766,55 @@ class IlluminaSampleRow(NamedTuple):
         return "illumina"
 
     @classmethod
+    def source_names(cls) -> _SampleKindNames:
+        """DB object names for the sample source this row reads from."""
+        return sample_kind_names(cls.sample_kind())
+
+    @classmethod
     def from_run_view(cls, values: tuple) -> IlluminaSampleRow:
         """Build from a run_illumina_sample value tuple in field order.
 
         No column needs storage-to-domain coercion, so this is a direct map.
         """
         return cls._make(values)
+
+
+class AmpliconSampleRow(NamedTuple):
+    """Amplicon-specific columns of one amplicon_sample row.
+
+    Amplicon is deliberately not a PlatformSpecificSampleKind — a run carries a
+    single in-line Golay barcode, not an i5/i7 pair — so this row reads from the
+    run_amplicon_sample view directly rather than through the sample-kind naming
+    convention, supplying its own source_names. barcode + barcodes_are_rc are the
+    per-sample facts a golay-demux consumer needs (barcodes_are_rc is run-constant
+    but surfaced per row for the roster). Field names match the view columns; the
+    field order drives the SELECT built in _get_platform_specific_sample_info.
+    """
+
+    barcode: str
+    barcodes_are_rc: bool
+
+    @classmethod
+    def source_names(cls) -> _SampleKindNames:
+        """DB object names for the amplicon sample source.
+
+        amplicon_sample has no surrogate key, so its per-sample handle is
+        prepped_sample_idx rather than an <kind>_sample_idx.
+        """
+        return _SampleKindNames(
+            table="amplicon_sample",
+            idx_col="prepped_sample_idx",
+            run_view="run_amplicon_sample",
+        )
+
+    @classmethod
+    def from_run_view(cls, values: tuple) -> AmpliconSampleRow:
+        """Build from a run_amplicon_sample value tuple in field order.
+
+        barcodes_are_rc is a SQLite BOOLEAN stored as 0/1; surface it as bool.
+        """
+        row = cls._make(values)
+        return row._replace(barcodes_are_rc=bool(row.barcodes_are_rc))
 
 
 class PlatformSampleInfo(NamedTuple):
@@ -661,7 +833,7 @@ class PlatformSampleInfo(NamedTuple):
     biosample_accession: str
     primary_bioproject_accession: str
     secondary_bioproject_accessions: list[str]
-    kind_row: IlluminaSampleRow | PacbioSampleRow
+    kind_row: IlluminaSampleRow | PacbioSampleRow | AmpliconSampleRow
 
 
 # Error categories and per-row labels for invariant/accession violations.
@@ -690,14 +862,14 @@ def _raise_violations(
 
 def _get_platform_specific_sample_info(
     conn: sqlite3.Connection,
-    row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow],
+    row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow] | type[AmpliconSampleRow],
     *,
     include_do_not_use: bool = False,
 ) -> list[PlatformSampleInfo]:
     """Return per-sample biosample + bioproject accession info for the run.
 
     Resolves the sole processing_run via get_single_run_idx and returns
-    one PlatformSampleInfo per *row_cls* sample row, ordered by that kind's
+    one PlatformSampleInfo per *row_cls* sample row, ordered by the source's
     sample-idx. secondary_bioproject_accessions lists accessions for every
     non-primary plate project (populated only for controls; empty for
     non-control samples), sorted by accession value; kind_row is a *row_cls*
@@ -711,7 +883,7 @@ def _get_platform_specific_sample_info(
             required accession (biosample, primary bioproject accession, or any
             secondary bioproject accession) is None on any row.
     """
-    names = sample_kind_names(row_cls.sample_kind())
+    names = row_cls.source_names()
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
     do_not_use_filter = _do_not_use_filter(include_do_not_use, "rs.")
@@ -845,6 +1017,76 @@ def get_pacbio_sample_info(
     )
 
 
+def get_amplicon_sample_info(
+    conn: sqlite3.Connection,
+    *,
+    include_do_not_use: bool = False,
+) -> list[PlatformSampleInfo]:
+    """Return per-amplicon_sample accession + amplicon row; see shared helper.
+
+    Requires every referenced project to have its NCBI accessions populated (a
+    preflight with a required accession still NULL raises ``ValueError``), so it
+    is the reader a consumer calls to provision a run keyed by biosample
+    accession. kind_row is an AmpliconSampleRow carrying the sample's Golay
+    barcode and barcodes_are_rc (all a golay-demux roster needs), and samples are
+    keyed and ordered by prepped_sample_idx (amplicon_sample has no surrogate
+    key).
+    """
+    return _get_platform_specific_sample_info(
+        conn, AmpliconSampleRow, include_do_not_use=include_do_not_use
+    )
+
+
+class KatharoseqSampleInfo(NamedTuple):
+    """One katharoseq positive-control sample's titration facts.
+
+    Keyed by input_sample (a control is a plate-level input_sample, not a
+    prepped_sample). ``number_of_cells`` is the known input for the
+    read-count-vs-cells curve KatharoSeq fits.
+    """
+
+    input_sample_idx: int
+    sample_name: str
+    number_of_cells: int | None
+    rack_id: str | None
+
+
+def add_katharoseq_sample(
+    conn: sqlite3.Connection,
+    input_sample_idx: int,
+    *,
+    number_of_cells: int | None,
+    rack_id: str | None = None,
+) -> None:
+    """Record the KatharoSeq titration facts for one control input_sample.
+
+    Makes a KatharoSeq run explicit: the input_sample should already be typed
+    ``katharoseq_cells_positive_control``. The tube barcode lives on
+    ``input_sample.matrix_tube_id``, not here. Does not commit; the caller owns
+    the transaction (matching the populate/seed helpers).
+    """
+    conn.execute(
+        "INSERT INTO katharoseq_sample "
+        "(input_sample_idx, rack_id, number_of_cells) "
+        "VALUES (?, ?, ?)",
+        (input_sample_idx, rack_id, number_of_cells),
+    )
+
+
+def get_katharoseq_sample_info(
+    conn: sqlite3.Connection,
+) -> list[KatharoseqSampleInfo]:
+    """Return one row per katharoseq_sample, joined to its input_sample name,
+    ordered by input_sample_idx."""
+    cur = conn.execute(
+        "SELECT k.input_sample_idx, ins.sample_name, k.number_of_cells, k.rack_id "
+        "FROM katharoseq_sample k "
+        "JOIN input_sample ins ON k.input_sample_idx = ins.input_sample_idx "
+        "ORDER BY k.input_sample_idx"
+    )
+    return [KatharoseqSampleInfo(*row) for row in cur.fetchall()]
+
+
 def get_illumina_sample_rows(
     conn: sqlite3.Connection,
     *,
@@ -912,6 +1154,16 @@ def get_illumina_settings(
 # column (including derived ones like Sample_ID) must agree across the
 # group; mismatches are surfaced by _check_per_tube_consistency.
 _PER_LOADING_COLUMNS = frozenset({COL_LANE})
+
+# Plate-constant prep facts, in the order input_plate stores them.
+_PLATE_TIER_COLUMNS = (
+    COL_PRIMER_PLATE,
+    COL_PLATING,
+    COL_EXTRACTIONKIT_LOT,
+    COL_EXTRACTION_ROBOT,
+    COL_PLATEMAP_GENERATION_DATE,
+    COL_PLATE_CONTENTS_DESCRIPTION,
+)
 
 
 def _check_per_tube_consistency(
@@ -1011,19 +1263,20 @@ def _lookup_idx(cur, table: str, col: str, value) -> int:
 
 
 def _reject_unsupported_replicates(
+    replicates_supported: bool,
     sheet_version: int,
     data_rows: list[dict],
     bio_rows: list[dict],
 ) -> None:
-    """Raise ValueError if a pre-v101 file contains replicates.
+    """Raise ValueError if a file whose format cannot carry replicates has them.
 
-    Replicate well semantics changed at v101. Earlier standard_metag
-    versions that contain replicate signals use well_id_384 in a way
-    that cannot be round-tripped correctly. This check applies only to
-    standard_metag files; other format families do not carry replicate
-    columns in pre-v101 versions.
+    Replicate well semantics changed at standard_metag v101; earlier
+    versions of that family use well_id_384 in a way that cannot be
+    round-tripped. Which formats those are is declared on the format
+    rather than derived from the version number, which is comparable
+    only within one format family.
     """
-    if sheet_version >= 101:
+    if replicates_supported:
         return
 
     # Check for any replicate signal
@@ -1080,12 +1333,13 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     contact_rows = sections[SECTION_CONTACT]
     context_rows = sections.get(SECTION_SAMPLE_CONTEXT, [])
 
-    # -- Determine platform from SheetType ----------------------------------
+    # -- Resolve the format, which declares how a file of it loads ----------
     sheet_type = header.get(FIELD_SHEET_TYPE, "")
-    is_pacbio = "pacbio" in sheet_type.lower()
-    is_tellseq = "tellseq" in sheet_type.lower()
-    platform_name = PLATFORM_PACBIO if is_pacbio else PLATFORM_ILLUMINA
-    instrument_type = SEQUENCER_PACBIO_REVIO if is_pacbio else SEQUENCER_UNKNOWN
+    sheet_version = int(header.get(FIELD_SHEET_VERSION, 0))
+    legacy_format_idx = get_legacy_format_idx(cur, sheet_type, sheet_version)
+    if legacy_format_idx is None:
+        raise ValueError(f"Unknown legacy format: {sheet_type} v{sheet_version}")
+    load_config = get_format_load_config(cur, legacy_format_idx)
 
     # -- Build a lookup: sample_name → sample_type DB name ------------------
     # SampleContext tells us which samples are controls and their type.
@@ -1096,18 +1350,15 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 
     # -- Resolve reference-table IDs ----------------------------------------
     assay_type_idx = _lookup_idx(cur, "assay_type", "name", header[FIELD_ASSAY])
-    platform_idx = _lookup_idx(cur, "sequencing_platform", "name", platform_name)
 
     # Cache all sample_type IDs for quick lookup.
     cur.execute("SELECT sample_type_idx, name FROM sample_type")
     type_ids: dict[str, int] = {name: sid for sid, name in cur.fetchall()}
 
-    # -- Resolve legacy format ID (may be NULL for native runs) -------------
-    sheet_version = int(header.get(FIELD_SHEET_VERSION, 0))
-    legacy_format_idx = get_legacy_format_idx(cur, sheet_type, sheet_version)
-
     # Reject pre-v101 files with replicates (unsupported well semantics)
-    _reject_unsupported_replicates(sheet_version, data_rows, bio_rows)
+    _reject_unsupported_replicates(
+        load_config.replicates_supported, sheet_version, data_rows, bio_rows
+    )
 
     # -- Insert projects (one per Bioinformatics row) -----------------------
     # Build a quick email lookup from the Contact section.
@@ -1129,7 +1380,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
                 contact_map.get(proj_name, ""),
                 human_filt,
                 bio[COL_LIBRARY_CONSTRUCTION_PROTOCOL],
-                bio[COL_EXPERIMENT_DESIGN_DESCRIPTION],
+                bio.get(COL_EXPERIMENT_DESIGN_DESCRIPTION, ""),
             ),
         )
         assert cur.lastrowid is not None
@@ -1140,11 +1391,15 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     # The first project seen on that plate becomes primary_project_idx.
     plate_info: dict[str, dict] = {}
     for row in data_rows:
-        pname = row[COL_SAMPLE_PLATE]
+        pname = row[load_config.plate_column]
         if pname not in plate_info:
             plate_info[pname] = {
-                "project": row[COL_SAMPLE_PROJECT],
+                "project": row[load_config.project_column],
                 "elution_vol": row.get(COL_VOL_EXTRACTED_ELUTION),
+                # Plate-constant prep facts; absent from the omnibus formats.
+                "tier": tuple(
+                    row.get(col) or None for col in _PLATE_TIER_COLUMNS
+                ),
             }
 
     plate_idxs: dict[str, int] = {}
@@ -1152,14 +1407,22 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
         proj_id = project_idxs.get(info["project"])
         elution = float(info["elution_vol"]) if info["elution_vol"] else None
         cur.execute(
-            "INSERT INTO input_plate (plate_name, primary_project_idx, elution_vol) "
-            "VALUES (?, ?, ?)",
-            (pname, proj_id, elution),
+            "INSERT INTO input_plate "
+            "(plate_name, primary_project_idx, elution_vol, primer_plate, "
+            " plating, extractionkit_lot, extraction_robot, "
+            " platemap_generation_date, plate_contents_description) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pname, proj_id, elution, *info["tier"]),
         )
         assert cur.lastrowid is not None
         plate_idxs[pname] = cur.lastrowid
 
     # -- Insert processing run ----------------------------------------------
+    # The format's declared instrument stands unless the sheet names one; an
+    # empty value it does name is still what that sheet states.
+    instrument_type = data_rows[0].get(
+        COL_INSTRUMENT_MODEL, load_config.default_instrument_type
+    )
     cur.execute(
         """INSERT INTO processing_run
            (experiment_name, run_date, investigator_name, instrument_type,
@@ -1172,7 +1435,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             header.get(FIELD_INVESTIGATOR_NAME, ""),
             instrument_type,
             assay_type_idx,
-            platform_idx,
+            load_config.platform_idx,
             None,
             header.get(FIELD_DESCRIPTION, ""),
             legacy_format_idx,
@@ -1182,12 +1445,13 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     run_idx = cur.lastrowid
 
     # -- Illumina-specific run config (Reads + Settings + Bioinformatics) ---
-    if not is_pacbio:
-        _populate_illumina_run(cur, run_idx, sections, bio_rows)
+    if load_config.platform_name == PLATFORM_ILLUMINA:
+        _populate_illumina_run_from_sections(cur, run_idx, sections, bio_rows)
+    _populate_amplicon_run(cur, run_idx, data_rows[0])
 
     # -- Insert samples -----------------------------------------------------
-    # Figure out which column holds the well identifier.
-    well_col = COL_WELL_ID_384 if COL_WELL_ID_384 in data_rows[0] else COL_SAMPLE_WELL
+    # The format declares which column holds the well identifier.
+    well_col = load_config.well_column
     has_replicates = COL_ORIG_NAME in data_rows[0]
 
     # Determine extra Data columns not recognized by the format's view
@@ -1203,10 +1467,10 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
     prs_first_row: dict[int, dict] = {}
 
     for row in data_rows:
-        sample_name = row[COL_SAMPLE_NAME]
-        plate_name = row[COL_SAMPLE_PLATE]
+        sample_name = row[load_config.sample_name_column]
+        plate_name = row[load_config.plate_column]
         well = row.get(well_col, "")
-        project_name = row[COL_SAMPLE_PROJECT]
+        project_name = row[load_config.project_column]
 
         # For replicates, the real sample identity is orig_name.
         orig_name = (
@@ -1232,20 +1496,24 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 
             cur.execute(
                 """INSERT INTO input_sample
-                   (sample_name, input_plate_idx, project_idx,
-                    sample_type_idx, do_not_use)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (sample_name, input_plate_idx, well, project_idx,
+                    sample_type_idx, do_not_use, matrix_tube_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     orig_name,
                     plate_idxs[plate_name],
+                    row.get(COL_WELL_ID_96) or None,
                     sample_project_idx,
                     type_ids[sample_type_name],
                     _has_do_not_use_token(orig_name),
+                    row.get(COL_MATRIX_TUBE_ID) or None,
                 ),
             )
             assert cur.lastrowid is not None
             input_sample_idx = cur.lastrowid
             input_sample_cache[cache_key] = input_sample_idx
+            if is_control:
+                _populate_katharoseq_sample(cur, input_sample_idx, row)
 
             # Create compression_sample (one per input_sample per run)
             cur.execute(
@@ -1266,8 +1534,12 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             _check_per_tube_consistency(prs_first_row[prs_idx], row, prs_cache_key)
         else:
             # -- prepped_sample --
-            well_desc = row.get(COL_WELL_DESCRIPTION) or None
-            prepped_sample_name = sample_name if has_replicates else None
+            well_desc = row.get(load_config.well_description_column) or None
+            # Populated only when it differs from the input sample's name;
+            # an equal value would restate what input_sample already holds.
+            prepped_sample_name = (
+                sample_name if has_replicates and sample_name != orig_name else None
+            )
             # Prep-level override is two-state: True when a replicate's
             # Sample_Name carries the token, NULL otherwise (inherit input).
             prepped_do_not_use = (
@@ -1293,17 +1565,14 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
             # agree on these columns by _check_per_tube_consistency above.
             _populate_absquant_sample(cur, prs_idx, row)
             _populate_metatranscriptomic_sample(cur, prs_idx, row)
+            _populate_amplicon_sample(cur, prs_idx, row)
             _populate_extra_columns(cur, prs_idx, row, extra_cols)
 
         # Per-loading platform-specific row: one per CSV row, always.
-        if is_pacbio:
-            _populate_pacbio_sample(cur, prs_idx, row)
-        elif is_tellseq:
-            # TellSeq is a library prep protocol on Illumina; it uses
-            # tellseq_sample instead of illumina_sample for per-sample data.
-            _populate_tellseq_sample(cur, prs_idx, row)
-        else:
-            _populate_illumina_sample(cur, prs_idx, row)
+        # A format declaring no sample_kind has no such table to write.
+        populate_sample = _SAMPLE_POPULATORS.get(load_config.sample_kind)
+        if populate_sample is not None:
+            populate_sample(cur, prs_idx, row)
 
     conn.commit()
 
@@ -1313,12 +1582,15 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
-    """Insert a single illumina_run row for the given processing run.
+def _populate_illumina_run_from_sections(
+    cur, run_idx: int, sections: dict, bio_rows: list
+):
+    """Insert a single illumina_run row from parsed omnibus sections.
 
     Combines data from the Reads, Settings, and Bioinformatics sections to
     populate read lengths, reverse-complement flag, adapter sequences, and
-    other Illumina-specific run configuration.
+    other Illumina-specific run configuration. Callers must have validated
+    the sections before reaching this function.
 
     Args:
         cur: An open SQLite cursor.
@@ -1331,8 +1603,10 @@ def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
     reads = sections.get(SECTION_READS, [])
     settings = sections.get(SECTION_SETTINGS, {})
 
-    read1 = int(reads[0]) if len(reads) > 0 else 0
-    read2 = int(reads[1]) if len(reads) > 1 else 0
+    # A source document recording no run configuration has no [Reads] section;
+    # NULL read lengths say "not stated", which 0 could not express.
+    read1 = int(reads[0]) if len(reads) > 0 else None
+    read2 = int(reads[1]) if len(reads) > 1 else None
 
     # ReverseComplement is optional in Settings; absent values are stored
     # as NULL so reconstruction NULL-skips and round-trips byte-equal.
@@ -1359,6 +1633,99 @@ def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
             first_bio.get(COL_REVERSE_ADAPTER, ""),
             _parse_bool_str(first_bio.get(COL_BARCODES_ARE_RC, "False")),
         ),
+    )
+
+
+def _barcodes_are_rc_for_primer(primer: str) -> bool:
+    """Whether an amplicon run's Golay barcodes are stored reverse-complemented.
+
+    The prep template does not state barcode orientation; it is a property of the
+    assay. An EMP 515f run uses the reverse-complemented 515rcbc Golay set, so its
+    barcodes are stored RC. Only that assay is recognised today, so an
+    unrecognised primer raises rather than guessing an orientation that would
+    silently mis-demux. Extend the mapping when another amplicon assay is added.
+    """
+    if primer == EMP_515F_PRIMER:
+        return True
+    raise ValueError(
+        f"cannot determine barcode orientation for amplicon primer {primer!r}: "
+        f"only the EMP 515f primer ({EMP_515F_PRIMER}) is recognised"
+    )
+
+
+def _populate_amplicon_run(cur, run_idx: int, row: dict):  # same-pattern-ok: D18 extended to run-level populators (R6)
+    """Insert an amplicon_run row if the amplicon prep columns are present.
+
+    Every column is constant across a run -- the wet lab does not mix primers
+    within one -- so the first Data row supplies them all. barcodes_are_rc is not
+    a sheet column; it is inferred from the primer (fail-loud) and stored, so the
+    orientation is a queryable fact rather than re-derived by every reader.
+
+    Args:
+        cur: An open SQLite cursor.
+        run_idx: The processing_run.run_idx to associate the row with.
+        row: The run's first Data-section row dict.
+    """
+    if COL_AMPLICON_PRIMER not in row:
+        return
+
+    primer = row[COL_AMPLICON_PRIMER]
+    cur.execute(
+        "INSERT INTO amplicon_run "
+        "(run_idx, primer, linker, target_gene, target_subfragment, "
+        " pcr_primers, sequencing_meth, barcodes_are_rc) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            run_idx,
+            primer,
+            row[COL_AMPLICON_LINKER],
+            row[COL_AMPLICON_TARGET_GENE],
+            row[COL_AMPLICON_TARGET_SUBFRAGMENT],
+            row[COL_AMPLICON_PCR_PRIMERS],
+            row[COL_AMPLICON_SEQUENCING_METH],
+            _barcodes_are_rc_for_primer(primer),
+        ),
+    )
+
+
+def _populate_amplicon_sample(cur, prs_idx: int, row: dict):  # same-pattern-ok: sixth sibling of the family D18 keeps parallel
+    """Insert an amplicon_sample row if the in-line Golay barcode is present.
+
+    Args:
+        cur: An open SQLite cursor.
+        prs_idx: The prepped_sample_idx for this sample.
+        row: A single Data-section row dict.
+    """
+    if COL_AMPLICON_BARCODE not in row:
+        return
+
+    cur.execute(
+        "INSERT INTO amplicon_sample (prepped_sample_idx, barcode) VALUES (?, ?)",
+        (prs_idx, row[COL_AMPLICON_BARCODE]),
+    )
+
+
+def _populate_katharoseq_sample(cur, input_sample_idx: int, row: dict):  # same-pattern-ok: D18 extended (R6)
+    """Insert a katharoseq_sample row if the sheet supplies either metric.
+
+    Membership already lives in input_sample.sample_type; a row with both
+    metrics NULL would assert nothing, and would wrongly signal that the run
+    carries KatharoSeq metric columns.
+
+    Args:
+        cur: An open SQLite cursor.
+        input_sample_idx: The input_sample this control belongs to.
+        row: A single Data-section row dict.
+    """
+    rack_id = row.get(COL_KATHAROSEQ_RACK_ID) or None
+    number_of_cells = _opt_float(row, COL_KATHAROSEQ_NUMBER_OF_CELLS)
+    if rack_id is None and number_of_cells is None:
+        return
+
+    cur.execute(
+        "INSERT INTO katharoseq_sample "
+        "(input_sample_idx, rack_id, number_of_cells) VALUES (?, ?, ?)",
+        (input_sample_idx, rack_id, number_of_cells),
     )
 
 
@@ -1486,6 +1853,15 @@ def _populate_illumina_sample(cur, prs_idx: int, row: dict):
             _opt_int(row, COL_LANE),
         ),
     )
+
+
+# Map legacy_samplesheet_format.sample_kind -> the callable that writes that
+# kind's per-sample row. Defined after its members, as _CHECK_FUNCTIONS is.
+_SAMPLE_POPULATORS = {
+    "illumina": _populate_illumina_sample,
+    "pacbio": _populate_pacbio_sample,
+    "tellseq": _populate_tellseq_sample,
+}
 
 
 def _get_extra_columns(

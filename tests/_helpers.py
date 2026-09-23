@@ -22,7 +22,7 @@ from run_preflight.db import get_preflight_data_facts
 _DATA_DIR = Path(__file__).parent / "data"
 LEGACY_DATA_DIR = _DATA_DIR / "legacy"
 NATIVE_DATA_DIR = _DATA_DIR / "native"
-GOOD_LEGACY_GLOB = "good_*.csv"
+GOOD_LEGACY_GLOB = "good_*"
 NATIVE_SNAPSHOT_SUFFIX = ".generated_snapshot.json"
 
 # Content-derived fact tokens marking populated post-preflight data. A true
@@ -122,6 +122,7 @@ def capture_db_snapshot(conn: sqlite3.Connection) -> dict:
     a snapshot and byte-compare it against a later capture.
     """
     snapshot: dict = {
+        "user_version": None,
         "tables": {},
         "indexes": {},
         "triggers": {},
@@ -129,6 +130,10 @@ def capture_db_snapshot(conn: sqlite3.Connection) -> dict:
         "data": {},
     }
     cur = conn.cursor()
+
+    # Schema version: the one piece of structure carried outside sqlite_master,
+    # so a database stale in version alone still differs from a current one
+    snapshot["user_version"] = cur.execute("PRAGMA user_version").fetchone()[0]
 
     # Tables: canonical definition (captures CHECK/COLLATE/table constraints),
     # column structure, foreign keys, and full row contents
@@ -455,3 +460,34 @@ def seed_pacbio_sample(
         (prs_idx, barcode_id, smrt_cell_well_sample_id),
     )
     return cur.lastrowid
+
+
+def seed_amplicon_sample(
+    conn: sqlite3.Connection,
+    prs_idx: int,
+    *,
+    barcode: str = "ACGTACGTACGT",
+) -> int:
+    """Insert one amplicon_sample row; return its prepped_sample_idx."""
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO amplicon_sample (prepped_sample_idx, barcode) VALUES (?, ?)",
+        (prs_idx, barcode),
+    )
+    return cur.lastrowid
+
+
+def seed_amplicon_run(
+    conn: sqlite3.Connection,
+    run_idx: int,
+    *,
+    barcodes_are_rc: bool = True,
+) -> None:
+    """Insert the run's amplicon_run row (idempotent per run_idx)."""
+    conn.execute(
+        "INSERT OR IGNORE INTO amplicon_run "
+        "(run_idx, primer, linker, target_gene, target_subfragment, "
+        " pcr_primers, sequencing_meth, barcodes_are_rc) "
+        "VALUES (?, 'GTGYCAGCMGCCGCGGTAA', '', '16S rRNA', 'V4', '', '', ?)",
+        (run_idx, barcodes_are_rc),
+    )

@@ -1,5 +1,7 @@
 {
   "data": {
+    "amplicon_run": [],
+    "amplicon_sample": [],
     "assay_type": [
       [
         1,
@@ -2902,13 +2904,25 @@
         1,
         "NPH_15288_P1",
         1,
-        70.0
+        70.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
       ],
       [
         2,
         "NPH_15288_P1.2",
         1,
-        70.0
+        70.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
       ]
     ],
     "input_sample": [
@@ -2920,7 +2934,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         10,
@@ -2930,7 +2945,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         100,
@@ -2940,7 +2956,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         101,
@@ -2950,7 +2967,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         102,
@@ -2960,7 +2978,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         103,
@@ -2970,7 +2989,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         104,
@@ -2980,7 +3000,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         105,
@@ -2990,7 +3011,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         106,
@@ -3000,7 +3022,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         107,
@@ -3010,7 +3033,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         108,
@@ -3020,7 +3044,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         109,
@@ -3030,7 +3055,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         11,
@@ -3040,7 +3066,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         110,
@@ -3050,7 +3077,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         111,
@@ -3060,7 +3088,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         112,
@@ -3070,7 +3099,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         113,
@@ -3080,7 +3110,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         114,
@@ -3090,7 +3121,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         115,
@@ -3100,7 +3132,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         116,
@@ -3110,7 +3143,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         117,
@@ -3120,7 +3154,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         118,
@@ -3130,7 +3165,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         119,
@@ -3140,7 +3176,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         12,
@@ -3150,7 +3187,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         120,
@@ -3160,7 +3198,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         121,
@@ -3170,7 +3209,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         122,
@@ -3180,7 +3220,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         123,
@@ -3190,7 +3231,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         124,
@@ -3200,7 +3242,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         125,
@@ -3210,7 +3253,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         126,
@@ -3220,7 +3264,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         127,
@@ -3230,7 +3275,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         128,
@@ -3240,7 +3286,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         129,
@@ -3250,7 +3297,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         13,
@@ -3260,7 +3308,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         130,
@@ -3270,7 +3319,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         131,
@@ -3280,7 +3330,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         132,
@@ -3290,7 +3341,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         133,
@@ -3300,7 +3352,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         134,
@@ -3310,7 +3363,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         135,
@@ -3320,7 +3374,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         136,
@@ -3330,7 +3385,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         137,
@@ -3340,7 +3396,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         138,
@@ -3350,7 +3407,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         139,
@@ -3360,7 +3418,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         14,
@@ -3370,7 +3429,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         140,
@@ -3380,7 +3440,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         141,
@@ -3390,7 +3451,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         142,
@@ -3400,7 +3462,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         143,
@@ -3410,7 +3473,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         144,
@@ -3420,7 +3484,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         145,
@@ -3430,7 +3495,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         146,
@@ -3440,7 +3506,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         147,
@@ -3450,7 +3517,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         148,
@@ -3460,7 +3528,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         149,
@@ -3470,7 +3539,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         15,
@@ -3480,7 +3550,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         150,
@@ -3490,7 +3561,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         151,
@@ -3500,7 +3572,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         152,
@@ -3510,7 +3583,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         153,
@@ -3520,7 +3594,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         154,
@@ -3530,7 +3605,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         155,
@@ -3540,7 +3616,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         156,
@@ -3550,7 +3627,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         157,
@@ -3560,7 +3638,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         158,
@@ -3570,7 +3649,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         159,
@@ -3580,7 +3660,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         16,
@@ -3590,7 +3671,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         160,
@@ -3600,7 +3682,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         161,
@@ -3610,7 +3693,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         162,
@@ -3620,7 +3704,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         163,
@@ -3630,7 +3715,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         164,
@@ -3640,7 +3726,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         165,
@@ -3650,7 +3737,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         166,
@@ -3660,7 +3748,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         167,
@@ -3670,7 +3759,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         168,
@@ -3680,7 +3770,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         169,
@@ -3690,7 +3781,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         17,
@@ -3700,7 +3792,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         170,
@@ -3710,7 +3803,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         171,
@@ -3720,7 +3814,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         172,
@@ -3730,7 +3825,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         173,
@@ -3740,7 +3836,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         174,
@@ -3750,7 +3847,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         175,
@@ -3760,7 +3858,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         176,
@@ -3770,7 +3869,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         177,
@@ -3780,7 +3880,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         178,
@@ -3790,7 +3891,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         179,
@@ -3800,7 +3902,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         18,
@@ -3810,7 +3913,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         180,
@@ -3820,7 +3924,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         181,
@@ -3830,7 +3935,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         182,
@@ -3840,7 +3946,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         183,
@@ -3850,7 +3957,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         184,
@@ -3860,7 +3968,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         185,
@@ -3870,7 +3979,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         186,
@@ -3880,7 +3990,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         187,
@@ -3890,7 +4001,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         188,
@@ -3900,7 +4012,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         189,
@@ -3910,7 +4023,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         19,
@@ -3920,7 +4034,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         190,
@@ -3930,7 +4045,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         191,
@@ -3940,7 +4056,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         2,
@@ -3950,7 +4067,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         20,
@@ -3960,7 +4078,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         21,
@@ -3970,7 +4089,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         22,
@@ -3980,7 +4100,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         23,
@@ -3990,7 +4111,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         24,
@@ -4000,7 +4122,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         25,
@@ -4010,7 +4133,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         26,
@@ -4020,7 +4144,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         27,
@@ -4030,7 +4155,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         28,
@@ -4040,7 +4166,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         29,
@@ -4050,7 +4177,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         3,
@@ -4060,7 +4188,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         30,
@@ -4070,7 +4199,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         31,
@@ -4080,7 +4210,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         32,
@@ -4090,7 +4221,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         33,
@@ -4100,7 +4232,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         34,
@@ -4110,7 +4243,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         35,
@@ -4120,7 +4254,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         36,
@@ -4130,7 +4265,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         37,
@@ -4140,7 +4276,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         38,
@@ -4150,7 +4287,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         39,
@@ -4160,7 +4298,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         4,
@@ -4170,7 +4309,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         40,
@@ -4180,7 +4320,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         41,
@@ -4190,7 +4331,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         42,
@@ -4200,7 +4342,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         43,
@@ -4210,7 +4353,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         44,
@@ -4220,7 +4364,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         45,
@@ -4230,7 +4375,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         46,
@@ -4240,7 +4386,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         47,
@@ -4250,7 +4397,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         48,
@@ -4260,7 +4408,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         49,
@@ -4270,7 +4419,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         5,
@@ -4280,7 +4430,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         50,
@@ -4290,7 +4441,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         51,
@@ -4300,7 +4452,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         52,
@@ -4310,7 +4463,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         53,
@@ -4320,7 +4474,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         54,
@@ -4330,7 +4485,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         55,
@@ -4340,7 +4496,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         56,
@@ -4350,7 +4507,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         57,
@@ -4360,7 +4518,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         58,
@@ -4370,7 +4529,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         59,
@@ -4380,7 +4540,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         6,
@@ -4390,7 +4551,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         60,
@@ -4400,7 +4562,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         61,
@@ -4410,7 +4573,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         62,
@@ -4420,7 +4584,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         63,
@@ -4430,7 +4595,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         64,
@@ -4440,7 +4606,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         65,
@@ -4450,7 +4617,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         66,
@@ -4460,7 +4628,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         67,
@@ -4470,7 +4639,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         68,
@@ -4480,7 +4650,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         69,
@@ -4490,7 +4661,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         7,
@@ -4500,7 +4672,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         70,
@@ -4510,7 +4683,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         71,
@@ -4520,7 +4694,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         72,
@@ -4530,7 +4705,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         73,
@@ -4540,7 +4716,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         74,
@@ -4550,7 +4727,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         75,
@@ -4560,7 +4738,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         76,
@@ -4570,7 +4749,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         77,
@@ -4580,7 +4760,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         78,
@@ -4590,7 +4771,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         79,
@@ -4600,7 +4782,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         8,
@@ -4610,7 +4793,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         80,
@@ -4620,7 +4804,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         81,
@@ -4630,7 +4815,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         82,
@@ -4640,7 +4826,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         83,
@@ -4650,7 +4837,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         84,
@@ -4660,7 +4848,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         85,
@@ -4670,7 +4859,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         86,
@@ -4680,7 +4870,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         87,
@@ -4690,7 +4881,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         88,
@@ -4700,7 +4892,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         89,
@@ -4710,7 +4903,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         9,
@@ -4720,7 +4914,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         90,
@@ -4730,7 +4925,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         91,
@@ -4740,7 +4936,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         92,
@@ -4750,7 +4947,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         93,
@@ -4760,7 +4958,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         94,
@@ -4770,7 +4969,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         95,
@@ -4780,7 +4980,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         96,
@@ -4790,7 +4991,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         97,
@@ -4800,7 +5002,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         98,
@@ -4810,7 +5013,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ],
       [
         99,
@@ -4820,7 +5024,8 @@
         1,
         1,
         null,
-        0
+        0,
+        null
       ]
     ],
     "katharoseq_sample": [],
@@ -4829,72 +5034,274 @@
       [
         1,
         "pacbio_absquant",
-        11
+        11,
+        ",",
+        1,
+        2,
+        "Pacbio_Revio",
+        "pacbio",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "Sample_Well",
+        1
       ],
       [
         10,
         "abs_quant_metag",
-        11
+        11,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "illumina",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
+        1
       ],
       [
         11,
         "standard_metat",
-        10
+        10,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "illumina",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
+        1
       ],
       [
         12,
         "tellseq_metag",
-        10
+        10,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "tellseq",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
+        1
       ],
       [
         13,
         "tellseq_absquant",
-        10
+        10,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "tellseq",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
+        1
       ],
       [
         14,
         "pacbio_absquant",
-        12
+        12,
+        ",",
+        1,
+        2,
+        "Pacbio_Revio",
+        "pacbio",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "Sample_Well",
+        1
+      ],
+      [
+        15,
+        "amplicon",
+        1,
+        "\t",
+        0,
+        1,
+        "Unknown",
+        null,
+        "sample_name",
+        "sample_plate",
+        "project_name",
+        "well_description",
+        "well_id_384",
+        1
+      ],
+      [
+        16,
+        "amplicon",
+        2,
+        "\t",
+        0,
+        1,
+        "Unknown",
+        null,
+        "sample_name",
+        "sample_plate",
+        "project_name",
+        "well_description",
+        "well_id",
+        1
+      ],
+      [
+        17,
+        "amplicon",
+        3,
+        "\t",
+        0,
+        1,
+        "Unknown",
+        null,
+        "sample_name",
+        "sample_plate",
+        "project_name",
+        "well_description",
+        "well_id_384",
+        1
       ],
       [
         2,
         "standard_metag",
-        101
+        101,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "illumina",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
+        1
       ],
       [
         3,
         "pacbio_metag",
-        11
+        11,
+        ",",
+        1,
+        2,
+        "Pacbio_Revio",
+        "pacbio",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "Sample_Well",
+        1
       ],
       [
         4,
         "pacbio_metag",
-        10
+        10,
+        ",",
+        1,
+        2,
+        "Pacbio_Revio",
+        "pacbio",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "Sample_Well",
+        1
       ],
       [
         5,
         "pacbio_absquant",
-        10
+        10,
+        ",",
+        1,
+        2,
+        "Pacbio_Revio",
+        "pacbio",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "Sample_Well",
+        1
       ],
       [
         6,
         "standard_metag",
-        90
+        90,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "illumina",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "Sample_Well",
+        0
       ],
       [
         7,
         "standard_metag",
+        0,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "illumina",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
         0
       ],
       [
         8,
         "standard_metag",
-        100
+        100,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "illumina",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
+        0
       ],
       [
         9,
         "abs_quant_metag",
-        10
+        10,
+        ",",
+        1,
+        1,
+        "Unknown",
+        "illumina",
+        "Sample_Name",
+        "Sample_Plate",
+        "Sample_Project",
+        "Well_description",
+        "well_id_384",
+        1
       ]
     ],
     "legacy_samplesheet_optional_columns": [
@@ -4969,6 +5376,30 @@
         "sequenced_sample_gdna_mass_ng",
         "check_has_sequenced_gdna_mass",
         "syndna_pool_number"
+      ],
+      [
+        15,
+        "Data",
+        "katharoseq",
+        "Kathseq_RackID,number_of_cells",
+        "check_contains_katharoseq",
+        null
+      ],
+      [
+        16,
+        "Data",
+        "katharoseq",
+        "Kathseq_RackID,number_of_cells",
+        "check_contains_katharoseq",
+        null
+      ],
+      [
+        17,
+        "Data",
+        "katharoseq",
+        "Kathseq_RackID,number_of_cells",
+        "check_contains_katharoseq",
+        null
       ],
       [
         2,
@@ -5277,6 +5708,111 @@
         "SampleContext",
         5,
         "omnibus_sample_context",
+        "tabular"
+      ],
+      [
+        15,
+        "Bioinformatics",
+        3,
+        "amplicon_bioinformatics",
+        "tabular"
+      ],
+      [
+        15,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        15,
+        "Data",
+        2,
+        "amplicon_v1_data",
+        "tabular"
+      ],
+      [
+        15,
+        "Header",
+        1,
+        "amplicon_header",
+        "header_kv"
+      ],
+      [
+        15,
+        "SampleContext",
+        5,
+        "amplicon_sample_context",
+        "tabular"
+      ],
+      [
+        16,
+        "Bioinformatics",
+        3,
+        "amplicon_bioinformatics",
+        "tabular"
+      ],
+      [
+        16,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        16,
+        "Data",
+        2,
+        "amplicon_v2_data",
+        "tabular"
+      ],
+      [
+        16,
+        "Header",
+        1,
+        "amplicon_header",
+        "header_kv"
+      ],
+      [
+        16,
+        "SampleContext",
+        5,
+        "amplicon_sample_context",
+        "tabular"
+      ],
+      [
+        17,
+        "Bioinformatics",
+        3,
+        "amplicon_bioinformatics",
+        "tabular"
+      ],
+      [
+        17,
+        "Contact",
+        4,
+        "omnibus_contact",
+        "tabular"
+      ],
+      [
+        17,
+        "Data",
+        2,
+        "amplicon_v3_data",
+        "tabular"
+      ],
+      [
+        17,
+        "Header",
+        1,
+        "amplicon_header",
+        "header_kv"
+      ],
+      [
+        17,
+        "SampleContext",
+        5,
+        "amplicon_sample_context",
         "tabular"
       ],
       [
@@ -8134,6 +8670,132 @@
     }
   },
   "tables": {
+    "amplicon_run": {
+      "columns": [
+        [
+          0,
+          "run_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "primer",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "linker",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "target_gene",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "target_subfragment",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "pcr_primers",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          6,
+          "sequencing_meth",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          7,
+          "barcodes_are_rc",
+          "BOOLEAN",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "barcodes_are_rc BOOLEAN NOT NULL",
+        "linker TEXT NOT NULL",
+        "pcr_primers TEXT NOT NULL",
+        "primer TEXT NOT NULL",
+        "run_idx INTEGER PRIMARY KEY REFERENCES processing_run(run_idx)",
+        "sequencing_meth TEXT NOT NULL",
+        "target_gene TEXT NOT NULL",
+        "target_subfragment TEXT NOT NULL"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "processing_run",
+          "run_idx",
+          "run_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
+    "amplicon_sample": {
+      "columns": [
+        [
+          0,
+          "prepped_sample_idx",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "barcode",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "definition": [
+        "barcode TEXT NOT NULL",
+        "prepped_sample_idx INTEGER PRIMARY KEY REFERENCES prepped_sample(prepped_sample_idx)"
+      ],
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "prepped_sample",
+          "prepped_sample_idx",
+          "prepped_sample_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
+    },
     "assay_type": {
       "columns": [
         [
@@ -8316,7 +8978,7 @@
           1,
           "read1_length",
           "INTEGER",
-          1,
+          0,
           null,
           0
         ],
@@ -8324,7 +8986,7 @@
           2,
           "read2_length",
           "INTEGER",
-          1,
+          0,
           null,
           0
         ],
@@ -8382,8 +9044,8 @@
         "forward_adapter TEXT",
         "mask_short_reads TEXT",
         "override_cycles TEXT",
-        "read1_length INTEGER NOT NULL",
-        "read2_length INTEGER NOT NULL",
+        "read1_length INTEGER",
+        "read2_length INTEGER",
         "reverse_adapter TEXT",
         "reverse_complement BOOLEAN",
         "run_idx INTEGER PRIMARY KEY REFERENCES processing_run(run_idx)"
@@ -8515,13 +9177,67 @@
           0,
           null,
           0
+        ],
+        [
+          4,
+          "primer_plate",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          5,
+          "plating",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "extractionkit_lot",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          7,
+          "extraction_robot",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          8,
+          "platemap_generation_date",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          9,
+          "plate_contents_description",
+          "TEXT",
+          0,
+          null,
+          0
         ]
       ],
       "definition": [
         "elution_vol REAL",
+        "extraction_robot TEXT",
+        "extractionkit_lot TEXT",
         "input_plate_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "plate_contents_description TEXT",
         "plate_name TEXT NOT NULL",
-        "primary_project_idx INTEGER NOT NULL REFERENCES project(project_idx)"
+        "platemap_generation_date TEXT",
+        "plating TEXT",
+        "primary_project_idx INTEGER NOT NULL REFERENCES project(project_idx)",
+        "primer_plate TEXT"
       ],
       "foreign_keys": [
         [
@@ -8601,6 +9317,14 @@
           1,
           "0",
           0
+        ],
+        [
+          8,
+          "matrix_tube_id",
+          "TEXT",
+          0,
+          null,
+          0
         ]
       ],
       "definition": [
@@ -8609,6 +9333,7 @@
         "do_not_use BOOLEAN NOT NULL DEFAULT 0",
         "input_plate_idx INTEGER NOT NULL REFERENCES input_plate(input_plate_idx)",
         "input_sample_idx INTEGER PRIMARY KEY AUTOINCREMENT",
+        "matrix_tube_id TEXT",
         "project_idx INTEGER REFERENCES project(project_idx)",
         "sample_name TEXT",
         "sample_type_idx INTEGER NOT NULL REFERENCES sample_type(sample_type_idx)",
@@ -8667,16 +9392,8 @@
         ],
         [
           2,
-          "tube_code",
-          "TEXT",
-          0,
-          null,
-          0
-        ],
-        [
-          3,
           "number_of_cells",
-          "INTEGER",
+          "REAL",
           0,
           null,
           0
@@ -8684,9 +9401,8 @@
       ],
       "definition": [
         "input_sample_idx INTEGER PRIMARY KEY REFERENCES input_sample(input_sample_idx)",
-        "number_of_cells INTEGER",
-        "rack_id TEXT",
-        "tube_code TEXT"
+        "number_of_cells REAL",
+        "rack_id TEXT"
       ],
       "foreign_keys": [
         [
@@ -8772,15 +9488,126 @@
           1,
           null,
           0
+        ],
+        [
+          3,
+          "delimiter",
+          "TEXT",
+          1,
+          "','",
+          0
+        ],
+        [
+          4,
+          "has_section_labels",
+          "BOOLEAN",
+          1,
+          "1",
+          0
+        ],
+        [
+          5,
+          "platform_idx",
+          "INTEGER",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "default_instrument_type",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          7,
+          "sample_kind",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          8,
+          "sample_name_column",
+          "TEXT",
+          1,
+          "'Sample_Name'",
+          0
+        ],
+        [
+          9,
+          "plate_column",
+          "TEXT",
+          1,
+          "'Sample_Plate'",
+          0
+        ],
+        [
+          10,
+          "project_column",
+          "TEXT",
+          1,
+          "'Sample_Project'",
+          0
+        ],
+        [
+          11,
+          "well_description_column",
+          "TEXT",
+          1,
+          "'Well_description'",
+          0
+        ],
+        [
+          12,
+          "well_column",
+          "TEXT",
+          1,
+          "'well_id_384'",
+          0
+        ],
+        [
+          13,
+          "replicates_supported",
+          "BOOLEAN",
+          1,
+          "1",
+          0
         ]
       ],
       "definition": [
+        "'",
         "UNIQUE(legacy_sheet_type, legacy_version)",
+        "default_instrument_type TEXT",
+        "delimiter TEXT NOT NULL DEFAULT '",
+        "has_section_labels BOOLEAN NOT NULL DEFAULT 1",
         "legacy_format_idx INTEGER PRIMARY KEY AUTOINCREMENT",
         "legacy_sheet_type TEXT NOT NULL",
-        "legacy_version INTEGER NOT NULL"
+        "legacy_version INTEGER NOT NULL",
+        "plate_column TEXT NOT NULL DEFAULT 'Sample_Plate'",
+        "platform_idx INTEGER REFERENCES sequencing_platform(platform_idx)",
+        "project_column TEXT NOT NULL DEFAULT 'Sample_Project'",
+        "replicates_supported BOOLEAN NOT NULL DEFAULT 1",
+        "sample_kind TEXT",
+        "sample_name_column TEXT NOT NULL DEFAULT 'Sample_Name'",
+        "well_column TEXT NOT NULL DEFAULT 'well_id_384'",
+        "well_description_column TEXT NOT NULL DEFAULT 'Well_description'"
       ],
-      "foreign_keys": []
+      "foreign_keys": [
+        [
+          0,
+          0,
+          "sequencing_platform",
+          "platform_idx",
+          "platform_idx",
+          "NO ACTION",
+          "NO ACTION",
+          "NONE"
+        ]
+      ]
     },
     "legacy_samplesheet_optional_columns": {
       "columns": [
@@ -9553,7 +10380,15 @@
     "tellseq_sample_barcode_invariance": "CREATE TRIGGER tellseq_sample_barcode_invariance BEFORE INSERT ON tellseq_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM tellseq_sample existing WHERE existing.prepped_sample_idx = NEW.prepped_sample_idx AND existing.barcode_id != NEW.barcode_id ) THEN RAISE(ABORT, 'tellseq_sample barcode_id must be identical across rows sharing prepped_sample_idx') END; END",
     "tellseq_sample_lane_uniformity": "CREATE TRIGGER tellseq_sample_lane_uniformity BEFORE INSERT ON tellseq_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM tellseq_sample existing WHERE (existing.lane IS NULL) != (NEW.lane IS NULL) ) THEN RAISE(ABORT, 'tellseq_sample lane must be uniformly NULL or uniformly non-NULL within a database') END; END"
   },
+  "user_version": 2,
   "views": {
+    "amplicon_bioinformatics": "CREATE VIEW amplicon_bioinformatics AS SELECT DISTINCT cs.run_idx, p.project_name AS \"Sample_Project\", p.external_project_id AS \"QiitaID\", p.human_filtering AS \"HumanFiltering\", p.library_construction_protocol AS \"library_construction_protocol\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN project p ON ins.project_idx = p.project_idx GROUP BY cs.run_idx, p.project_idx, p.project_name, p.external_project_id, p.human_filtering, p.library_construction_protocol",
+    "amplicon_data_base": "CREATE VIEW amplicon_data_base AS SELECT cs.run_idx, prs.prepped_sample_idx, psn.sample_name AS \"sample_name\", a.barcode AS \"barcode\", ar.primer AS \"primer\", ar.linker AS \"linker\", ar.pcr_primers AS \"pcr_primers\", ar.sequencing_meth AS \"sequencing_meth\", ar.target_gene AS \"target_gene\", ar.target_subfragment AS \"target_subfragment\", ip.primer_plate AS \"primer_plate\", ip.plating AS \"plating\", ip.extractionkit_lot AS \"extractionkit_lot\", ip.extraction_robot AS \"extraction_robot\", ip.plate_name AS \"sample_plate\", psp.project_name AS \"project_name\", ins.sample_name AS \"orig_name\", prs.well_description AS \"well_description\", p.library_construction_protocol AS \"library_construction_protocol\", cs.compression_well AS \"well_id_384\", cs.compression_well AS \"well_id\", ins.well AS \"well_id_96\", ip.plate_contents_description AS \"experiment_design_description\", sr.instrument_type AS \"instrument_model\", sr.external_run_id AS \"runid\", ins.matrix_tube_id AS \"TubeCode\", CASE st.name WHEN 'extraction_blank' THEN 'negative_control' WHEN 'katharoseq_cells_positive_control' THEN 'positive_control' ELSE '' END AS \"control_description\", ip.platemap_generation_date AS \"platemap_generation_date\", ip.elution_vol AS \"vol_extracted_elution_ul\", ks.rack_id AS \"Kathseq_RackID\", ks.number_of_cells AS \"number_of_cells\" FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx JOIN sample_type st ON ins.sample_type_idx = st.sample_type_idx JOIN processing_run sr ON cs.run_idx = sr.run_idx JOIN amplicon_run ar ON sr.run_idx = ar.run_idx JOIN amplicon_sample a ON prs.prepped_sample_idx = a.prepped_sample_idx JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx JOIN project p ON psp.project_idx = p.project_idx LEFT JOIN katharoseq_sample ks ON ins.input_sample_idx = ks.input_sample_idx",
+    "amplicon_header": "CREATE VIEW amplicon_header AS SELECT sr.run_idx, lf.legacy_sheet_type AS \"SheetType\", CAST(lf.legacy_version AS TEXT) AS \"SheetVersion\", at.name AS \"Assay\", sr.experiment_name AS \"Experiment Name\", sr.run_date AS \"Date\" FROM processing_run sr JOIN assay_type at ON sr.assay_type_idx = at.assay_type_idx JOIN legacy_samplesheet_format lf ON sr.legacy_format_idx = lf.legacy_format_idx",
+    "amplicon_sample_context": "CREATE VIEW amplicon_sample_context AS SELECT run_idx, \"sample_name\", \"sample_type\" FROM omnibus_sample_context",
+    "amplicon_v1_data": "CREATE VIEW amplicon_v1_data AS SELECT run_idx, prepped_sample_idx, \"sample_name\", \"barcode\", \"primer\", \"linker\", \"pcr_primers\", \"sequencing_meth\", \"target_gene\", \"target_subfragment\", \"primer_plate\", \"plating\", \"extractionkit_lot\", \"extraction_robot\", \"sample_plate\", \"project_name\", \"orig_name\", \"well_description\", \"library_construction_protocol\", \"well_id_384\", \"well_id_96\", \"experiment_design_description\", \"instrument_model\", \"runid\", \"TubeCode\", \"control_description\", \"platemap_generation_date\", \"vol_extracted_elution_ul\", \"Kathseq_RackID\", \"number_of_cells\" FROM amplicon_data_base",
+    "amplicon_v2_data": "CREATE VIEW amplicon_v2_data AS SELECT run_idx, prepped_sample_idx, \"sample_name\", \"barcode\", \"primer\", \"linker\", \"pcr_primers\", \"sequencing_meth\", \"target_gene\", \"target_subfragment\", \"primer_plate\", \"plating\", \"extractionkit_lot\", \"extraction_robot\", \"sample_plate\", \"project_name\", \"orig_name\", \"well_description\", \"library_construction_protocol\", \"well_id\", \"well_id_96\", \"experiment_design_description\", \"instrument_model\", \"runid\", \"Kathseq_RackID\", \"number_of_cells\" FROM amplicon_data_base",
+    "amplicon_v3_data": "CREATE VIEW amplicon_v3_data AS SELECT run_idx, prepped_sample_idx, \"sample_name\", \"barcode\", \"primer\", \"linker\", \"pcr_primers\", \"sequencing_meth\", \"target_gene\", \"target_subfragment\", \"primer_plate\", \"plating\", \"extractionkit_lot\", \"extraction_robot\", \"sample_plate\", \"project_name\", \"orig_name\", \"well_description\", \"library_construction_protocol\", \"well_id_384\", \"well_id_96\", \"experiment_design_description\", \"instrument_model\", \"runid\", \"TubeCode\", \"platemap_generation_date\", \"vol_extracted_elution_ul\", \"Kathseq_RackID\", \"number_of_cells\" FROM amplicon_data_base",
     "control_project_associations": "CREATE VIEW control_project_associations AS SELECT s.input_sample_idx, s.sample_name, st.name AS control_type, pp.project_idx, p.project_name, p.external_project_id FROM input_sample s JOIN sample_type st ON s.sample_type_idx = st.sample_type_idx JOIN input_plate_projects pp ON s.input_plate_idx = pp.input_plate_idx JOIN project p ON pp.project_idx = p.project_idx WHERE s.project_idx IS NULL",
     "input_plate_projects": "CREATE VIEW input_plate_projects AS SELECT DISTINCT input_plate_idx, project_idx FROM input_sample WHERE project_idx IS NOT NULL UNION SELECT input_plate_idx, primary_project_idx AS project_idx FROM input_plate",
     "omnibus_abs_quant_metag_v10_data": "CREATE VIEW omnibus_abs_quant_metag_v10_data AS SELECT v101.run_idx, v101.\"Sample_ID\", v101.\"Sample_Name\", v101.\"Sample_Plate\", v101.\"well_id_384\", v101.\"I7_Index_ID\", v101.\"index\", v101.\"I5_Index_ID\", v101.\"index2\", v101.\"Sample_Project\", v101.\"Well_description\", ma.syndna_pool_mass_ng AS \"mass_syndna_input_ng\", ma.extracted_gdna_concentration AS \"extracted_gdna_concentration_ng_ul\", ip.elution_vol AS \"vol_extracted_elution_ul\", ma.syndna_pool_number AS \"syndna_pool_number\", v101.\"orig_name\", v101.\"destination_well_384\", v101.\"Lane\" FROM omnibus_standard_metag_v101_data v101 JOIN prepped_sample prs ON v101.\"Sample_ID\" = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx LEFT JOIN metagenomic_absquant_sample ma ON v101.\"Sample_ID\" = ma.prepped_sample_idx",
@@ -9580,6 +10415,7 @@
     "prepped_sample_name": "CREATE VIEW prepped_sample_name AS SELECT prs.prepped_sample_idx, COALESCE(prs.sample_name, ins.sample_name) AS sample_name, (ins.do_not_use = 1 OR COALESCE(prs.do_not_use, 0) = 1) AS do_not_use FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx",
     "prepped_sample_project": "CREATE VIEW prepped_sample_project AS SELECT prs.prepped_sample_idx, COALESCE(ins.project_idx, ip.primary_project_idx) AS project_idx, COALESCE(p.project_name, (SELECT p2.project_name FROM project p2 WHERE p2.project_idx = ip.primary_project_idx) ) AS project_name FROM prepped_sample prs JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx LEFT JOIN project p ON ins.project_idx = p.project_idx",
     "replicated_samples": "CREATE VIEW replicated_samples AS SELECT cs.run_idx, cs.compression_sample_idx, COUNT(*) AS copy_count FROM compression_sample cs JOIN prepped_sample prs ON cs.compression_sample_idx = prs.compression_sample_idx GROUP BY cs.run_idx, cs.compression_sample_idx HAVING COUNT(*) > 1",
+    "run_amplicon_sample": "CREATE VIEW run_amplicon_sample AS SELECT a.prepped_sample_idx, a.barcode, ar.barcodes_are_rc, cs.run_idx, cs.input_sample_idx, psn.sample_name, psn.do_not_use, psp.project_name FROM amplicon_sample a JOIN prepped_sample prs ON a.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx JOIN amplicon_run ar ON cs.run_idx = ar.run_idx JOIN prepped_sample_name psn ON a.prepped_sample_idx = psn.prepped_sample_idx JOIN prepped_sample_project psp ON a.prepped_sample_idx = psp.prepped_sample_idx",
     "run_capability": "CREATE VIEW run_capability AS SELECT run_idx, 'absquant_mass' AS capability_name FROM run_capability_absquant_mass UNION ALL SELECT run_idx, 'absquant_volume' FROM run_capability_absquant_volume UNION ALL SELECT run_idx, 'absquant_surface_area' FROM run_capability_absquant_surface_area",
     "run_capability_absquant_mass": "CREATE VIEW run_capability_absquant_mass AS SELECT DISTINCT cs.run_idx FROM metagenomic_absquant_sample ma JOIN prepped_sample prs ON ma.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx WHERE ma.extracted_sample_mass_g IS NOT NULL",
     "run_capability_absquant_surface_area": "CREATE VIEW run_capability_absquant_surface_area AS SELECT DISTINCT cs.run_idx FROM metagenomic_absquant_sample ma JOIN prepped_sample prs ON ma.prepped_sample_idx = prs.prepped_sample_idx JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx WHERE ma.extracted_sample_surface_area_cm2 IS NOT NULL",

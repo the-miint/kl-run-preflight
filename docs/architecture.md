@@ -78,7 +78,7 @@ implementation.
       persist a file, or `load_legacy_csv(csv_path)` for an in-memory
       connection.
     - Internally: `db.create_db` → `db.get_section_formats` →
-      `parser.parse_omnibus` → `validate.validate_omnibus` → `db.populate_db`
+      `parser.parse_omnibus` → `validate.validate_sections` → `db.populate_db`
       (raises `ValueError` on validation failure). `migrate_legacy_csv_to_db_file`
       then calls `file_io.save_db_file`, which stages the bytes beside the
       target and renames them into place, so `db_path` is written only on full

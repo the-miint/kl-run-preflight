@@ -1,4 +1,4 @@
-"""Validate a parsed omnibus file against the view registry.
+"""Validate parsed sections against the view registry.
 
 Reports any structural problems that would prevent a clean round-trip
 or result in silent data corruption. Returns a list of human-readable
@@ -8,6 +8,7 @@ error strings (empty if valid).
 from __future__ import annotations
 
 from ..constants import (
+    COL_CONTROL_DESCRIPTION,
     COL_QIITA_ID,
     EXPECTED_ILLUMINA_HEADER_CONSTANTS,
     FIELD_SHEET_TYPE,
@@ -17,9 +18,12 @@ from ..constants import (
     FORMAT_VALUES_ONLY,
     SECTION_BIOINFORMATICS,
     SECTION_DATA,
+    COL_SC_SAMPLE_NAME,
+    CONTROL_DESCRIPTION_FOR_CONTEXT_TYPE,
     SECTION_HEADER,
     SECTION_SETTINGS,
 )
+from .parser import control_context_type_for
 from ..db import (
     get_format_sections,
     get_legacy_format_idx,
@@ -28,14 +32,13 @@ from ..db import (
 )
 
 
-def validate_omnibus(conn, sections: dict) -> list[str]:
-    """Validate a parsed omnibus file against the view registry.
+def validate_sections(conn, sections: dict) -> list[str]:
+    """Validate parsed sections against the view registry.
 
     Args:
         conn: An open SQLite connection with the legacy format registry
             tables populated.
-        sections: The dict returned by parse_omnibus(), keyed by section
-            name.
+        sections: The parsed sections dict, keyed by section name.
 
     Returns:
         list[str]: Human-readable error messages, one per problem found.
@@ -167,7 +170,45 @@ def validate_omnibus(conn, sections: dict) -> list[str]:
                             )
                             break
 
+    errors.extend(_check_control_description(sections))
     return errors
+
+
+def _check_control_description(sections: dict) -> list[str]:
+    """Report Data rows whose control_description disagrees with the name.
+
+    Sample type is read from the sample name, and the Data view regenerates
+    control_description from that type, so a disagreeing source value would be
+    silently rewritten on output rather than preserved.
+    """
+    data_rows = sections.get(SECTION_DATA) or []
+    if not data_rows or COL_CONTROL_DESCRIPTION not in data_rows[0]:
+        return []
+
+    mismatched = []
+    for row in data_rows:
+        sample_name = row.get(COL_SC_SAMPLE_NAME, "")
+        expected = CONTROL_DESCRIPTION_FOR_CONTEXT_TYPE[
+            control_context_type_for(sample_name)
+        ]
+        observed = row.get(COL_CONTROL_DESCRIPTION, "")
+        if observed != expected:
+            mismatched.append((sample_name, observed, expected))
+
+    if not mismatched:
+        return []
+
+    # Name a bounded sample of offenders; a whole-sheet dump is unreadable.
+    shown = ", ".join(
+        f"{name!r} says {observed!r} but its name implies {expected!r}"
+        for name, observed, expected in mismatched[:3]
+    )
+    suffix = "" if len(mismatched) <= 3 else f" (and {len(mismatched) - 3} more)"
+    return [
+        f"[{SECTION_DATA}] {len(mismatched)} row(s) whose "
+        f"{COL_CONTROL_DESCRIPTION} disagrees with the sample name: "
+        f"{shown}{suffix}"
+    ]
 
 
 def _check_columns(

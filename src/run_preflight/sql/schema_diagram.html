@@ -291,7 +291,8 @@ var SCHEMA = {
         },
         {
           "name": "bioproject_accession",
-          "type": "TEXT"
+          "type": "TEXT",
+          "note": "NCBI BioProject accession"
         }
       ]
     },
@@ -316,6 +317,31 @@ var SCHEMA = {
         {
           "name": "elution_vol",
           "type": "REAL"
+        },
+        {
+          "name": "primer_plate",
+          "type": "TEXT"
+        },
+        {
+          "name": "plating",
+          "type": "TEXT"
+        },
+        {
+          "name": "extractionkit_lot",
+          "type": "TEXT"
+        },
+        {
+          "name": "extraction_robot",
+          "type": "TEXT"
+        },
+        {
+          "name": "platemap_generation_date",
+          "type": "TEXT"
+        },
+        {
+          "name": "plate_contents_description",
+          "type": "TEXT",
+          "note": "what this plate holds, at plate grain. Distinct from project.experiment_design_description, which stays authoritative at project grain: plates and projects are many-to-many, so plate is a crossing axis rather than a finer one."
         }
       ]
     },
@@ -355,7 +381,17 @@ var SCHEMA = {
         {
           "name": "biosample_accession",
           "type": "TEXT",
-          "note": "NCBI BioSample accession; nullable, populated post-fill via updates.set_biosample_accession"
+          "note": "NCBI BioSample accession"
+        },
+        {
+          "name": "do_not_use",
+          "type": "BOOLEAN",
+          "note": "TRUE excludes the sample (and all its preps) from default fetches"
+        },
+        {
+          "name": "matrix_tube_id",
+          "type": "TEXT",
+          "note": "physical matrix/tube barcode, nullable; the amplicon prep template's TubeCode. Per-sample, so it lives here rather than on katharoseq_sample. Appended last to match the ADD COLUMN patch (002) that brings v0 forward."
         }
       ]
     },
@@ -405,7 +441,8 @@ var SCHEMA = {
         {
           "name": "legacy_format_idx",
           "type": "INTEGER",
-          "fk": "legacy_samplesheet_format"
+          "fk": "legacy_samplesheet_format",
+          "note": "NULL for native DB-originated runs; non-NULL for ingested legacy files"
         },
         {
           "name": "external_run_id",
@@ -464,6 +501,11 @@ var SCHEMA = {
           "note": "NULL when same as input_sample.sample_name; populated for replicates (e.g. \"orig_name.dest_well\")"
         },
         {
+          "name": "do_not_use",
+          "type": "BOOLEAN",
+          "note": "per-replicate override: 1 = exclude this replicate; NULL = not flagged (inherit the input_sample flag). Can only add exclusion: the input_sample flag is a hard floor."
+        },
+        {
           "name": "well_description",
           "type": "TEXT"
         }
@@ -485,7 +527,8 @@ var SCHEMA = {
         },
         {
           "name": "read2_length",
-          "type": "INTEGER"
+          "type": "INTEGER",
+          "note": "both NULL when the source document records no run configuration, as the flat amplicon prep template does not"
         },
         {
           "name": "reverse_complement",
@@ -598,6 +641,57 @@ var SCHEMA = {
         {
           "name": "syndna_is_twisted",
           "type": "BOOLEAN"
+        },
+        {
+          "name": "smrt_cell_well_sample_id",
+          "type": "TEXT",
+          "note": "On-disk SMRT Cell well folder name, e.g. 1_B01. Revio wells are column 01 only (A01-D01), so _02 and higher are invalid per page 28 of SMRT-Link-v25.2-user-guide.pdf."
+        },
+        {
+          "name": "movie_context_id",
+          "type": "TEXT",
+          "note": "Full movie context, e.g. m84137_260702_104358_s3. Its format varies across instrument and software, so it is intentionally unconstrained."
+        }
+      ]
+    },
+    {
+      "id": "amplicon_run",
+      "category": "workflow",
+      "columns": [
+        {
+          "name": "run_idx",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "processing_run"
+        },
+        {
+          "name": "primer",
+          "type": "TEXT"
+        },
+        {
+          "name": "linker",
+          "type": "TEXT"
+        },
+        {
+          "name": "target_gene",
+          "type": "TEXT"
+        },
+        {
+          "name": "target_subfragment",
+          "type": "TEXT"
+        },
+        {
+          "name": "pcr_primers",
+          "type": "TEXT"
+        },
+        {
+          "name": "sequencing_meth",
+          "type": "TEXT",
+          "note": "whether the Golay barcodes are stored reverse-complemented; the prep template does not state this, so it is inferred from the primer at ingest (see _barcodes_are_rc_for_primer), mirroring illumina_run.barcodes_are_rc."
+        },
+        {
+          "name": "barcodes_are_rc",
+          "type": "BOOLEAN"
         }
       ]
     },
@@ -658,6 +752,23 @@ var SCHEMA = {
       ]
     },
     {
+      "id": "amplicon_sample",
+      "category": "workflow",
+      "columns": [
+        {
+          "name": "prepped_sample_idx",
+          "type": "INTEGER",
+          "pk": true,
+          "fk": "prepped_sample"
+        },
+        {
+          "name": "barcode",
+          "type": "TEXT",
+          "note": "the in-line Golay barcode SEQUENCE, added to the sample during amplicon PCR; controls carry one too. Sequencing platform-independent."
+        }
+      ]
+    },
+    {
       "id": "katharoseq_sample",
       "category": "workflow",
       "columns": [
@@ -672,12 +783,9 @@ var SCHEMA = {
           "type": "TEXT"
         },
         {
-          "name": "tube_code",
-          "type": "TEXT"
-        },
-        {
           "name": "number_of_cells",
-          "type": "INTEGER"
+          "type": "REAL",
+          "note": "fractional counts occur in serial dilutions (e.g. 38.4, 7.68), so this is REAL rather than INTEGER"
         }
       ]
     },
@@ -708,6 +816,57 @@ var SCHEMA = {
         {
           "name": "legacy_version",
           "type": "INTEGER"
+        },
+        {
+          "name": "delimiter",
+          "type": "TEXT",
+          "note": "field separator of the whole file; the omnibus formats are comma- delimited, the amplicon prep template is TAB-delimited."
+        },
+        {
+          "name": "has_section_labels",
+          "type": "BOOLEAN",
+          "note": "0 for a file that carries no [Section] label lines, which therefore holds exactly one written section."
+        },
+        {
+          "name": "platform_idx",
+          "type": "INTEGER",
+          "fk": "sequencing_platform",
+          "note": "the platform a file of this format describes"
+        },
+        {
+          "name": "default_instrument_type",
+          "type": "TEXT",
+          "note": "instrument recorded for a run of this format when the file itself states none"
+        },
+        {
+          "name": "sample_kind",
+          "type": "TEXT",
+          "note": "which <kind>_sample table holds this format's per-sample rows, or NULL when the format has none: an amplicon run carries a single in-line Golay barcode rather than an i5/i7 pair, so it has no platform-specific sample rows. A guard test checks every row."
+        },
+        {
+          "name": "sample_name_column",
+          "type": "TEXT"
+        },
+        {
+          "name": "plate_column",
+          "type": "TEXT"
+        },
+        {
+          "name": "project_column",
+          "type": "TEXT"
+        },
+        {
+          "name": "well_description_column",
+          "type": "TEXT"
+        },
+        {
+          "name": "well_column",
+          "type": "TEXT"
+        },
+        {
+          "name": "replicates_supported",
+          "type": "BOOLEAN",
+          "note": "0 for a format whose replicate well semantics cannot be round-tripped, which is the pre-v101 standard_metag family. Declared rather than derived from the version number, which is only comparable within one format family: amplicon v1/v2/v3 are unrelated to standard_metag v0/v90/v100 despite sorting the same way. which Data column of this format holds each fact the loader needs. The defaults are the omnibus vocabulary, which all fourteen omnibus formats share; the well column varies between them and is stated on every row. A guard test checks each name against the format's Data view. Every column below legacy_version is appended by the ADD COLUMN statements in patch (002), in the order they appear here."
         }
       ]
     },
@@ -840,6 +999,34 @@ var SCHEMA = {
   ],
   "views": [
     {
+      "id": "amplicon_bioinformatics",
+      "note": "Project-grain facts. experiment_design_description is absent by design: in these sheets it varies per plate within one project, so it is carried on input_plate.plate_contents_description instead."
+    },
+    {
+      "id": "amplicon_data_base",
+      "note": "Shared base carrying every typed prep-template column with the joins resolved once; the amplicon_v1_data view projects the subset the sheet spells."
+    },
+    {
+      "id": "amplicon_header",
+      "note": "The prep template states no run configuration, so the header carries only what identifies the format and the run itself."
+    },
+    {
+      "id": "amplicon_sample_context",
+      "note": "The prep template records controls but no study associations; this projects the shared view down to what such a sheet can state. It is validated on load and never written back out."
+    },
+    {
+      "id": "amplicon_v1_data",
+      "note": "v1: wide \u2014 tube + plate tier, 96/384 wells, and control_description."
+    },
+    {
+      "id": "amplicon_v2_data",
+      "note": "v2: narrow \u2014 spells the 384-well `well_id` and omits the tube/plate-detail tier (no TubeCode / platemap / elution volume / control_description)."
+    },
+    {
+      "id": "amplicon_v3_data",
+      "note": "v3: wide without control_description (some studies omit that column)."
+    },
+    {
       "id": "control_project_associations",
       "note": "Maps each control sample to every project on its plate"
     },
@@ -932,8 +1119,20 @@ var SCHEMA = {
       "note": "TellSeq Data view: uses well_id_384 from compression_well and barcode_id from tellseq_sample instead of Illumina i5/i7 index columns."
     },
     {
+      "id": "prepped_sample_name",
+      "note": "Resolves each prepped_sample to its effective sample_name and effective do_not_use flag. sample_name is prepped_sample.sample_name when populated (replicates) else input_sample.sample_name. do_not_use is the hard-floor OR of the input flag and the per-prep override (input excluded => excluded regardless of the prep value). Defined once so the resolution is shared rather than duplicated across the views that need it."
+    },
+    {
+      "id": "prepped_sample_project",
+      "note": "Resolves each prepped_sample to its effective project: the input_sample's project_idx when set, else the plate's primary_project_idx (controls). Provides one shared definition reused by run_illumina_sample and by the omnibus reconstruction Data views."
+    },
+    {
       "id": "replicated_samples",
       "note": "Detects replicated samples (a compression_sample with multiple prepped_wells)"
+    },
+    {
+      "id": "run_amplicon_sample",
+      "note": "Joins amplicon_sample to its scoping run and input_sample, mirroring run_pacbio_sample so callers can filter by run_idx without re-deriving the prepped/compression chain. amplicon_sample has no surrogate key, so prepped_sample_idx is the per-sample handle."
     },
     {
       "id": "run_capability",
@@ -954,6 +1153,14 @@ var SCHEMA = {
     {
       "id": "run_derived_capability",
       "note": ""
+    },
+    {
+      "id": "run_illumina_sample",
+      "note": "Joins illumina_sample to its scoping run and input_sample so callers can filter by run_idx without re-deriving the prepped/compression chain."
+    },
+    {
+      "id": "run_pacbio_sample",
+      "note": "Joins pacbio_sample to its scoping run and input_sample, mirroring run_illumina_sample so callers can filter by run_idx without re-deriving the prepped/compression chain."
     }
   ]
 };
@@ -977,55 +1184,69 @@ var POSITIONS = {
   'sample_type': { x: 40, y: 232 },
   'project': { x: 380, y: 60 },
   'input_plate': { x: 380, y: 254 },
-  'input_sample': { x: 380, y: 376 },
-  'processing_run': { x: 380, y: 552 },
-  'compression_sample': { x: 380, y: 800 },
-  'prepped_sample': { x: 380, y: 922 },
+  'input_sample': { x: 380, y: 484 },
+  'processing_run': { x: 380, y: 696 },
+  'compression_sample': { x: 380, y: 944 },
+  'prepped_sample': { x: 380, y: 1066 },
   'illumina_run': { x: 720, y: 60 },
   'illumina_sample': { x: 720, y: 272 },
   'tellseq_sample': { x: 720, y: 448 },
   'pacbio_sample': { x: 720, y: 570 },
-  'metagenomic_absquant_sample': { x: 1020, y: 60 },
-  'metatranscriptomic_sample': { x: 1020, y: 254 },
-  'katharoseq_sample': { x: 1020, y: 340 },
+  'amplicon_run': { x: 1020, y: 60 },
+  'metagenomic_absquant_sample': { x: 1020, y: 254 },
+  'metatranscriptomic_sample': { x: 1020, y: 448 },
+  'amplicon_sample': { x: 1020, y: 534 },
+  'katharoseq_sample': { x: 1020, y: 620 },
   'legacy_section_format': { x: 40, y: 318 },
   'legacy_samplesheet_format': { x: 40, y: 386 },
-  'legacy_samplesheet_view': { x: 40, y: 490 },
-  'legacy_samplesheet_optional_columns': { x: 40, y: 630 },
-  'legacy_extra_column': { x: 40, y: 788 },
-  'change_log': { x: 380, y: 1062 }
+  'legacy_samplesheet_view': { x: 40, y: 688 },
+  'legacy_samplesheet_optional_columns': { x: 40, y: 828 },
+  'legacy_extra_column': { x: 40, y: 986 },
+  'change_log': { x: 380, y: 1224 }
 };
 
 var VIEW_POSITIONS = {
-  'control_project_associations': { x: 40, y: 1300 },
-  'input_plate_projects': { x: 320, y: 1300 },
-  'omnibus_abs_quant_metag_v10_data': { x: 600, y: 1300 },
-  'omnibus_contact': { x: 880, y: 1300 },
-  'omnibus_illumina_header': { x: 1160, y: 1300 },
-  'omnibus_illumina_reads': { x: 40, y: 1336 },
-  'omnibus_illumina_settings': { x: 320, y: 1336 },
-  'omnibus_pacbio_absquant_v10_data': { x: 600, y: 1336 },
-  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 880, y: 1336 },
-  'omnibus_pacbio_absquant_v11_data': { x: 1160, y: 1336 },
-  'omnibus_pacbio_absquant_v11_header': { x: 40, y: 1372 },
-  'omnibus_pacbio_absquant_v12_data': { x: 320, y: 1372 },
-  'omnibus_pacbio_metag_v10_data': { x: 600, y: 1372 },
-  'omnibus_pacbio_metag_v11_data': { x: 880, y: 1372 },
-  'omnibus_sample_context': { x: 1160, y: 1372 },
-  'omnibus_standard_metag_v0_data': { x: 40, y: 1408 },
-  'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1408 },
-  'omnibus_standard_metag_v101_data': { x: 600, y: 1408 },
-  'omnibus_standard_metag_v90_bioinformatics': { x: 880, y: 1408 },
-  'omnibus_standard_metag_v90_data': { x: 1160, y: 1408 },
-  'omnibus_standard_metat_v10_data': { x: 40, y: 1444 },
-  'omnibus_tellseq_absquant_v10_data': { x: 320, y: 1444 },
-  'omnibus_tellseq_metag_v10_data': { x: 600, y: 1444 },
-  'replicated_samples': { x: 880, y: 1444 },
-  'run_capability': { x: 1160, y: 1444 },
-  'run_capability_absquant_mass': { x: 40, y: 1480 },
-  'run_capability_absquant_surface_area': { x: 320, y: 1480 },
-  'run_capability_absquant_volume': { x: 600, y: 1480 },
-  'run_derived_capability': { x: 880, y: 1480 }
+  'amplicon_bioinformatics': { x: 40, y: 1462 },
+  'amplicon_data_base': { x: 320, y: 1462 },
+  'amplicon_header': { x: 600, y: 1462 },
+  'amplicon_sample_context': { x: 880, y: 1462 },
+  'amplicon_v1_data': { x: 1160, y: 1462 },
+  'amplicon_v2_data': { x: 40, y: 1498 },
+  'amplicon_v3_data': { x: 320, y: 1498 },
+  'control_project_associations': { x: 600, y: 1498 },
+  'input_plate_projects': { x: 880, y: 1498 },
+  'omnibus_abs_quant_metag_v10_data': { x: 1160, y: 1498 },
+  'omnibus_contact': { x: 40, y: 1534 },
+  'omnibus_illumina_header': { x: 320, y: 1534 },
+  'omnibus_illumina_reads': { x: 600, y: 1534 },
+  'omnibus_illumina_settings': { x: 880, y: 1534 },
+  'omnibus_pacbio_absquant_v10_data': { x: 1160, y: 1534 },
+  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 40, y: 1570 },
+  'omnibus_pacbio_absquant_v11_data': { x: 320, y: 1570 },
+  'omnibus_pacbio_absquant_v11_header': { x: 600, y: 1570 },
+  'omnibus_pacbio_absquant_v12_data': { x: 880, y: 1570 },
+  'omnibus_pacbio_metag_v10_data': { x: 1160, y: 1570 },
+  'omnibus_pacbio_metag_v11_data': { x: 40, y: 1606 },
+  'omnibus_sample_context': { x: 320, y: 1606 },
+  'omnibus_standard_metag_v0_data': { x: 600, y: 1606 },
+  'omnibus_standard_metag_v101_bioinformatics': { x: 880, y: 1606 },
+  'omnibus_standard_metag_v101_data': { x: 1160, y: 1606 },
+  'omnibus_standard_metag_v90_bioinformatics': { x: 40, y: 1642 },
+  'omnibus_standard_metag_v90_data': { x: 320, y: 1642 },
+  'omnibus_standard_metat_v10_data': { x: 600, y: 1642 },
+  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1642 },
+  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1642 },
+  'prepped_sample_name': { x: 40, y: 1678 },
+  'prepped_sample_project': { x: 320, y: 1678 },
+  'replicated_samples': { x: 600, y: 1678 },
+  'run_amplicon_sample': { x: 880, y: 1678 },
+  'run_capability': { x: 1160, y: 1678 },
+  'run_capability_absquant_mass': { x: 40, y: 1714 },
+  'run_capability_absquant_surface_area': { x: 320, y: 1714 },
+  'run_capability_absquant_volume': { x: 600, y: 1714 },
+  'run_derived_capability': { x: 880, y: 1714 },
+  'run_illumina_sample': { x: 1160, y: 1714 },
+  'run_pacbio_sample': { x: 40, y: 1750 }
 };
 
 var svg = document.getElementById('canvas');

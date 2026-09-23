@@ -24,14 +24,17 @@ from ..constants import (
     CHECK_HAS_EXTRACTED_SAMPLE_VOLUME,
     CHECK_HAS_SEQUENCED_GDNA_MASS,
     COL_LANE,
+    COL_RUN_IDX,
     COL_SAMPLE_ID,
     COL_SAMPLE_NAME,
+    DB_COL_PREPPED_SAMPLE_IDX,
     FORMAT_HEADER_KV,
     FORMAT_TABULAR,
     FORMAT_VALUES_ONLY,
     SECTION_DATA,
 )
 from ..db import (
+    get_format_file_shape,
     get_format_sections,
     get_optional_column_groups,
     get_run_legacy_format,
@@ -128,6 +131,26 @@ def _query_view(
 # ---------------------------------------------------------------------------
 
 
+class _RawRowWriter:
+    """A csv.writer-compatible row writer that joins fields with the delimiter
+    verbatim — no quoting or escaping.
+
+    A flat prep template (tab-delimited, no ``[Section]`` labels) is not CSV: its
+    fields carry literal quotes and commas that a parser reads raw. csv's
+    QUOTE_MINIMAL would re-quote any field containing a quote on write, so those
+    sheets round-trip their rows through this writer instead. Fields never contain
+    the delimiter or a newline (one row per line), so a raw join is exact.
+    """
+
+    def __init__(self, out, delimiter: str):
+        self._out = out
+        self._delimiter = delimiter
+
+    def writerow(self, row) -> None:
+        self._out.write(self._delimiter.join("" if v is None else str(v) for v in row))
+        self._out.write("\n")
+
+
 def _write_header_kv(writer, section_name, col_names, row):
     """Write a key-value section like [Header] or [Settings].
 
@@ -182,11 +205,14 @@ def _write_tabular(writer, section_name, col_names, rows):
 
     Args:
         writer: A csv.writer instance to write rows to.
-        section_name: The section label (written as [SectionName]).
+        section_name: The section label, written as [SectionName]; None for a
+            format that carries no label lines, whose section is then the
+            whole file and needs no trailing separator either.
         col_names: Column names to emit as the header row.
         rows: List of data tuples matching col_names.
     """
-    writer.writerow([f"[{section_name}]"])
+    if section_name is not None:
+        writer.writerow([f"[{section_name}]"])
     writer.writerow(col_names)
 
     # Pre-compute column indices for Sample_ID / Sample_Name so we can
@@ -207,7 +233,8 @@ def _write_tabular(writer, section_name, col_names, rows):
             else:
                 formatted.append(format_value(val, col))
         writer.writerow(formatted)
-    writer.writerow([])
+    if section_name is not None:
+        writer.writerow([])
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +345,11 @@ def _get_active_columns(
 
 
 def _merge_extra_columns(
-    cur, run_idx: int, active_cols: list[str], rows: list[tuple]
+    cur,
+    run_idx: int,
+    active_cols: list[str],
+    rows: list[tuple],
+    row_keys: list[int] | None = None,
 ) -> tuple[list[str], list[tuple]]:
     """Append extra columns from legacy_extra_column to the Data section.
 
@@ -365,13 +396,15 @@ def _merge_extra_columns(
         (prs_idx, col_name): col_value for prs_idx, col_name, col_value in extra_rows
     }
 
-    # Sample_ID is the prepped_sample_idx; find its index in active_cols
-    sample_id_idx = active_cols.index(COL_SAMPLE_ID)
+    # Each row's identity comes from the reserved key when the view carries
+    # one; otherwise Sample_ID holds the prepped_sample_idx.
+    if row_keys is None:
+        sample_id_idx = active_cols.index(COL_SAMPLE_ID)
+        row_keys = [row[sample_id_idx] for row in rows]
 
     # Append extra column values to each row
     merged_rows = []
-    for row in rows:
-        prs_idx = row[sample_id_idx]
+    for row, prs_idx in zip(rows, row_keys):
         extra_vals = tuple(
             extra_values.get((prs_idx, col), "") for col in extra_col_names
         )
@@ -409,12 +442,33 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
     # Fetch the ordered list of sections for this format.
     section_views = get_format_sections(cur, legacy_format_idx)
 
-    # Write each section to the output buffer.
+    # A file with no [Section] labels has no way to delimit two sections, so
+    # it writes its Data section alone.
+    delimiter, has_section_labels = get_format_file_shape(cur, legacy_format_idx)
+    if not has_section_labels:
+        section_views = [s for s in section_views if s[0] == SECTION_DATA]
+
+    # Write each section to the output buffer. Sectioned omnibus sheets are true
+    # CSV (fields quoted/escaped as needed); a flat sheet (no [Section] labels) is
+    # raw delimiter-joined text whose fields may carry literal quotes/commas, so
+    # it round-trips through _RawRowWriter rather than csv's quoting.
     output = io.StringIO()
-    writer = csv.writer(output, lineterminator="\n")
+    writer = (
+        csv.writer(output, delimiter=delimiter, lineterminator="\n")
+        if has_section_labels
+        else _RawRowWriter(output, delimiter)
+    )
     for section_name, view_name, section_format in section_views:
         # Introspect the view once to get columns and run_idx presence
-        all_cols, has_run_idx = introspect_view(cur, view_name)
+        all_cols, reserved = introspect_view(cur, view_name)
+        has_run_idx = COL_RUN_IDX in reserved
+        # A view with no printable key of its own carries the reserved
+        # prepped_sample_idx so rows can be ordered and matched to their extras.
+        key_col = (
+            DB_COL_PREPPED_SAMPLE_IDX
+            if DB_COL_PREPPED_SAMPLE_IDX in reserved
+            else None
+        )
 
         if section_format == FORMAT_TABULAR:
             # Filter out inactive optional columns before querying
@@ -425,18 +479,36 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
             # Emit rows lane-major, then by insertion order (Sample_ID
             # carries prepped_sample_idx here), matching the metapool
             # writer's layout; empty for sections lacking these columns
-            order_by = [c for c in (COL_LANE, COL_SAMPLE_ID) if c in active_cols]
+            # The reserved key orders deterministically when present; failing
+            # that, lane-major then insertion order via Sample_ID.
+            if key_col is not None:
+                query_cols = [key_col] + active_cols
+                order_by = [key_col]
+            else:
+                query_cols = active_cols
+                order_by = [c for c in (COL_LANE, COL_SAMPLE_ID) if c in active_cols]
             rows = _query_view(
-                cur, view_name, active_cols, has_run_idx, run_idx, order_by
+                cur, view_name, query_cols, has_run_idx, run_idx, order_by
             )
+
+            # Split the reserved key back off; it is never written.
+            row_keys = None
+            if key_col is not None:
+                row_keys = [row[0] for row in rows]
+                rows = [row[1:] for row in rows]
 
             # Merge extra columns for the Data section
             if section_name == SECTION_DATA:
                 active_cols, rows = _merge_extra_columns(
-                    cur, run_idx, active_cols, rows
+                    cur, run_idx, active_cols, rows, row_keys
                 )
 
-            _write_tabular(writer, section_name, active_cols, rows)
+            _write_tabular(
+                writer,
+                section_name if has_section_labels else None,
+                active_cols,
+                rows,
+            )
         else:
             # Single-row sections (header_kv, values_only)
             rows = _query_view(cur, view_name, all_cols, has_run_idx, run_idx)
@@ -449,4 +521,8 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
             else:
                 raise ValueError(f"Unknown section_format {section_format!r}")
 
+    # Padding to a common width squares up a file whose sections differ in
+    # column count; a single-section file has nothing to square up against.
+    if not has_section_labels:
+        return output.getvalue()
     return _pad_to_max_width(output.getvalue())

@@ -11,23 +11,33 @@ from pathlib import Path
 
 from typing import get_args
 
-from run_preflight.constants import IN_MEMORY_PATH, PlatformSpecificSampleKind
+from run_preflight.constants import (
+    EMP_515F_PRIMER,
+    IN_MEMORY_PATH,
+    PLATFORM_ILLUMINA,
+    SECTION_DATA,
+    PlatformSpecificSampleKind,
+)
 from run_preflight.db import (
     ERR_CATEGORY_INVARIANT,
     ERR_CATEGORY_MISSING_ACCESSION,
     LABEL_NONSTANDARD_WITH_PROJECT,
     LABEL_STANDARD_NO_PROJECT,
+    AmpliconSampleRow,
     IlluminaSampleRow,
     PacbioSampleRow,
     PlatformSampleInfo,
+    _barcodes_are_rc_for_primer,
     _has_do_not_use_token,
     create_db,
+    get_amplicon_sample_info,
     get_illumina_sample_info,
     get_illumina_sample_rows,
     get_input_sample_project_info,
     get_pacbio_sample_info,
     get_projects_missing_external_id,
     get_run_projects,
+    get_view_columns,
     sample_kind_names,
 )
 from run_preflight.legacy.api import load_legacy_csv
@@ -129,6 +139,40 @@ def _expected_illumina_row(sample_name: str) -> IlluminaSampleRow:
 def _expected_pacbio_row(sample_name: str) -> PacbioSampleRow:
     """Build the PacbioSampleRow _seed_pacbio produces for *sample_name*."""
     return PacbioSampleRow(f"bc_{sample_name}", None, None, None, None)
+
+
+def _seed_amplicon(
+    conn: sqlite3.Connection,
+    plate_idx: int,
+    project_idx: int | None,
+    run_idx: int,
+    *,
+    sample_name: str,
+    well: str,
+    sample_type_name: str = "standard",
+) -> tuple[int, int]:
+    """Seed sample chain + amplicon_sample; return (input_sample_idx, prs_idx).
+
+    amplicon_sample has no surrogate key, so its handle is prepped_sample_idx.
+    """
+    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+        conn,
+        plate_idx,
+        project_idx,
+        run_idx,
+        sample_name=sample_name,
+        sample_type_name=sample_type_name,
+        well=well,
+    )
+    _helpers.seed_amplicon_run(conn, run_idx)
+    _helpers.seed_amplicon_sample(conn, prs_idx, barcode=f"bc_{sample_name}")
+    conn.commit()
+    return ins_idx, prs_idx
+
+
+def _expected_amplicon_row(sample_name: str) -> AmpliconSampleRow:
+    """Build the AmpliconSampleRow _seed_amplicon produces for *sample_name*."""
+    return AmpliconSampleRow(f"bc_{sample_name}", True)
 
 
 class TestCreateDb(unittest.TestCase):
@@ -1045,6 +1089,161 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(twisted_types, [bool, bool, type(None)])
 
 
+class TestGetAmpliconSampleInfo(unittest.TestCase):
+    """get_amplicon_sample_info wires the shared helper to amplicon_sample.
+
+    Amplicon is not a platform sample kind, so this exercises the source_names
+    generalization: the same accession-resolution path, keyed by
+    prepped_sample_idx, with an AmpliconSampleRow kind_row.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+        conn = create_db(self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_non_control_single_project(self):
+        # Non-control on a single-project plate: primary = own; secondary = []
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _, prs_idx = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            set_biosample_accession(conn, "S1", "SAMN001")
+
+        with open_db(self.db_path) as conn:
+            result = get_amplicon_sample_info(conn)
+
+        self.assertEqual(
+            result,
+            [
+                PlatformSampleInfo(
+                    prs_idx,
+                    "standard",
+                    "SAMN001",
+                    "PRJNA001",
+                    [],
+                    _expected_amplicon_row("S1"),
+                )
+            ],
+        )
+
+    def test_control_multi_project(self):
+        # Control on a multi-project plate: secondary lists every non-primary
+        # plate project's bioproject_accession, sorted by accession value.
+        with open_db(self.db_path) as conn:
+            _, plate, run = _seed_run_skeleton(conn)
+            proj2 = _helpers.seed_project(
+                conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession="PRJNA999",
+            )
+            proj3 = _helpers.seed_project(
+                conn,
+                project_name="proj3",
+                external_project_id="3",
+                bioproject_accession="PRJNA111",
+            )
+            _helpers.seed_input_sample(conn, plate, proj2, sample_name="S2")
+            _helpers.seed_input_sample(conn, plate, proj3, sample_name="S3")
+            _, prs_idx = _seed_amplicon(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                well="A1",
+                sample_type_name="extraction_blank",
+            )
+            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+
+        with open_db(self.db_path) as conn:
+            result = get_amplicon_sample_info(conn)
+
+        self.assertEqual(
+            result,
+            [
+                PlatformSampleInfo(
+                    prs_idx,
+                    "extraction_blank",
+                    "SAMN_BLK",
+                    "PRJNA001",
+                    ["PRJNA111", "PRJNA999"],
+                    _expected_amplicon_row("blank1"),
+                )
+            ],
+        )
+
+    def test_excludes_do_not_use_by_default(self):
+        # One flagged do-not-use is dropped by default, returned when requested.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            ins1, prs1 = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            _, prs2 = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S2", well="A2"
+            )
+            set_biosample_accession(conn, "S1", "SAMN001")
+            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_do_not_use(conn, input_sample_idx=ins1)
+
+        with open_db(self.db_path) as conn:
+            default_result = get_amplicon_sample_info(conn)
+            full_result = get_amplicon_sample_info(conn, include_do_not_use=True)
+
+        self.assertEqual([r.sample_idx for r in default_result], [prs2])
+        self.assertEqual([r.sample_idx for r in full_result], [prs1, prs2])
+
+    def test_missing_accession_raises(self):
+        # No biosample accession set -> accession-gated reader raises.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _seed_amplicon(conn, plate, proj, run, sample_name="S1", well="A1")
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaises(ValueError) as ctx:
+                get_amplicon_sample_info(conn)
+        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, str(ctx.exception))
+        self.assertIn("prepped_sample_idx", str(ctx.exception))
+
+    def test_run_amplicon_sample_exposes_expected_columns(self):
+        with open_db(self.db_path) as conn:
+            cols = [
+                r[1] for r in conn.execute("PRAGMA table_info(run_amplicon_sample)")
+            ]
+        self.assertEqual(
+            cols,
+            [
+                "prepped_sample_idx",
+                "barcode",
+                "barcodes_are_rc",
+                "run_idx",
+                "input_sample_idx",
+                "sample_name",
+                "do_not_use",
+                "project_name",
+            ],
+        )
+
+
+class TestBarcodesAreRcInference(unittest.TestCase):
+    """barcodes_are_rc is inferred from the primer at ingest, fail-loud."""
+
+    def test_emp_515f_primer_is_rc(self):
+        self.assertIs(_barcodes_are_rc_for_primer(EMP_515F_PRIMER), True)
+
+    def test_unrecognised_primer_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            _barcodes_are_rc_for_primer("ACGTACGT")
+        self.assertIn("barcode orientation", str(ctx.exception))
+
+
 class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):
     """pacbio_sample.smrt_cell_well_sample_id CHECK accepts <1|2>_<A-D>01 and rejects everything else."""
 
@@ -1143,6 +1342,179 @@ class TestSampleKindNamingConvention(unittest.TestCase):
         }
         self.assertEqual(reported, {"pacbio", "illumina"})
         self.assertTrue(reported.issubset(set(valid_kinds)))
+
+
+class TestPlatformRunConfigPairing(unittest.TestCase):
+    """A run's platform and its platform-specific run-config table agree."""
+
+    def test_illumina_run_paired_with_platform(self):
+        # Covers every load path at once, sectioned and flat alike: a loader
+        # that records an Illumina run without its illumina_run row yields a
+        # database claiming a platform it holds no configuration for, and a
+        # loader that attaches one to a PacBio run is equally wrong.
+        loaded: dict[str, tuple[str, int]] = {}
+        for legacy_path in sorted(DATA_DIR.glob("good_*")):
+            conn = load_legacy_csv(str(legacy_path))
+            try:
+                platform = conn.execute(
+                    "SELECT sp.name FROM processing_run pr "
+                    "JOIN sequencing_platform sp ON pr.platform_idx = sp.platform_idx"
+                ).fetchone()[0]
+                run_config_rows = conn.execute(
+                    "SELECT count(*) FROM illumina_run"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            loaded[legacy_path.name] = (platform, run_config_rows)
+
+        # Every Illumina run carries exactly one illumina_run row; no other
+        # platform carries any. Collect the offenders rather than comparing
+        # whole mappings, so a failure names the sheets at fault instead of
+        # printing a diff of every sheet that loaded correctly.
+        violations = {
+            name: (platform, run_config_rows)
+            for name, (platform, run_config_rows) in loaded.items()
+            if run_config_rows != (1 if platform == PLATFORM_ILLUMINA else 0)
+        }
+        self.assertEqual(violations, {})
+
+
+class TestSectionFormatConsistency(unittest.TestCase):
+    """One section name never carries two different section formats."""
+
+    def test_section_format_is_single_valued_per_section_name(self):
+        # get_section_formats folds the whole registry into one
+        # {section_name: section_format} dict before any format is known, so a
+        # section name registered with two formats would resolve by row order
+        # and silently change how every other format's file is parsed.
+        conn = create_db(":memory:")
+        try:
+            rows = conn.execute(
+                "SELECT section_name, section_format "
+                "FROM legacy_samplesheet_view "
+                "GROUP BY section_name, section_format"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        # Collect the offending section names with the formats they conflict
+        # over, so a failure names them instead of printing the whole registry.
+        formats_by_section: dict[str, set[str]] = {}
+        for section_name, section_format in rows:
+            formats_by_section.setdefault(section_name, set()).add(section_format)
+        conflicts = {
+            name: sorted(formats)
+            for name, formats in formats_by_section.items()
+            if len(formats) > 1
+        }
+        self.assertEqual(conflicts, {})
+
+
+class TestRegistryLoadConfig(unittest.TestCase):
+    """Every registered format declares how a file of it loads."""
+
+    def test_every_format_declares_platform_and_instrument(self):
+        # A row missing either value cannot be loaded at all, and the loader
+        # has no inference left to fall back on.
+        conn = create_db(":memory:")
+        try:
+            rows = conn.execute(
+                "SELECT legacy_sheet_type, legacy_version, platform_idx, "
+                "default_instrument_type FROM legacy_samplesheet_format"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        # Name the offending formats rather than diffing the whole registry.
+        incomplete = {
+            f"{sheet_type} v{version}": (platform_idx, instrument)
+            for sheet_type, version, platform_idx, instrument in rows
+            if platform_idx is None or instrument is None
+        }
+        self.assertEqual(incomplete, {})
+
+    def test_every_platform_idx_resolves(self):
+        conn = create_db(":memory:")
+        try:
+            unresolved = conn.execute(
+                "SELECT f.legacy_sheet_type, f.legacy_version FROM "
+                "legacy_samplesheet_format f LEFT JOIN sequencing_platform sp "
+                "ON f.platform_idx = sp.platform_idx WHERE sp.platform_idx IS NULL"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual([f"{s} v{v}" for s, v in unresolved], [])
+
+    def test_every_sample_kind_names_a_real_table(self):
+        # NULL is legitimate — it means the format has no platform-specific
+        # per-sample rows — but any non-NULL value must be a declared kind
+        # whose table exists.
+        valid_kinds = get_args(PlatformSpecificSampleKind)
+        conn = create_db(":memory:")
+        try:
+            rows = conn.execute(
+                "SELECT legacy_sheet_type, legacy_version, sample_kind "
+                "FROM legacy_samplesheet_format WHERE sample_kind IS NOT NULL"
+            ).fetchall()
+            bad = {}
+            for sheet_type, version, kind in rows:
+                if kind not in valid_kinds:
+                    bad[f"{sheet_type} v{version}"] = f"{kind!r} is not a declared kind"
+                    continue
+                table = sample_kind_names(kind).table
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+                    (table,),
+                ).fetchone()
+                if exists is None:
+                    bad[f"{sheet_type} v{version}"] = f"missing table {table}"
+        finally:
+            conn.close()
+        self.assertEqual(bad, {})
+
+    def test_every_declared_role_column_exists_in_the_data_view(self):
+        # The loader reads Data by these names, so a name the format's own view
+        # does not emit is a KeyError at load time. Failing here instead names
+        # the format and the column.
+        conn = create_db(":memory:")
+        try:
+            formats = conn.execute(
+                "SELECT f.legacy_sheet_type, f.legacy_version, lv.view_name, "
+                " f.sample_name_column, f.plate_column, f.project_column, "
+                " f.well_description_column, f.well_column "
+                "FROM legacy_samplesheet_format f "
+                "JOIN legacy_samplesheet_view lv "
+                "  ON f.legacy_format_idx = lv.legacy_format_idx "
+                "WHERE lv.section_name = ?",
+                (SECTION_DATA,),
+            ).fetchall()
+            cur = conn.cursor()
+            missing = {}
+            for sheet_type, version, view_name, *role_columns in formats:
+                view_columns = set(get_view_columns(cur, view_name))
+                absent = sorted(set(role_columns) - view_columns)
+                if absent:
+                    missing[f"{sheet_type} v{version}"] = absent
+        finally:
+            conn.close()
+        self.assertEqual(missing, {})
+
+    def test_only_pre_v101_standard_metag_disallows_replicates(self):
+        # The flag replaces a bare version comparison, which was only
+        # meaningful within one format family. Asserting the exact set keeps a
+        # future format from silently inheriting the restriction or escaping it.
+        conn = create_db(":memory:")
+        try:
+            unsupported = conn.execute(
+                "SELECT legacy_sheet_type || ' v' || legacy_version "
+                "FROM legacy_samplesheet_format WHERE replicates_supported = 0"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(
+            sorted(name for (name,) in unsupported),
+            ["standard_metag v0", "standard_metag v100", "standard_metag v90"],
+        )
 
 
 if __name__ == "__main__":

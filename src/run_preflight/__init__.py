@@ -1,11 +1,16 @@
 """run_preflight — SQLite-backed representation of a sequencing run preflight."""
 
 from .db import (
+    AmpliconSampleRow,
     IlluminaSampleRow,
+    KatharoseqSampleInfo,
     PacbioSampleRow,
     PlatformSampleInfo,
+    add_katharoseq_sample,
     create_db,
+    get_amplicon_sample_info,
     get_illumina_sample_info,
+    get_katharoseq_sample_info,
     get_pacbio_sample_info,
 )
 from .file_io import (
@@ -38,10 +43,15 @@ from .updates import (
 
 __all__ = [
     "create_db",
+    "AmpliconSampleRow",
     "IlluminaSampleRow",
+    "KatharoseqSampleInfo",
     "PacbioSampleRow",
     "PlatformSampleInfo",
+    "add_katharoseq_sample",
+    "get_amplicon_sample_info",
     "get_illumina_sample_info",
+    "get_katharoseq_sample_info",
     "get_pacbio_sample_info",
     "load_db_bytes",
     "load_db_file",

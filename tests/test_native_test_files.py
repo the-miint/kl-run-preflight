@@ -1,12 +1,12 @@
 """Guards for the committed native-format test files.
 
 Enforces five invariants over ``tests/data/native/``: every good_ legacy
-CSV has a committed true-preflight ``.sqlite`` + snapshot (coverage); the
+sheet has a committed true-preflight ``.sqlite`` + snapshot (coverage); the
 native directory is internally paired (every ``.sqlite`` has a snapshot and
 vice versa); each committed ``.sqlite`` reproduces its committed snapshot
-(consistency); freshly loading each good_ legacy CSV reproduces its
+(consistency); freshly loading each good_ legacy sheet reproduces its
 true-preflight snapshot (correctness); and every committed ``.sqlite``'s
-fact-suffix matches the data it actually holds (labelling). A source CSV may
+fact-suffix matches the data it actually holds (labelling). A source sheet may
 back more than one fixture — a bare true-preflight load plus setter-augmented
 fixtures carrying a fact suffix. A failure names the offending file and points
 at the regenerator, so a forgotten regeneration fails loudly rather than

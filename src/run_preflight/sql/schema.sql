@@ -50,6 +50,40 @@ CREATE TABLE legacy_samplesheet_format (
     legacy_format_idx    INTEGER PRIMARY KEY AUTOINCREMENT,
     legacy_sheet_type   TEXT NOT NULL,
     legacy_version      INTEGER NOT NULL,
+    delimiter           TEXT NOT NULL DEFAULT ',',
+        -- field separator of the whole file; the omnibus formats are comma-
+        -- delimited, the amplicon prep template is TAB-delimited.
+    has_section_labels  BOOLEAN NOT NULL DEFAULT 1,
+        -- 0 for a file that carries no [Section] label lines, which therefore
+        -- holds exactly one written section.
+    platform_idx        INTEGER REFERENCES sequencing_platform(platform_idx),
+        -- the platform a file of this format describes
+    default_instrument_type TEXT,
+        -- instrument recorded for a run of this format when the file itself
+        -- states none
+    sample_kind         TEXT,
+        -- which <kind>_sample table holds this format's per-sample rows, or
+        -- NULL when the format has none: an amplicon run carries a single
+        -- in-line Golay barcode rather than an i5/i7 pair, so it has no
+        -- platform-specific sample rows. A guard test checks every row.
+    sample_name_column      TEXT NOT NULL DEFAULT 'Sample_Name',
+    plate_column            TEXT NOT NULL DEFAULT 'Sample_Plate',
+    project_column          TEXT NOT NULL DEFAULT 'Sample_Project',
+    well_description_column TEXT NOT NULL DEFAULT 'Well_description',
+    well_column             TEXT NOT NULL DEFAULT 'well_id_384',
+    replicates_supported    BOOLEAN NOT NULL DEFAULT 1,
+        -- 0 for a format whose replicate well semantics cannot be round-tripped,
+        -- which is the pre-v101 standard_metag family. Declared rather than
+        -- derived from the version number, which is only comparable within one
+        -- format family: amplicon v1/v2/v3 are unrelated to standard_metag
+        -- v0/v90/v100 despite sorting the same way.
+        -- which Data column of this format holds each fact the loader needs.
+        -- The defaults are the omnibus vocabulary, which all fourteen omnibus
+        -- formats share; the well column varies between them and is stated on
+        -- every row. A guard test checks each name against the format's Data
+        -- view.
+        -- Every column below legacy_version is appended by the ADD COLUMN
+        -- statements in patch (002), in the order they appear here.
     UNIQUE(legacy_sheet_type, legacy_version)
 );
 
@@ -76,8 +110,12 @@ CREATE TABLE legacy_samplesheet_optional_columns (
 );
 
 -- Format: pacbio_absquant v11
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('pacbio_absquant', 11);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('pacbio_absquant', 11,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'PacBio'),
+            'Pacbio_Revio', 'pacbio', 'Sample_Well');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (1, 'Header',         1, 'omnibus_pacbio_absquant_v11_header',         'header_kv'),
@@ -92,8 +130,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: standard_metag v101
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('standard_metag', 101);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('standard_metag', 101,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'illumina', 'well_id_384');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (2, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
@@ -110,8 +152,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_metag v11
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('pacbio_metag', 11);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('pacbio_metag', 11,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'PacBio'),
+            'Pacbio_Revio', 'pacbio', 'Sample_Well');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (3, 'Header',         1, 'omnibus_pacbio_absquant_v11_header',         'header_kv'),
@@ -126,8 +172,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_metag v10
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('pacbio_metag', 10);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('pacbio_metag', 10,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'PacBio'),
+            'Pacbio_Revio', 'pacbio', 'Sample_Well');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (4, 'Header',         1, 'omnibus_pacbio_absquant_v11_header',         'header_kv'),
@@ -142,8 +192,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_absquant v10
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('pacbio_absquant', 10);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('pacbio_absquant', 10,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'PacBio'),
+            'Pacbio_Revio', 'pacbio', 'Sample_Well');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (5, 'Header',         1, 'omnibus_pacbio_absquant_v11_header',         'header_kv'),
@@ -158,8 +212,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: standard_metag v90
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('standard_metag', 90);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column, replicates_supported)
+    VALUES ('standard_metag', 90,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'illumina', 'Sample_Well', 0);
 
 INSERT INTO legacy_samplesheet_view VALUES
     (6, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
@@ -171,8 +229,12 @@ INSERT INTO legacy_samplesheet_view VALUES
 
 
 -- Format: standard_metag v0
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('standard_metag', 0);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column, replicates_supported)
+    VALUES ('standard_metag', 0,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'illumina', 'well_id_384', 0);
 
 INSERT INTO legacy_samplesheet_view VALUES
     (7, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
@@ -184,8 +246,12 @@ INSERT INTO legacy_samplesheet_view VALUES
 
 
 -- Format: standard_metag v100
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('standard_metag', 100);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column, replicates_supported)
+    VALUES ('standard_metag', 100,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'illumina', 'well_id_384', 0);
 
 INSERT INTO legacy_samplesheet_view VALUES
     (8, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
@@ -201,8 +267,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: abs_quant_metag v10
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('abs_quant_metag', 10);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('abs_quant_metag', 10,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'illumina', 'well_id_384');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (9, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
@@ -218,8 +288,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: abs_quant_metag v11
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('abs_quant_metag', 11);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('abs_quant_metag', 11,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'illumina', 'well_id_384');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (10, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
@@ -236,8 +310,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: standard_metat v10
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('standard_metat', 10);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('standard_metat', 10,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'illumina', 'well_id_384');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (11, 'Header',         1, 'omnibus_illumina_header',                   'header_kv'),
@@ -248,8 +326,12 @@ INSERT INTO legacy_samplesheet_view VALUES
     (11, 'Contact',        6, 'omnibus_contact',                           'tabular');
 
 -- Format: tellseq_metag v10
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('tellseq_metag', 10);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('tellseq_metag', 10,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'tellseq', 'well_id_384');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (12, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
@@ -266,8 +348,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: tellseq_absquant v10
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('tellseq_absquant', 10);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('tellseq_absquant', 10,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', 'tellseq', 'well_id_384');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (13, 'Header',         1, 'omnibus_illumina_header',                    'header_kv'),
@@ -284,8 +370,12 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'check_contains_replicates', 'Well_description');
 
 -- Format: pacbio_absquant v12
-INSERT INTO legacy_samplesheet_format (legacy_sheet_type, legacy_version)
-    VALUES ('pacbio_absquant', 12);
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, platform_idx,
+         default_instrument_type, sample_kind, well_column)
+    VALUES ('pacbio_absquant', 12,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'PacBio'),
+            'Pacbio_Revio', 'pacbio', 'Sample_Well');
 
 INSERT INTO legacy_samplesheet_view VALUES
     (14, 'Header',         1, 'omnibus_pacbio_absquant_v11_header',         'header_kv'),
@@ -311,6 +401,58 @@ INSERT INTO legacy_samplesheet_optional_columns VALUES
      'sample_surface_area_cm2',
      'check_has_extracted_sample_surface_area', 'syndna_pool_number');
 
+-- The amplicon prep template: a flat TAB-delimited EMP 16S sheet that carries
+-- no [Section] label lines, so the sheet writes exactly one section (Data). The
+-- Header/Bioinformatics/Contact/SampleContext registrations describe facts the
+-- sheet denormalizes across its Data columns; the loader regroups them, and they
+-- are validated but never written back out. Three layouts are registered (see the
+-- amplicon_v{1,2,3}_data views); header resolution takes the widest match.
+INSERT INTO legacy_samplesheet_format
+        (legacy_sheet_type, legacy_version, delimiter, has_section_labels,
+         platform_idx, default_instrument_type, sample_kind,
+         sample_name_column, plate_column, project_column,
+         well_description_column, well_column)
+    VALUES ('amplicon', 1, char(9), 0,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', NULL,
+            'sample_name', 'sample_plate', 'project_name',
+            'well_description', 'well_id_384'),
+           ('amplicon', 2, char(9), 0,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', NULL,
+            'sample_name', 'sample_plate', 'project_name',
+            'well_description', 'well_id'),
+           ('amplicon', 3, char(9), 0,
+            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
+            'Unknown', NULL,
+            'sample_name', 'sample_plate', 'project_name',
+            'well_description', 'well_id_384');
+
+INSERT INTO legacy_samplesheet_view VALUES
+    (15, 'Header',         1, 'amplicon_header',         'header_kv'),
+    (15, 'Data',           2, 'amplicon_v1_data',        'tabular'),
+    (15, 'Bioinformatics', 3, 'amplicon_bioinformatics', 'tabular'),
+    (15, 'Contact',        4, 'omnibus_contact',         'tabular'),
+    (15, 'SampleContext',  5, 'amplicon_sample_context', 'tabular'),
+    (16, 'Header',         1, 'amplicon_header',         'header_kv'),
+    (16, 'Data',           2, 'amplicon_v2_data',        'tabular'),
+    (16, 'Bioinformatics', 3, 'amplicon_bioinformatics', 'tabular'),
+    (16, 'Contact',        4, 'omnibus_contact',         'tabular'),
+    (16, 'SampleContext',  5, 'amplicon_sample_context', 'tabular'),
+    (17, 'Header',         1, 'amplicon_header',         'header_kv'),
+    (17, 'Data',           2, 'amplicon_v3_data',        'tabular'),
+    (17, 'Bioinformatics', 3, 'amplicon_bioinformatics', 'tabular'),
+    (17, 'Contact',        4, 'omnibus_contact',         'tabular'),
+    (17, 'SampleContext',  5, 'amplicon_sample_context', 'tabular');
+
+INSERT INTO legacy_samplesheet_optional_columns VALUES
+    (15, 'Data', 'katharoseq', 'Kathseq_RackID,number_of_cells',
+     'check_contains_katharoseq', NULL),
+    (16, 'Data', 'katharoseq', 'Kathseq_RackID,number_of_cells',
+     'check_contains_katharoseq', NULL),
+    (17, 'Data', 'katharoseq', 'Kathseq_RackID,number_of_cells',
+     'check_contains_katharoseq', NULL);
+
 -- ============================================================
 -- Legacy Extra Columns
 -- ============================================================
@@ -327,6 +469,7 @@ CREATE TABLE legacy_extra_column (
 -- Core Domain Tables
 -- ============================================================
 
+-- A project is identified by external_project_id, bioproject_accession, or both
 CREATE TABLE project (
     project_idx                      INTEGER PRIMARY KEY AUTOINCREMENT,
     project_name                    TEXT NOT NULL UNIQUE,
@@ -337,7 +480,6 @@ CREATE TABLE project (
     experiment_design_description   TEXT NOT NULL,
     bioproject_accession             TEXT,
         -- NCBI BioProject accession
-    -- A project is identified by external_project_id, bioproject_accession, or both
     CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)
 );
 
@@ -345,9 +487,20 @@ CREATE TABLE input_plate (
     input_plate_idx      INTEGER PRIMARY KEY AUTOINCREMENT,
     plate_name          TEXT NOT NULL,
     primary_project_idx  INTEGER NOT NULL REFERENCES project(project_idx),
-    elution_vol         REAL
+    elution_vol         REAL,
+    primer_plate        TEXT,
+    plating             TEXT,
+    extractionkit_lot   TEXT,
+    extraction_robot    TEXT,
+    platemap_generation_date TEXT,
+    plate_contents_description TEXT
+        -- what this plate holds, at plate grain. Distinct from
+        -- project.experiment_design_description, which stays authoritative at
+        -- project grain: plates and projects are many-to-many, so plate is a
+        -- crossing axis rather than a finer one.
 );
 
+-- A sample is identified by sample_name, biosample_accession, or both
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_name         TEXT,
@@ -360,7 +513,10 @@ CREATE TABLE input_sample (
         -- NCBI BioSample accession
     do_not_use          BOOLEAN NOT NULL DEFAULT 0,
         -- TRUE excludes the sample (and all its preps) from default fetches
-    -- A sample is identified by sample_name, biosample_accession, or both
+    matrix_tube_id      TEXT,
+        -- physical matrix/tube barcode, nullable; the amplicon prep template's
+        -- TubeCode. Per-sample, so it lives here rather than on katharoseq_sample.
+        -- Appended last to match the ADD COLUMN patch (002) that brings v0 forward.
     CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)
 );
 
@@ -374,8 +530,7 @@ CREATE TABLE processing_run (
     platform_idx         INTEGER NOT NULL REFERENCES sequencing_platform(platform_idx),
     compression_plate_name TEXT,
     description         TEXT DEFAULT '',
-    legacy_format_idx    INTEGER
-        REFERENCES legacy_samplesheet_format(legacy_format_idx),
+    legacy_format_idx    INTEGER REFERENCES legacy_samplesheet_format(legacy_format_idx),
         -- NULL for native DB-originated runs; non-NULL for ingested legacy files
     external_run_id            TEXT
 );
@@ -412,8 +567,10 @@ CREATE TABLE prepped_sample (
 
 CREATE TABLE illumina_run (
     run_idx              INTEGER PRIMARY KEY REFERENCES processing_run(run_idx),
-    read1_length        INTEGER NOT NULL,
-    read2_length        INTEGER NOT NULL,
+    read1_length        INTEGER,
+    read2_length        INTEGER,
+        -- both NULL when the source document records no run configuration,
+        -- as the flat amplicon prep template does not
     reverse_complement  BOOLEAN,
     mask_short_reads    TEXT,
     override_cycles     TEXT,
@@ -465,13 +622,13 @@ CREATE TABLE pacbio_sample (
     barcode_id              TEXT NOT NULL,
     twist_adaptor_id        TEXT,
     syndna_is_twisted       BOOLEAN,
-    -- On-disk SMRT Cell well folder name (e.g. 1_B01); Revio wells are
-    -- column 01 only (A01-D01), so _02 and higher are invalid per page 28
-    -- of SMRT-Link-v25.2-user-guide.pdf.
     smrt_cell_well_sample_id TEXT CHECK (smrt_cell_well_sample_id GLOB '[12]_[A-D]01'),
-    -- Full movie context (e.g. m84137_260702_104358_s3); its format varies
-    -- across instrument and software, so it is intentionally unconstrained.
+        -- On-disk SMRT Cell well folder name, e.g. 1_B01. Revio wells are
+        -- column 01 only (A01-D01), so _02 and higher are invalid per page 28
+        -- of SMRT-Link-v25.2-user-guide.pdf.
     movie_context_id        TEXT
+        -- Full movie context, e.g. m84137_260702_104358_s3. Its format varies
+        -- across instrument and software, so it is intentionally unconstrained.
 );
 
 -- ============================================================
@@ -564,6 +721,24 @@ BEGIN
 END;
 
 -- ============================================================
+-- Workflow-Specific Run Configuration
+-- ============================================================
+
+CREATE TABLE amplicon_run (
+    run_idx              INTEGER PRIMARY KEY REFERENCES processing_run(run_idx),
+    primer              TEXT NOT NULL,
+    linker              TEXT NOT NULL,
+    target_gene         TEXT NOT NULL,
+    target_subfragment  TEXT NOT NULL,
+    pcr_primers         TEXT NOT NULL,
+    sequencing_meth     TEXT NOT NULL,
+    -- whether the Golay barcodes are stored reverse-complemented; the prep
+    -- template does not state this, so it is inferred from the primer at ingest
+    -- (see _barcodes_are_rc_for_primer), mirroring illumina_run.barcodes_are_rc.
+    barcodes_are_rc     BOOLEAN NOT NULL
+);
+
+-- ============================================================
 -- Workflow-Specific Sample Tables
 -- ============================================================
 
@@ -585,12 +760,21 @@ CREATE TABLE metatranscriptomic_sample (
     total_rna_concentration_ng_ul   REAL
 );
 
+CREATE TABLE amplicon_sample (
+    prepped_sample_idx      INTEGER PRIMARY KEY
+        REFERENCES prepped_sample(prepped_sample_idx),
+    barcode                 TEXT NOT NULL
+        -- the in-line Golay barcode SEQUENCE, added to the sample during
+        -- amplicon PCR; controls carry one too. Sequencing platform-independent.
+);
+
 CREATE TABLE katharoseq_sample (
     input_sample_idx         INTEGER PRIMARY KEY
         REFERENCES input_sample(input_sample_idx),
     rack_id                 TEXT,
-    tube_code               TEXT,
-    number_of_cells         INTEGER
+    number_of_cells         REAL
+        -- fractional counts occur in serial dilutions (e.g. 38.4, 7.68), so
+        -- this is REAL rather than INTEGER
 );
 
 -- ============================================================
@@ -751,6 +935,27 @@ CREATE VIEW run_pacbio_sample AS
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
     JOIN prepped_sample_name psn ON ps.prepped_sample_idx = psn.prepped_sample_idx
     JOIN prepped_sample_project psp ON ps.prepped_sample_idx = psp.prepped_sample_idx;
+
+-- Joins amplicon_sample to its scoping run and input_sample, mirroring
+-- run_pacbio_sample so callers can filter by run_idx without re-deriving the
+-- prepped/compression chain. amplicon_sample has no surrogate key, so
+-- prepped_sample_idx is the per-sample handle.
+CREATE VIEW run_amplicon_sample AS
+    SELECT
+        a.prepped_sample_idx,
+        a.barcode,
+        ar.barcodes_are_rc,
+        cs.run_idx,
+        cs.input_sample_idx,
+        psn.sample_name,
+        psn.do_not_use,
+        psp.project_name
+    FROM amplicon_sample a
+    JOIN prepped_sample prs ON a.prepped_sample_idx = prs.prepped_sample_idx
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN amplicon_run ar ON cs.run_idx = ar.run_idx
+    JOIN prepped_sample_name psn ON a.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON a.prepped_sample_idx = psp.prepped_sample_idx;
 
 -- ============================================================
 -- Omnibus Reconstruction Views — Shared
@@ -1212,6 +1417,137 @@ CREATE VIEW omnibus_tellseq_absquant_v10_data AS
     JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
     LEFT JOIN metagenomic_absquant_sample ma
         ON v10."Sample_ID" = ma.prepped_sample_idx;
+
+-- ============================================================
+-- Amplicon Prep-Template Reconstruction Views
+-- ============================================================
+
+-- Shared base carrying every typed prep-template column with the joins resolved
+-- once; the amplicon_v1_data view projects the subset the sheet spells.
+CREATE VIEW amplicon_data_base AS
+    SELECT cs.run_idx,
+        prs.prepped_sample_idx,
+        psn.sample_name AS "sample_name",
+        a.barcode AS "barcode",
+        ar.primer AS "primer",
+        ar.linker AS "linker",
+        ar.pcr_primers AS "pcr_primers",
+        ar.sequencing_meth AS "sequencing_meth",
+        ar.target_gene AS "target_gene",
+        ar.target_subfragment AS "target_subfragment",
+        ip.primer_plate AS "primer_plate",
+        ip.plating AS "plating",
+        ip.extractionkit_lot AS "extractionkit_lot",
+        ip.extraction_robot AS "extraction_robot",
+        ip.plate_name AS "sample_plate",
+        psp.project_name AS "project_name",
+        ins.sample_name AS "orig_name",
+        prs.well_description AS "well_description",
+        p.library_construction_protocol AS "library_construction_protocol",
+        cs.compression_well AS "well_id_384",
+        cs.compression_well AS "well_id",
+        ins.well AS "well_id_96",
+        ip.plate_contents_description AS "experiment_design_description",
+        sr.instrument_type AS "instrument_model",
+        sr.external_run_id AS "runid",
+        ins.matrix_tube_id AS "TubeCode",
+        CASE st.name
+            WHEN 'extraction_blank' THEN 'negative_control'
+            WHEN 'katharoseq_cells_positive_control' THEN 'positive_control'
+            ELSE ''
+        END AS "control_description",
+        ip.platemap_generation_date AS "platemap_generation_date",
+        ip.elution_vol AS "vol_extracted_elution_ul",
+        ks.rack_id AS "Kathseq_RackID",
+        ks.number_of_cells AS "number_of_cells"
+    FROM prepped_sample prs
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
+    JOIN input_plate ip ON ins.input_plate_idx = ip.input_plate_idx
+    JOIN sample_type st ON ins.sample_type_idx = st.sample_type_idx
+    JOIN processing_run sr ON cs.run_idx = sr.run_idx
+    JOIN amplicon_run ar ON sr.run_idx = ar.run_idx
+    JOIN amplicon_sample a ON prs.prepped_sample_idx = a.prepped_sample_idx
+    JOIN prepped_sample_name psn ON prs.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON prs.prepped_sample_idx = psp.prepped_sample_idx
+    JOIN project p ON psp.project_idx = p.project_idx
+    LEFT JOIN katharoseq_sample ks ON ins.input_sample_idx = ks.input_sample_idx;
+
+-- The amplicon prep template is free-form: real studies vary the column set.
+-- Three registered layouts span what we've seen; header resolution takes the
+-- widest match. Kathseq_RackID / number_of_cells are optional on all three (see
+-- legacy_samplesheet_optional_columns); unrecognized columns round-trip verbatim.
+
+-- v1: wide — tube + plate tier, 96/384 wells, and control_description.
+CREATE VIEW amplicon_v1_data AS
+    SELECT run_idx, prepped_sample_idx, "sample_name", "barcode", "primer", "linker", "pcr_primers",
+        "sequencing_meth", "target_gene", "target_subfragment", "primer_plate",
+        "plating", "extractionkit_lot", "extraction_robot", "sample_plate",
+        "project_name", "orig_name", "well_description",
+        "library_construction_protocol", "well_id_384", "well_id_96",
+        "experiment_design_description", "instrument_model", "runid",
+        "TubeCode", "control_description", "platemap_generation_date",
+        "vol_extracted_elution_ul", "Kathseq_RackID", "number_of_cells"
+    FROM amplicon_data_base;
+
+-- v2: narrow — spells the 384-well `well_id` and omits the tube/plate-detail
+-- tier (no TubeCode / platemap / elution volume / control_description).
+CREATE VIEW amplicon_v2_data AS
+    SELECT run_idx, prepped_sample_idx, "sample_name", "barcode", "primer", "linker", "pcr_primers",
+        "sequencing_meth", "target_gene", "target_subfragment", "primer_plate",
+        "plating", "extractionkit_lot", "extraction_robot", "sample_plate",
+        "project_name", "orig_name", "well_description",
+        "library_construction_protocol", "well_id", "well_id_96",
+        "experiment_design_description", "instrument_model", "runid",
+        "Kathseq_RackID", "number_of_cells"
+    FROM amplicon_data_base;
+
+-- v3: wide without control_description (some studies omit that column).
+CREATE VIEW amplicon_v3_data AS
+    SELECT run_idx, prepped_sample_idx, "sample_name", "barcode", "primer", "linker", "pcr_primers",
+        "sequencing_meth", "target_gene", "target_subfragment", "primer_plate",
+        "plating", "extractionkit_lot", "extraction_robot", "sample_plate",
+        "project_name", "orig_name", "well_description",
+        "library_construction_protocol", "well_id_384", "well_id_96",
+        "experiment_design_description", "instrument_model", "runid",
+        "TubeCode", "platemap_generation_date",
+        "vol_extracted_elution_ul", "Kathseq_RackID", "number_of_cells"
+    FROM amplicon_data_base;
+
+-- The prep template states no run configuration, so the header carries only
+-- what identifies the format and the run itself.
+CREATE VIEW amplicon_header AS
+    SELECT sr.run_idx,
+        lf.legacy_sheet_type AS "SheetType",
+        CAST(lf.legacy_version AS TEXT) AS "SheetVersion",
+        at.name AS "Assay",
+        sr.experiment_name AS "Experiment Name",
+        sr.run_date AS "Date"
+    FROM processing_run sr
+    JOIN assay_type at ON sr.assay_type_idx = at.assay_type_idx
+    JOIN legacy_samplesheet_format lf ON sr.legacy_format_idx = lf.legacy_format_idx;
+
+-- Project-grain facts. experiment_design_description is absent by design: in
+-- these sheets it varies per plate within one project, so it is carried on
+-- input_plate.plate_contents_description instead.
+CREATE VIEW amplicon_bioinformatics AS
+    SELECT DISTINCT cs.run_idx,
+        p.project_name AS "Sample_Project",
+        p.external_project_id AS "QiitaID",
+        p.human_filtering AS "HumanFiltering",
+        p.library_construction_protocol AS "library_construction_protocol"
+    FROM prepped_sample prs
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN input_sample ins ON cs.input_sample_idx = ins.input_sample_idx
+    JOIN project p ON ins.project_idx = p.project_idx
+    GROUP BY cs.run_idx, p.project_idx, p.project_name, p.external_project_id,
+             p.human_filtering, p.library_construction_protocol;
+
+-- The prep template records controls but no study associations; this projects
+-- the shared view down to what such a sheet can state. It is validated on load
+-- and never written back out.
+CREATE VIEW amplicon_sample_context AS
+    SELECT run_idx, "sample_name", "sample_type" FROM omnibus_sample_context;
 
 -- ============================================================
 -- Audit log
