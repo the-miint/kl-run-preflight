@@ -336,6 +336,13 @@ drift test builds one database from `schema_v0.sql` + all patches and
 another from `schema.sql`, asserting they are structurally identical and
 carry the same `user_version`, which keeps the two paths from diverging.
 
+Each patch runs in its own transaction with foreign-key enforcement
+suspended, because changing a column constraint in SQLite means rebuilding
+the table, and a table that others reference cannot be dropped while
+enforcement is on. Referential integrity is still guaranteed: the runner
+checks for foreign-key violations before committing and rolls back a patch
+that leaves any.
+
 ### Why custom migration code instead of an existing tool
 
 The forward-migration pattern (versioned patches applied in sequence) is

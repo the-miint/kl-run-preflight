@@ -325,6 +325,25 @@ class TestLegacyApi(unittest.TestCase):
             migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
+    def test_load_legacy_csv_rejects_shared_qiita_id(self):
+        # Two projects sharing a QiitaID would violate external_project_id's
+        # uniqueness; validation names both projects instead
+        src = (
+            DATA_DIR
+            / "good_yyyy_mm_dd_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"  # noqa: E501
+        ).read_text()
+        corrupted = src.replace("TestProjB_10001,10001,", "TestProjB_10001,12986,")
+        bad_csv = self.tmp_dir / "shared_qid.csv"
+        bad_csv.write_text(corrupted)
+
+        db_path = self.tmp_dir / "shared_qid.db"
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Bioinformatics.*QiitaID '12986'.*Celeste_Adaptation_12986.*TestProjB_10001",
+        ):
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
+        self.assertFalse(db_path.exists())
+
     def test_validate_sections_skips_constant_check_for_pacbio(self):
         # PacBio uses a different Header view with no hardcoded literals,
         # so the constant-preservation check must not fire for PacBio

@@ -15,6 +15,14 @@ until the first release is tagged.
 
 ### Added
 
+- **Projects and input samples carry a Qiita-MIINT export entity ID** (schema
+  patch `003`): `project.study_export_entity_id`, unique, and
+  `input_sample.biosample_export_entity_id`, not unique, since one biosample
+  can appear as several input samples. Both are nullable, so existing
+  preflights load with them unset. Either one now satisfies its table's
+  identity CHECK, as does `input_sample.matrix_tube_id`, so a preflight need
+  not carry NCBI accessions to identify its studies and samples.
+
 - **Amplicon prep templates load through the shared pipeline.** A flat,
   section-less prep template is now parsed by `parse_amplicon_prep`, which
   regroups its single table into the same sections a sectioned sheet parses
@@ -235,6 +243,19 @@ until the first release is tagged.
   values — while asserting `contains_replicates` in four spellings.
 
 ### Changed
+
+- **Every project identifier is unique** (schema patch `003`):
+  `external_project_id` and `bioproject_accession` join
+  `study_export_entity_id` in rejecting a value already held by another
+  project in the same preflight. A legacy sheet that gives two projects the
+  same QiitaID fails validation, naming the projects that share it.
+
+- **Schema patches run with foreign-key enforcement suspended**, so a patch
+  can rebuild a table that other tables reference. A patch that introduces a
+  foreign-key violation is rolled back with `sqlite3.IntegrityError`;
+  violations already in the database are not blamed on it. The connection's
+  foreign-key and legacy ALTER TABLE settings are restored afterward, even
+  when a patch fails.
 
 - **Prep-template facts land in typed homes rather than a verbatim store.**
   The prep template previously typed only nine columns, keeping the rest in

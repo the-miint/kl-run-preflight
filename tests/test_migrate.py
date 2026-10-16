@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import textwrap
 from pathlib import Path
@@ -19,6 +20,62 @@ from run_preflight.migrate import (
     get_pending_patches,
     get_schema_version,
 )
+
+from . import _helpers
+
+_SQL_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
+_EXPORT_ENTITY_ID_PATCH_NUM = 3
+
+
+def _fetch_all(conn: sqlite3.Connection, sql: str) -> list[tuple]:
+    """Run *sql* and return every result row."""
+    cur = conn.execute(sql)
+    rows = cur.fetchall()
+    return rows
+
+
+def _fetch_scalar(conn: sqlite3.Connection, sql: str):
+    """Run *sql* and return the first column of its first row."""
+    cur = conn.execute(sql)
+    row = cur.fetchone()
+    return row[0]
+
+
+def _build_populated_db_before_patch(
+    tmp_path: Path, patch_num: int
+) -> tuple[sqlite3.Connection, dict[str, int]]:
+    """Build an FK-enforcing DB one version short of *patch_num*, seeded.
+
+    Seeds one project, plate, run, and sample chain, and returns the
+    connection plus the seeded row keys.
+    """
+    # Stage only the shipped patches that precede patch_num
+    earlier_dir = tmp_path / "earlier_patches"
+    earlier_dir.mkdir()
+    for patch_path in (_SQL_DIR / "patches").glob("[0-9][0-9][0-9]_*"):
+        if int(patch_path.name[:3]) < patch_num:
+            shutil.copy(patch_path, earlier_dir / patch_path.name)
+
+    # Bring the frozen baseline forward to just before patch_num
+    conn = sqlite3.connect(IN_MEMORY_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.executescript((_SQL_DIR / "schema_v0.sql").read_text())
+    apply_patches(conn, earlier_dir)
+
+    # Seed a minimal sample chain that references both rebuilt tables
+    project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
+    run_idx = _helpers.seed_processing_run(conn)
+    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+        conn, plate_idx, project_idx, run_idx
+    )
+    conn.commit()
+    keys = {
+        "project_idx": project_idx,
+        "plate_idx": plate_idx,
+        "ins_idx": ins_idx,
+        "prs_idx": prs_idx,
+    }
+    return conn, keys
 
 
 def _seed_v0_db_with_pending_patch(tmp_path) -> tuple[str, Path]:
@@ -189,6 +246,66 @@ class TestApplyPatches:
         with pytest.raises(SchemaVersionTooNewError, match="exceeds"):
             apply_patches(conn, tmp_path)
 
+    def test_apply_patches_restores_foreign_keys(self, tmp_path):
+        """FK enforcement is suspended for the patch and restored after."""
+        # The patch records the enforcement setting it ran under
+        (tmp_path / "001_record_fk.py").write_text(
+            textwrap.dedent("""\
+                def apply(conn):
+                    fk = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+                    conn.execute("CREATE TABLE fk_seen (value INTEGER)")
+                    conn.execute("INSERT INTO fk_seen VALUES (?)", (fk,))
+            """)
+        )
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute("PRAGMA foreign_keys = ON")
+        apply_patches(conn, tmp_path)
+        seen = _fetch_scalar(conn, "SELECT value FROM fk_seen")
+        after = _fetch_scalar(conn, "PRAGMA foreign_keys")
+        assert (seen, after) == (0, 1)
+
+    def test_apply_patches_rolls_back_fk_violation(self, tmp_path):
+        """A patch leaving a dangling reference is rolled back and raises."""
+        (tmp_path / "001_dangling.sql").write_text(
+            "CREATE TABLE parent (id INTEGER PRIMARY KEY);\n"
+            "CREATE TABLE child (parent_id INTEGER REFERENCES parent(id));\n"
+            "INSERT INTO child VALUES (99);"
+        )
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute("PRAGMA foreign_keys = ON")
+        with pytest.raises(sqlite3.IntegrityError, match="foreign-key violations"):
+            apply_patches(conn, tmp_path)
+        table_names = _fetch_all(
+            conn, "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+        fk = _fetch_scalar(conn, "PRAGMA foreign_keys")
+        assert (get_schema_version(conn), table_names, fk) == (0, [], 1)
+
+    def test_apply_patches_ignores_preexisting_fk_violation(self, tmp_path):
+        """A violation already in the DB is not blamed on the patch."""
+        (tmp_path / "001_unrelated.sql").write_text("CREATE TABLE unrelated (id INT);")
+        # Plant a dangling reference while enforcement is off
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.executescript(
+            "CREATE TABLE parent (id INTEGER PRIMARY KEY);\n"
+            "CREATE TABLE child (parent_id INTEGER REFERENCES parent(id));\n"
+            "INSERT INTO child VALUES (99);"
+        )
+        conn.execute("PRAGMA foreign_keys = ON")
+        result = apply_patches(conn, tmp_path)
+        assert result == 1
+
+    def test_apply_patches_restores_legacy_alter_table(self, tmp_path):
+        """A failing patch cannot leave legacy ALTER TABLE mode switched on."""
+        (tmp_path / "001_fails.sql").write_text(
+            "PRAGMA legacy_alter_table = ON;\nSELECT * FROM no_such_table;"
+        )
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        with pytest.raises(sqlite3.OperationalError, match="no_such_table"):
+            apply_patches(conn, tmp_path)
+        legacy_alter = _fetch_scalar(conn, "PRAGMA legacy_alter_table")
+        assert legacy_alter == 0
+
     def test_apply_patches_py_missing_apply(self, tmp_path):
         """Python patch without apply() raises AttributeError."""
         patch_code = "def wrong_name(conn):\n    pass\n"
@@ -265,3 +382,73 @@ class TestCreateDbVersion:
         conn = create_db(db_path)
         assert get_schema_version(conn) == get_latest_version()
         conn.close()
+
+
+class TestExportEntityIdPatch:
+    def test_apply_patches_export_entity_id_patch_preserves_rows(self, tmp_path):
+        """Rebuilding project and input_sample keeps rows, keys, and views."""
+        conn, keys = _build_populated_db_before_patch(
+            tmp_path, _EXPORT_ENTITY_ID_PATCH_NUM
+        )
+        apply_patches(conn)
+
+        # Read back the rebuilt rows, a view joining through them, and the
+        # connection state the runner must leave behind
+        actual = {
+            "projects": _fetch_all(
+                conn,
+                "SELECT project_idx, project_name, external_project_id, "
+                "bioproject_accession, study_export_entity_id FROM project",
+            ),
+            "input_samples": _fetch_all(
+                conn,
+                "SELECT input_sample_idx, sample_name, biosample_accession, "
+                "matrix_tube_id, biosample_export_entity_id FROM input_sample",
+            ),
+            "view_rows": _fetch_all(
+                conn,
+                "SELECT prepped_sample_idx, project_idx FROM prepped_sample_project",
+            ),
+            "fk_violations": _fetch_all(conn, "PRAGMA foreign_key_check"),
+            "foreign_keys": _fetch_scalar(conn, "PRAGMA foreign_keys"),
+            "version": get_schema_version(conn),
+        }
+        conn.close()
+
+        expected = {
+            "projects": [(keys["project_idx"], "proj1", "1", None, None)],
+            "input_samples": [(keys["ins_idx"], "sample1", None, None, None)],
+            "view_rows": [(keys["prs_idx"], keys["project_idx"])],
+            "fk_violations": [],
+            "foreign_keys": 1,
+            "version": get_latest_version(),
+        }
+        assert actual == expected
+
+    def test_apply_patches_export_entity_id_patch_keeps_autoincrement(self, tmp_path):
+        """Ids of rows deleted before the rebuild are never reissued."""
+        conn, keys = _build_populated_db_before_patch(
+            tmp_path, _EXPORT_ENTITY_ID_PATCH_NUM
+        )
+
+        # Raise each high-water mark above the surviving rows, then delete
+        doomed_project_idx = _helpers.seed_project(
+            conn, project_name="proj2", external_project_id="2"
+        )
+        doomed_ins_idx = _helpers.seed_input_sample(
+            conn, keys["plate_idx"], keys["project_idx"], sample_name="sample2"
+        )
+        conn.execute(
+            "DELETE FROM input_sample WHERE input_sample_idx = ?", (doomed_ins_idx,)
+        )
+        conn.execute("DELETE FROM project WHERE project_idx = ?", (doomed_project_idx,))
+        conn.commit()
+        sequence_sql = "SELECT name, seq FROM sqlite_sequence WHERE name IN ('project', 'input_sample') ORDER BY name"  # noqa: E501
+        before = _fetch_all(conn, sequence_sql)
+
+        apply_patches(conn)
+        after = _fetch_all(conn, sequence_sql)
+        conn.close()
+
+        expected = [("input_sample", doomed_ins_idx), ("project", doomed_project_idx)]
+        assert (before, after) == (expected, expected)

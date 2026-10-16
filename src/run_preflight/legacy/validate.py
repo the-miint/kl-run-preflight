@@ -10,6 +10,7 @@ from __future__ import annotations
 from ..constants import (
     COL_CONTROL_DESCRIPTION,
     COL_QIITA_ID,
+    COL_SAMPLE_PROJECT,
     EXPECTED_ILLUMINA_HEADER_CONSTANTS,
     FIELD_SHEET_TYPE,
     FIELD_SHEET_VERSION,
@@ -159,18 +160,41 @@ def validate_sections(conn, sections: dict) -> list[str]:
                     allow_unrecognized=allow_unrecognized,
                 )
 
-                # An empty QiitaID would pass the CHECK constraint but
-                # leave external_project_id semantically meaningless.
                 if section_name == SECTION_BIOINFORMATICS:
-                    for row in file_section:
-                        if row.get(COL_QIITA_ID) == "":
-                            errors.append(
-                                f"[{section_name}] {COL_QIITA_ID} cell is "
-                                "empty; every project requires a non-empty value"
-                            )
-                            break
+                    errors.extend(_check_qiita_ids(section_name, file_section))
 
     errors.extend(_check_control_description(sections))
+    return errors
+
+
+def _check_qiita_ids(section_name: str, rows: list[dict]) -> list[str]:
+    """Report empty QiitaID cells and QiitaIDs shared by several projects.
+
+    An empty QiitaID would pass the identity CHECK yet leave
+    external_project_id meaningless, and a shared one would violate its
+    uniqueness; each shared QiitaID is reported with every project using it.
+    """
+    errors: list[str] = []
+    if any(row.get(COL_QIITA_ID) == "" for row in rows):
+        errors.append(
+            f"[{section_name}] {COL_QIITA_ID} cell is "
+            "empty; every project requires a non-empty value"
+        )
+
+    # Group project names by QiitaID, in sheet order
+    projects_by_qiita_id: dict[str, list[str]] = {}
+    for row in rows:
+        qiita_id = row.get(COL_QIITA_ID)
+        if qiita_id:
+            prior_projects = projects_by_qiita_id.get(qiita_id, [])
+            projects_by_qiita_id[qiita_id] = [*prior_projects, row[COL_SAMPLE_PROJECT]]
+
+    for qiita_id, project_names in projects_by_qiita_id.items():
+        if len(project_names) > 1:
+            errors.append(
+                f"[{section_name}] {COL_QIITA_ID} {qiita_id!r} is shared by "
+                f"projects {project_names}; every project requires its own"
+            )
     return errors
 
 

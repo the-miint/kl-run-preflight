@@ -10,6 +10,20 @@ import unittest
 
 import pytest
 
+from run_preflight.constants import (
+    DB_COL_BIOPROJECT_ACCESSION,
+    DB_COL_BIOSAMPLE_ACCESSION,
+    DB_COL_BIOSAMPLE_EXPORT_ENTITY_ID,
+    DB_COL_EXTERNAL_PROJECT_ID,
+    DB_COL_INPUT_SAMPLE_IDX,
+    DB_COL_MATRIX_TUBE_ID,
+    DB_COL_PROJECT_IDX,
+    DB_COL_PROJECT_NAME,
+    DB_COL_SAMPLE_NAME,
+    DB_COL_STUDY_EXPORT_ENTITY_ID,
+    TABLE_INPUT_SAMPLE,
+    TABLE_PROJECT,
+)
 from run_preflight.db import create_db
 from run_preflight.updates import (
     UNCHANGED,
@@ -347,18 +361,6 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
         ):
             set_bioproject_accession(conn, "PRJNA007", project_name="nonexistent")
 
-    def test_set_bioproject_accession_ambiguous_external_id(self):
-        # Insert a second project sharing external_project_id with proj1
-        with open_db(self.db_path) as conn:
-            _helpers.seed_project(conn, project_name="proj2", external_project_id="1")
-            conn.commit()
-
-        with (
-            open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="ambiguous"),
-        ):
-            set_bioproject_accession(conn, "PRJNA008", external_project_id="1")
-
     def test_set_bioproject_accession_audit(self):
         # Two successive sets so the second log entry captures the
         # first call's value as old_value
@@ -645,60 +647,153 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
             set_illumina_run_setting(conn, "no_such_setting", "x")  # type: ignore[arg-type]
 
 
-class TestInputSampleCheck(_UpdatesTestBase):
-    """input_sample requires sample_name OR biosample_accession non-null."""
+class _IdentityCheckTestBase(_UpdatesTestBase):
+    """Insert and read back rows of one table that vary in identity columns.
 
-    # SQL prefix shared by all four cases; varies only in identity values
-    _INSERT_SQL = (
-        "INSERT INTO input_sample "
-        "(sample_name, input_plate_idx, project_idx, "
-        " sample_type_idx, biosample_accession) "
-        "VALUES (?, ?, ?, 1, ?)"
-    )
+    Subclasses name the table, its primary key, and its identity columns,
+    and supply the remaining NOT NULL values a new row needs.
+    """
 
-    def _insert(self, conn, sample_name, biosample_accession):
-        """Insert an input_sample with the given identity values."""
+    _TABLE: str
+    _PK_COL: str
+    _IDENTITY_COLS: tuple[str, ...]
+
+    def _required_values(self) -> dict[str, object]:
+        """Return the non-identity column values every new row needs."""
+        raise NotImplementedError
+
+    def _insert(self, conn, values: dict[str, object]) -> int:
+        """Insert a row from the required values overlaid with *values*."""
+        row = {**self._required_values(), **values}
+        cols = ", ".join(row)
+        placeholders = ", ".join("?" * len(row))
         cur = conn.execute(
-            self._INSERT_SQL,
-            (sample_name, self.plate_idx, self.project_idx, biosample_accession),
+            f"INSERT INTO {self._TABLE} ({cols}) VALUES ({placeholders})",
+            tuple(row.values()),
         )
         conn.commit()
         return cur.lastrowid
 
-    def _read_identity(self, conn, ins_idx):
-        """Return (sample_name, biosample_accession) for *ins_idx*."""
+    def _read_identity(self, conn, row_idx: int) -> tuple:
+        """Return the identity columns for *row_idx*, in _IDENTITY_COLS order."""
+        cols = ", ".join(self._IDENTITY_COLS)
         cur = conn.execute(
-            "SELECT sample_name, biosample_accession FROM input_sample "
-            "WHERE input_sample_idx = ?",
-            (ins_idx,),
+            f"SELECT {cols} FROM {self._TABLE} WHERE {self._PK_COL} = ?",
+            (row_idx,),
         )
-        return cur.fetchone()
+        identity = cur.fetchone()
+        return identity
 
-    def test_input_sample_check_rejects_both_null(self):
-        # Both identity columns NULL must violate the CHECK
+
+class TestInputSampleCheck(_IdentityCheckTestBase):
+    """input_sample requires at least one identity column non-null."""
+
+    _TABLE = TABLE_INPUT_SAMPLE
+    _PK_COL = DB_COL_INPUT_SAMPLE_IDX
+    _IDENTITY_COLS = (
+        DB_COL_SAMPLE_NAME,
+        DB_COL_BIOSAMPLE_ACCESSION,
+        DB_COL_BIOSAMPLE_EXPORT_ENTITY_ID,
+        DB_COL_MATRIX_TUBE_ID,
+    )
+
+    def _required_values(self) -> dict[str, object]:
+        return {
+            "input_plate_idx": self.plate_idx,
+            DB_COL_PROJECT_IDX: self.project_idx,
+            "sample_type_idx": 1,
+        }
+
+    def test_input_sample_check_rejects_all_null(self):
+        # Every identity column NULL must violate the CHECK
         with (
             open_db(self.db_path) as conn,
             pytest.raises(sqlite3.IntegrityError, match="CHECK"),
         ):
-            self._insert(conn, None, None)
+            self._insert(conn, {})
 
-    def test_input_sample_check_accepts_sample_name_only(self):
-        # sample_name alone satisfies the CHECK
-        with open_db(self.db_path) as conn:
-            ins_idx = self._insert(conn, "S1", None)
-            self.assertEqual(self._read_identity(conn, ins_idx), ("S1", None))
+    def test_input_sample_check_accepts_any_one_identity_column(self):
+        # Each identity column alone satisfies the CHECK
+        for position, col in enumerate(self._IDENTITY_COLS):
+            with self.subTest(col=col), open_db(self.db_path) as conn:
+                ins_idx = self._insert(conn, {col: f"only_{col}"})
+                expected = tuple(
+                    f"only_{col}" if i == position else None
+                    for i in range(len(self._IDENTITY_COLS))
+                )
+                self.assertEqual(self._read_identity(conn, ins_idx), expected)
 
-    def test_input_sample_check_accepts_biosample_accession_only(self):
-        # biosample_accession alone satisfies the CHECK
+    def test_input_sample_check_accepts_all_non_null(self):
         with open_db(self.db_path) as conn:
-            ins_idx = self._insert(conn, None, "SAMN100")
-            self.assertEqual(self._read_identity(conn, ins_idx), (None, "SAMN100"))
+            all_values = {col: f"all_{col}" for col in self._IDENTITY_COLS}
+            ins_idx = self._insert(conn, all_values)
+            self.assertEqual(
+                self._read_identity(conn, ins_idx), tuple(all_values.values())
+            )
 
-    def test_input_sample_check_accepts_both_non_null(self):
-        # Both non-null satisfies the CHECK
+    def test_input_sample_biosample_export_entity_id_not_unique(self):
+        # One biosample may appear as several input_samples
         with open_db(self.db_path) as conn:
-            ins_idx = self._insert(conn, "S1", "SAMN101")
-            self.assertEqual(self._read_identity(conn, ins_idx), ("S1", "SAMN101"))
+            idxs = [
+                self._insert(
+                    conn,
+                    {
+                        DB_COL_SAMPLE_NAME: name,
+                        DB_COL_BIOSAMPLE_EXPORT_ENTITY_ID: "QB1",
+                    },
+                )
+                for name in ("S1", "S2")
+            ]
+            identities = [self._read_identity(conn, idx) for idx in idxs]
+            self.assertEqual(
+                identities, [("S1", None, "QB1", None), ("S2", None, "QB1", None)]
+            )
+
+
+class TestProjectCheck(_IdentityCheckTestBase):
+    """project requires at least one identity column non-null."""
+
+    _TABLE = TABLE_PROJECT
+    _PK_COL = DB_COL_PROJECT_IDX
+    _IDENTITY_COLS = (
+        DB_COL_EXTERNAL_PROJECT_ID,
+        DB_COL_BIOPROJECT_ACCESSION,
+        DB_COL_STUDY_EXPORT_ENTITY_ID,
+    )
+
+    def _required_values(self) -> dict[str, object]:
+        return {
+            "library_construction_protocol": "proto",
+            "experiment_design_description": "desc",
+        }
+
+    def test_project_check_rejects_all_null(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(sqlite3.IntegrityError, match="CHECK"),
+        ):
+            self._insert(conn, {DB_COL_PROJECT_NAME: "p_none"})
+
+    def test_project_check_accepts_study_export_entity_id_only(self):
+        with open_db(self.db_path) as conn:
+            project_idx = self._insert(
+                conn,
+                {DB_COL_PROJECT_NAME: "p_qs", DB_COL_STUDY_EXPORT_ENTITY_ID: "QS1"},
+            )
+            self.assertEqual(
+                self._read_identity(conn, project_idx), (None, None, "QS1")
+            )
+
+    def test_project_identity_columns_unique(self):
+        # A second project may not reuse any one of the first's identifiers
+        for col in self._IDENTITY_COLS:
+            with self.subTest(col=col), open_db(self.db_path) as conn:
+                shared = {col: f"dup_{col}"}
+                self._insert(conn, {DB_COL_PROJECT_NAME: f"p_first_{col}", **shared})
+                with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+                    self._insert(
+                        conn, {DB_COL_PROJECT_NAME: f"p_second_{col}", **shared}
+                    )
 
 
 class TestEmptyStringRejection(_UpdatesTestBase):

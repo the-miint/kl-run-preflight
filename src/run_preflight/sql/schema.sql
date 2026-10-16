@@ -469,18 +469,22 @@ CREATE TABLE legacy_extra_column (
 -- Core Domain Tables
 -- ============================================================
 
--- A project is identified by external_project_id, bioproject_accession, or both
+-- A project is identified by any non-empty combination of external_project_id,
+-- bioproject_accession, and study_export_entity_id
 CREATE TABLE project (
     project_idx                      INTEGER PRIMARY KEY AUTOINCREMENT,
     project_name                    TEXT NOT NULL UNIQUE,
-    external_project_id             TEXT,
+    external_project_id             TEXT UNIQUE,
     contact_email                   TEXT,
     human_filtering                 BOOLEAN NOT NULL DEFAULT 1,
     library_construction_protocol   TEXT NOT NULL,
     experiment_design_description   TEXT NOT NULL,
-    bioproject_accession             TEXT,
+    bioproject_accession             TEXT UNIQUE,
         -- NCBI BioProject accession
-    CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)
+    study_export_entity_id          TEXT UNIQUE,
+        -- Qiita-MIINT export entity ID of the study
+    CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL
+           OR study_export_entity_id IS NOT NULL)
 );
 
 CREATE TABLE input_plate (
@@ -500,7 +504,8 @@ CREATE TABLE input_plate (
         -- crossing axis rather than a finer one.
 );
 
--- A sample is identified by sample_name, biosample_accession, or both
+-- A sample is identified by any non-empty combination of sample_name,
+-- biosample_accession, biosample_export_entity_id, and matrix_tube_id
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_name         TEXT,
@@ -516,8 +521,11 @@ CREATE TABLE input_sample (
     matrix_tube_id      TEXT,
         -- physical matrix/tube barcode, nullable; the amplicon prep template's
         -- TubeCode. Per-sample, so it lives here rather than on katharoseq_sample.
-        -- Appended last to match the ADD COLUMN patch (002) that brings v0 forward.
-    CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)
+    biosample_export_entity_id TEXT,
+        -- Qiita-MIINT export entity ID of the biosample; not unique, since one
+        -- biosample can appear as several input_samples
+    CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL
+           OR biosample_export_entity_id IS NOT NULL OR matrix_tube_id IS NOT NULL)
 );
 
 CREATE TABLE processing_run (
