@@ -267,43 +267,43 @@ def get_run_projects(
 
 
 class PreflightDataFacts(NamedTuple):
-    """Which classes of post-preflight data a run preflight has populated.
+    """Which classes of data a run preflight has populated.
 
-    has_accessions is true when any NCBI biosample or bioproject accession is
-    set; has_pacbio_placement is true when any PacBio SMRT Cell placement is
-    set. Both false denotes a true preflight.
+    has_public_ids is true when the run has at least one prepped sample not
+    flagged do-not-use, and every such sample's biosample and each of its
+    primary and secondary projects carries at least one of its identifiers;
+    has_pacbio_placement is true when any PacBio SMRT Cell placement is set.
     """
 
-    has_accessions: bool
+    has_public_ids: bool
     has_pacbio_placement: bool
 
 
 def get_preflight_data_facts(conn: sqlite3.Connection) -> PreflightDataFacts:
-    """Return which classes of accrued data are populated in the database.
+    """Return which classes of data are populated in the database.
 
     Derives each fact from what the database actually holds, so a caller
-    (e.g. a fixture classifier) need not know the underlying columns.
+    need not know the underlying columns. Raises ValueError unless the
+    database holds exactly one processing run.
     """
-    cur = conn.cursor()
-
-    # Accessions: any biosample on a sample or bioproject on a project
-    cur.execute(
-        "SELECT "
-        "(SELECT COUNT(*) FROM input_sample WHERE biosample_accession IS NOT NULL) "
-        "+ (SELECT COUNT(*) FROM project WHERE bioproject_accession IS NOT NULL)"
+    # Public IDs: the run has samples, and none lacks an identifier
+    run_idx = get_single_run_idx(conn)
+    identities = _fetch_sample_identities(conn, run_idx, include_do_not_use=False)
+    any_unidentified = any(
+        _unidentified_entities(identity) for identity in identities.values()
     )
-    (accession_count,) = cur.fetchone()
+    has_public_ids = bool(identities) and not any_unidentified
 
     # PacBio placement: any SMRT Cell well or movie-context assignment
+    cur = conn.cursor()
     cur.execute(
         "SELECT COUNT(*) FROM pacbio_sample "
         "WHERE smrt_cell_well_sample_id IS NOT NULL OR movie_context_id IS NOT NULL"
     )
     (placement_count,) = cur.fetchone()
 
-    has_accessions = bool(accession_count)
     has_pacbio_placement = bool(placement_count)
-    return PreflightDataFacts(has_accessions, has_pacbio_placement)
+    return PreflightDataFacts(has_public_ids, has_pacbio_placement)
 
 
 def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:
@@ -843,28 +843,45 @@ class AmpliconSampleRow(NamedTuple):
         return row._replace(barcodes_are_rc=bool(row.barcodes_are_rc))
 
 
-class PlatformSampleInfo(NamedTuple):
-    """Per-sample accession + identity info for one platform sample row.
+class BiosampleIdentifiers(NamedTuple):
+    """Every external identifier of one biosample; None where absent."""
 
-    Bundles the platform-independent identity and accession fields with
-    *kind_row*, the platform-specific columns. sample_type is the DB
-    sample_type.name (e.g. "standard", "extraction_blank");
-    secondary_bioproject_accessions is populated only for project-agnostic
-    controls added at prep-time and is empty for all other samples
-    (including controls project-specific controls).
+    biosample_accession: str | None
+    ena_sample_accession: str | None
+    export_entity_id: str | None
+    matrix_tube_id: str | None
+
+
+class ProjectIdentifiers(NamedTuple):
+    """Every external identifier of one project (study); None where absent."""
+
+    bioproject_accession: str | None
+    ena_study_accession: str | None
+    export_entity_id: str | None
+
+
+class PlatformSampleInfo(NamedTuple):
+    """Identity info and platform-specific columns for one platform sample row.
+
+    sample_type is the DB sample_type.name (e.g. "standard",
+    "extraction_blank"). primary_project is the sample's own project, or the
+    plate's primary project for a control; secondary_projects lists the
+    plate's other projects, ordered by project name, and is empty except for
+    a control on a plate shared by several projects. *kind_row* carries the
+    platform-specific columns.
     """
 
     sample_idx: int
     sample_type: str
-    biosample_accession: str
-    primary_bioproject_accession: str
-    secondary_bioproject_accessions: list[str]
+    biosample: BiosampleIdentifiers
+    primary_project: ProjectIdentifiers
+    secondary_projects: list[ProjectIdentifiers]
     kind_row: IlluminaSampleRow | PacbioSampleRow | AmpliconSampleRow
 
 
-# Error categories and per-row labels for invariant/accession violations.
+# Error categories and per-row labels for invariant/identifier violations.
 ERR_CATEGORY_INVARIANT = "control / project_idx invariant violation"
-ERR_CATEGORY_MISSING_ACCESSION = "missing required accession"
+ERR_CATEGORY_MISSING_IDENTIFIER = "missing required identifier"
 LABEL_STANDARD_NO_PROJECT = "standard sample_type with NULL project_idx"
 LABEL_NONSTANDARD_WITH_PROJECT = "non-standard sample_type with non-NULL project_idx"
 
@@ -886,96 +903,178 @@ def _raise_violations(
     raise ValueError(f"{category}: {items}")
 
 
-def _get_platform_specific_sample_info(
-    conn: sqlite3.Connection,
-    row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow] | type[AmpliconSampleRow],
-    *,
-    include_do_not_use: bool = False,
-) -> list[PlatformSampleInfo]:
-    """Return per-sample biosample + bioproject accession info for the run.
+class _SampleIdentity(NamedTuple):
+    """One prepped sample's type, own project, and entity identifiers."""
 
-    Resolves the sole processing_run via get_single_run_idx and returns
-    one PlatformSampleInfo per *row_cls* sample row, ordered by the source's
-    sample-idx. secondary_bioproject_accessions lists accessions for every
-    non-primary plate project (populated only for controls; empty for
-    non-control samples), sorted by accession value; kind_row is a *row_cls*
-    instance carrying the platform-specific columns (its field order drives
-    the SELECT). Rows whose effective do_not_use flag is set are excluded
+    sample_type: str
+    own_project_idx: int | None
+    biosample: BiosampleIdentifiers
+    primary_project: ProjectIdentifiers
+    secondary_projects: list[ProjectIdentifiers]
+
+
+def _fetch_sample_identities(
+    conn: sqlite3.Connection, run_idx: int, *, include_do_not_use: bool
+) -> dict[int, _SampleIdentity]:
+    """Return the identity of each of *run_idx*'s prepped samples, by prepped_sample_idx.
+
+    Prepped samples whose effective do_not_use flag is set are omitted
     unless *include_do_not_use* is True.
-
-    Raises:
-        ValueError: If the control / project_idx pairing is violated
-            on any row (raised before any accession check), or if any
-            required accession (biosample, primary bioproject accession, or any
-            secondary bioproject accession) is None on any row.
     """
-    names = row_cls.source_names()
-    run_idx = get_single_run_idx(conn)
-    cur = conn.cursor()
-    do_not_use_filter = _do_not_use_filter(include_do_not_use, "rs.")
+    do_not_use_filter = _do_not_use_filter(include_do_not_use, "psn.")
 
-    # Pull the platform-specific columns from the run view in field order,
-    # so they land at fixed trailing positions in each result row.
-    kind_select = ", ".join(f"rs.{field}" for field in row_cls._fields)
-
-    # One row per (sample x non-primary plate project); LEFT JOINs keep a
-    # single row for non-controls / single-project plates. The leading
-    # ORDER BY on the sample-idx is load-bearing: the groupby() below
-    # relies on adjacent same-key rows.
-    cur.execute(
+    # One row per (prepped sample x secondary project); the LEFT JOINs keep a
+    # single row when there is none. The leading ORDER BY on the prepped
+    # sample is load-bearing: the groupby() below relies on adjacent rows.
+    cur = conn.execute(
         f"""
         SELECT
-            rs.{names.idx_col},
+            psn.prepped_sample_idx,
+            st.name,
             ins.project_idx,
             ins.biosample_accession,
-            st.name,
-            COALESCE(own_proj.bioproject_accession,
-                     primary_proj.bioproject_accession),
-            ipp.project_idx,
+            ins.biosample_export_entity_id,
+            ins.matrix_tube_id,
+            primary_proj.bioproject_accession,
+            primary_proj.study_export_entity_id,
+            secondary_proj.project_idx,
             secondary_proj.bioproject_accession,
-            {kind_select}
-        FROM {names.run_view} rs
+            secondary_proj.study_export_entity_id
+        FROM prepped_sample_name psn
+        JOIN prepped_sample prs
+            ON prs.prepped_sample_idx = psn.prepped_sample_idx
+        JOIN compression_sample cs
+            ON prs.compression_sample_idx = cs.compression_sample_idx
         JOIN input_sample ins
-            ON rs.input_sample_idx = ins.input_sample_idx
+            ON cs.input_sample_idx = ins.input_sample_idx
         JOIN sample_type st
             ON ins.sample_type_idx = st.sample_type_idx
         JOIN input_plate ip
             ON ins.input_plate_idx = ip.input_plate_idx
+        JOIN prepped_sample_project psp
+            ON psp.prepped_sample_idx = psn.prepped_sample_idx
         JOIN project primary_proj
-            ON ip.primary_project_idx = primary_proj.project_idx
-        LEFT JOIN project own_proj
-            ON ins.project_idx = own_proj.project_idx
+            ON primary_proj.project_idx = psp.project_idx
         LEFT JOIN input_plate_projects ipp
             ON ipp.input_plate_idx = ins.input_plate_idx
             AND ins.project_idx IS NULL
             AND ipp.project_idx != ip.primary_project_idx
         LEFT JOIN project secondary_proj
             ON ipp.project_idx = secondary_proj.project_idx
-        WHERE rs.run_idx = ?
+        WHERE cs.run_idx = ?
         {do_not_use_filter}
-        ORDER BY rs.{names.idx_col}, secondary_proj.bioproject_accession
+        ORDER BY psn.prepped_sample_idx, secondary_proj.project_name
         """,
         (run_idx,),
     )
     rows = cur.fetchall()
 
-    # Group result rows by sample-idx and validate per-group.
-    invariant_offenders: list[tuple[int, str]] = []
-    accession_offenders: list[tuple[int, str]] = []
-    results: list[PlatformSampleInfo] = []
-    for sample_idx, group in groupby(rows, key=lambda r: r[0]):
+    # Combine each sample's rows into one identity; ENA accessions are not stored
+    identities: dict[int, _SampleIdentity] = {}
+    for prepped_sample_idx, group in groupby(rows, key=lambda r: r[0]):
         group_rows = list(group)
-        first_row = group_rows[0]
-        _, project_idx, biosample, sample_type_name, primary_bioproject = first_row[:5]
+        (
+            _,
+            sample_type,
+            own_project_idx,
+            biosample_accession,
+            biosample_export_entity_id,
+            matrix_tube_id,
+            primary_bioproject_accession,
+            primary_study_export_entity_id,
+            *_,
+        ) = group_rows[0]
+        biosample = BiosampleIdentifiers(
+            biosample_accession, None, biosample_export_entity_id, matrix_tube_id
+        )
+        primary_project = ProjectIdentifiers(
+            primary_bioproject_accession, None, primary_study_export_entity_id
+        )
 
-        # The kind columns are constant across a control's grouped rows;
-        # read them from the first row and rebuild the platform-specific row
-        # (from_run_view applies any storage-to-domain coercion).
-        kind_row = row_cls.from_run_view(first_row[7:])
+        # Each row with a secondary project contributes one project record
+        secondary_projects = [
+            ProjectIdentifiers(bioproject, None, export_id)  # same-pattern-ok: one-line
+            # record build; a shared helper would obscure it
+            for *_, project_idx, bioproject, export_id in group_rows
+            if project_idx is not None
+        ]
 
-        # Enforce control / project_idx pairing before reading accessions
-        is_standard = sample_type_name == SAMPLE_TYPE_STANDARD
-        has_project = project_idx is not None
+        identities[prepped_sample_idx] = _SampleIdentity(
+            sample_type, own_project_idx, biosample, primary_project, secondary_projects
+        )
+    return identities
+
+
+def _is_identified(identifiers: BiosampleIdentifiers | ProjectIdentifiers) -> bool:
+    """Return True if any one of an entity's identifiers is set."""
+    return any(value is not None for value in identifiers)
+
+
+def _unidentified_entities(identity: _SampleIdentity) -> list[str]:
+    """Name each of a sample's entities that carries none of its identifiers."""
+    records_by_entity = (
+        ("biosample", [identity.biosample]),
+        ("primary_project", [identity.primary_project]),
+        ("secondary_projects", identity.secondary_projects),
+    )
+    unidentified = [
+        entity
+        for entity, records in records_by_entity
+        if not all(_is_identified(record) for record in records)
+    ]
+    return unidentified
+
+
+def _get_platform_specific_sample_info(
+    conn: sqlite3.Connection,
+    row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow] | type[AmpliconSampleRow],
+    *,
+    include_do_not_use: bool = False,
+) -> list[PlatformSampleInfo]:
+    """Return each sample's identifiers and platform-specific row for the run.
+
+    Requires exactly one processing run. Returns one PlatformSampleInfo per
+    *row_cls* sample row, ordered by the source's sample-idx; kind_row is a
+    *row_cls* instance, whose field order drives the SELECT. Rows whose
+    effective do_not_use flag is set are excluded unless *include_do_not_use*
+    is True.
+
+    Raises:
+        ValueError: If the control / project_idx pairing is violated on any
+            row, raised before any identifier is checked.
+    """
+    names = row_cls.source_names()
+    run_idx = get_single_run_idx(conn)
+    identities = _fetch_sample_identities(
+        conn, run_idx, include_do_not_use=include_do_not_use
+    )
+
+    # Pull the platform-specific columns from the run view in field order,
+    # so they land at fixed trailing positions in each result row
+    kind_select = ", ".join(f"rs.{field}" for field in row_cls._fields)
+    do_not_use_filter = _do_not_use_filter(include_do_not_use, "rs.")
+    cur = conn.execute(
+        f"""
+        SELECT rs.{names.idx_col}, rs.prepped_sample_idx, {kind_select}
+        FROM {names.run_view} rs
+        WHERE rs.run_idx = ?
+        {do_not_use_filter}
+        ORDER BY rs.{names.idx_col}
+        """,
+        (run_idx,),
+    )
+    kind_rows = cur.fetchall()
+
+    # Validate each row's identity and pair it with its platform-specific row
+    invariant_offenders: list[tuple[int, str]] = []
+    identifier_offenders: list[tuple[int, str]] = []
+    results: list[PlatformSampleInfo] = []
+    for sample_idx, prepped_sample_idx, *kind_values in kind_rows:
+        identity = identities[prepped_sample_idx]
+
+        # Enforce control / project_idx pairing before reading identifiers
+        is_standard = identity.sample_type == SAMPLE_TYPE_STANDARD
+        has_project = identity.own_project_idx is not None
         if is_standard and not has_project:
             invariant_offenders.append((sample_idx, LABEL_STANDARD_NO_PROJECT))
             continue
@@ -983,32 +1082,27 @@ def _get_platform_specific_sample_info(
             invariant_offenders.append((sample_idx, LABEL_NONSTANDARD_WITH_PROJECT))
             continue
 
-        # Collect non-primary plate projects' bioproject_accessions
-        secondary = [r[6] for r in group_rows if r[5] is not None]
+        # Record each entity carrying none of its identifiers for the report
+        unidentified = _unidentified_entities(identity)
+        identifier_offenders.extend((sample_idx, entity) for entity in unidentified)
 
-        # Record any missing accession for the summary report
-        if biosample is None:
-            accession_offenders.append((sample_idx, "biosample_accession"))
-        if primary_bioproject is None:
-            accession_offenders.append((sample_idx, "primary_bioproject_accession"))
-        if any(b is None for b in secondary):
-            accession_offenders.append((sample_idx, "secondary_bioproject_accessions"))
-
+        # from_run_view applies any storage-to-domain coercion
+        kind_row = row_cls.from_run_view(tuple(kind_values))
         results.append(
             PlatformSampleInfo(
                 sample_idx,
-                sample_type_name,
-                biosample,
-                primary_bioproject,
-                secondary,
+                identity.sample_type,
+                identity.biosample,
+                identity.primary_project,
+                identity.secondary_projects,
                 kind_row,
             )
         )
 
-    # Invariant violations indicate corrupt data; raise before accession checks
+    # Invariant violations indicate corrupt data
     _raise_violations(ERR_CATEGORY_INVARIANT, invariant_offenders, names.idx_col)
     _raise_violations(
-        ERR_CATEGORY_MISSING_ACCESSION, accession_offenders, names.idx_col
+        ERR_CATEGORY_MISSING_IDENTIFIER, identifier_offenders, names.idx_col
     )
     return results
 
@@ -1018,10 +1112,10 @@ def get_illumina_sample_info(
     *,
     include_do_not_use: bool = False,
 ) -> list[PlatformSampleInfo]:
-    """Return per-illumina_sample accession + illumina row; see shared helper.
+    """Return each illumina_sample's identifiers and illumina row; see shared helper.
 
-    Requires every referenced project to have its NCBI accessions populated; a
-    preflight with a required accession still NULL raises ``ValueError``.
+    Raises ``ValueError`` if any sample's biosample, primary project, or
+    secondary project carries none of its identifiers.
     """
     return _get_platform_specific_sample_info(
         conn, IlluminaSampleRow, include_do_not_use=include_do_not_use
@@ -1033,10 +1127,10 @@ def get_pacbio_sample_info(
     *,
     include_do_not_use: bool = False,
 ) -> list[PlatformSampleInfo]:
-    """Return per-pacbio_sample accession + pacbio row; see shared helper.
+    """Return each pacbio_sample's identifiers and pacbio row; see shared helper.
 
-    Requires every referenced project to have its NCBI accessions populated; a
-    preflight with a required accession still NULL raises ``ValueError``.
+    Raises ``ValueError`` if any sample's biosample, primary project, or
+    secondary project carries none of its identifiers.
     """
     return _get_platform_specific_sample_info(
         conn, PacbioSampleRow, include_do_not_use=include_do_not_use
@@ -1048,15 +1142,13 @@ def get_amplicon_sample_info(
     *,
     include_do_not_use: bool = False,
 ) -> list[PlatformSampleInfo]:
-    """Return per-amplicon_sample accession + amplicon row; see shared helper.
+    """Return each amplicon_sample's identifiers and amplicon row; see shared helper.
 
-    Requires every referenced project to have its NCBI accessions populated (a
-    preflight with a required accession still NULL raises ``ValueError``), so it
-    is the reader a consumer calls to provision a run keyed by biosample
-    accession. kind_row is an AmpliconSampleRow carrying the sample's Golay
-    barcode and barcodes_are_rc (all a golay-demux roster needs), and samples are
-    keyed and ordered by prepped_sample_idx (amplicon_sample has no surrogate
-    key).
+    kind_row is an AmpliconSampleRow carrying the sample's Golay barcode and
+    barcodes_are_rc (all a golay-demux roster needs), and samples are keyed and
+    ordered by prepped_sample_idx (amplicon_sample has no surrogate key).
+    Raises ``ValueError`` if any sample's biosample, primary project, or
+    secondary project carries none of its identifiers.
     """
     return _get_platform_specific_sample_info(
         conn, AmpliconSampleRow, include_do_not_use=include_do_not_use
@@ -1423,9 +1515,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
                 "project": row[load_config.project_column],
                 "elution_vol": row.get(COL_VOL_EXTRACTED_ELUTION),
                 # Plate-constant prep facts; absent from the omnibus formats.
-                "tier": tuple(
-                    row.get(col) or None for col in _PLATE_TIER_COLUMNS
-                ),
+                "tier": tuple(row.get(col) or None for col in _PLATE_TIER_COLUMNS),
             }
 
     plate_idxs: dict[str, int] = {}
@@ -1679,7 +1769,8 @@ def _barcodes_are_rc_for_primer(primer: str) -> bool:
     )
 
 
-def _populate_amplicon_run(cur, run_idx: int, row: dict):  # same-pattern-ok: D18 extended to run-level populators (R6)
+def _populate_amplicon_run(cur, run_idx: int, row: dict):  # same-pattern-ok: kept
+    # parallel so each table's columns read at a glance
     """Insert an amplicon_run row if the amplicon prep columns are present.
 
     Every column is constant across a run -- the wet lab does not mix primers
@@ -1714,7 +1805,8 @@ def _populate_amplicon_run(cur, run_idx: int, row: dict):  # same-pattern-ok: D1
     )
 
 
-def _populate_amplicon_sample(cur, prs_idx: int, row: dict):  # same-pattern-ok: sixth sibling of the family D18 keeps parallel
+def _populate_amplicon_sample(cur, prs_idx: int, row: dict):  # same-pattern-ok: kept
+    # parallel so each table's columns read at a glance
     """Insert an amplicon_sample row if the in-line Golay barcode is present.
 
     Args:
@@ -1731,7 +1823,10 @@ def _populate_amplicon_sample(cur, prs_idx: int, row: dict):  # same-pattern-ok:
     )
 
 
-def _populate_katharoseq_sample(cur, input_sample_idx: int, row: dict):  # same-pattern-ok: D18 extended (R6)
+def _populate_katharoseq_sample(
+    cur, input_sample_idx: int, row: dict
+):  # same-pattern-ok: kept
+    # parallel so each table's columns read at a glance
     """Insert a katharoseq_sample row if the sheet supplies either metric.
 
     Membership already lives in input_sample.sample_type; a row with both

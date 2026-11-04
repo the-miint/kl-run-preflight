@@ -236,13 +236,13 @@ until the first release is tagged.
   good_ legacy CSV has a native pair, that the native directory stays paired
   (`.sqlite` ↔ snapshot), and that each committed `.sqlite` matches both its
   snapshot and a fresh load of its source CSV.
-- Content-derived stage signalling for native fixtures: each committed
-  `.sqlite` carries a fact-based filename suffix — bare for a true preflight,
-  `.accessioned` once NCBI accessions are populated — derived from its contents
-  and guarded against drift, so a consumer can pick a fixture matching the
-  stage their code needs. Includes an accessioned PacBio fixture that reads
-  cleanly through `get_pacbio_sample_info` (a true-preflight fixture raises,
-  by design, until its accessions are set).
+- Content-derived fact suffixes for native fixtures: each committed `.sqlite`
+  carries a filename suffix for each fact its contents hold, guarded against
+  drift. `.accessioned` marks a fixture in which every sample and each of its
+  projects carries an identifier, so the sample-info readers return its rows
+  rather than raising; a fixture with no such fact keeps the bare source stem.
+  Includes an accessioned PacBio fixture that reads cleanly through
+  `get_pacbio_sample_info`.
 
 ### Removed
 
@@ -252,6 +252,22 @@ until the first release is tagged.
   values — while asserting `contains_replicates` in four spellings.
 
 ### Changed
+
+- **Breaking: the sample-info readers return identifiers grouped per
+  entity.** `PlatformSampleInfo` from `get_illumina_sample_info`,
+  `get_pacbio_sample_info`, and `get_amplicon_sample_info` replaces
+  `biosample_accession`, `primary_bioproject_accession`, and
+  `secondary_bioproject_accessions` with `biosample` (a
+  `BiosampleIdentifiers`), `primary_project` (a `ProjectIdentifiers`), and
+  `secondary_projects` (a list of `ProjectIdentifiers`, one per project,
+  ordered by project name rather than by accession). The record fields are
+  `biosample_accession`, `ena_sample_accession`, `export_entity_id`, and
+  `matrix_tube_id`, and `bioproject_accession`, `ena_study_accession`, and
+  `export_entity_id`; the ENA fields are always `None`. The readers now
+  refuse a sample only when its biosample, primary project, or a secondary
+  project carries none of its identifiers, rather than whenever an NCBI
+  accession is missing, and the error category is "missing required
+  identifier".
 
 - **Every project identifier is unique** (schema patch `003`):
   `external_project_id` and `bioproject_accession` join
@@ -485,6 +501,13 @@ until the first release is tagged.
   the detached-load change. The alias delegates, so behaviour is identical.
 
 ### Fixed
+
+- The sample-info readers no longer report the plate's primary project's
+  BioProject accession for a non-control sample whose own project is not the
+  plate's primary project and has no accession. Each sample's identifiers now
+  come from its own effective project only, so such a non-control sample is
+  refused as missing an identifier instead of being attributed to a different
+  project. Controls, which take the plate's primary project, are unaffected.
 
 - CI lint enforces a stated ruff rule set (`E4`, `E7`, `E9`, `F`) rather than
   inheriting ruff's implicit default, which shifts between ruff releases and so

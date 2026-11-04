@@ -17,7 +17,12 @@ import re
 import sqlite3
 from pathlib import Path
 
-from run_preflight.db import get_preflight_data_facts
+from run_preflight.db import (
+    BiosampleIdentifiers,
+    PlatformSampleInfo,
+    ProjectIdentifiers,
+    get_preflight_data_facts,
+)
 
 _DATA_DIR = Path(__file__).parent / "data"
 LEGACY_DATA_DIR = _DATA_DIR / "legacy"
@@ -184,14 +189,13 @@ def capture_db_snapshot(conn: sqlite3.Connection) -> dict:
 def derive_native_facts(conn: sqlite3.Connection) -> list[str]:
     """Return the sorted content-derived fact tokens for a native DB.
 
-    Maps the domain facts from get_preflight_data_facts to this suite's
-    fixture-naming tokens: FACT_ACCESSIONED when any NCBI accession is
-    populated, FACT_PLACED when any PacBio SMRT Cell placement is populated.
-    A true preflight yields [].
+    Each fact get_preflight_data_facts reports as true maps to one
+    fixture-naming token: has_public_ids to FACT_ACCESSIONED and
+    has_pacbio_placement to FACT_PLACED.
     """
     data_facts = get_preflight_data_facts(conn)
     tokens: list[str] = []
-    if data_facts.has_accessions:
+    if data_facts.has_public_ids:
         tokens.append(FACT_ACCESSIONED)
     if data_facts.has_pacbio_placement:
         tokens.append(FACT_PLACED)
@@ -201,8 +205,8 @@ def derive_native_facts(conn: sqlite3.Connection) -> list[str]:
 def native_stem(base_stem: str, facts: list[str]) -> str:
     """Build a native fixture stem: source stem plus sorted fact suffixes.
 
-    A true preflight (empty *facts*) keeps the bare source stem; each fact
-    token is appended as a dot-delimited suffix.
+    Each fact token is appended as a dot-delimited suffix, so a fixture with
+    no facts keeps the bare source stem.
     """
     suffix = "".join(f".{fact}" for fact in sorted(facts))
     return f"{base_stem}{suffix}"
@@ -226,6 +230,32 @@ def snapshot_to_json(snapshot: dict) -> str:
     freshly captured one can be diffed directly.
     """
     return json.dumps(snapshot, indent=2, sort_keys=True) + "\n"
+
+
+def expected_accession_only_info(
+    sample_idx: int,
+    sample_type: str,
+    biosample_accession: str,
+    primary_bioproject_accession: str,
+    secondary_bioproject_accessions: list[str],
+    kind_row: tuple,
+) -> PlatformSampleInfo:
+    """Build the reader row for a sample whose only identifiers are accessions."""
+    biosample = BiosampleIdentifiers(biosample_accession, None, None, None)
+    primary_project = ProjectIdentifiers(primary_bioproject_accession, None, None)
+    secondary_projects = [
+        ProjectIdentifiers(accession, None, None)
+        for accession in secondary_bioproject_accessions
+    ]
+    info = PlatformSampleInfo(
+        sample_idx,
+        sample_type,
+        biosample,
+        primary_project,
+        secondary_projects,
+        kind_row,
+    )
+    return info
 
 
 def seed_project_and_plate(conn: sqlite3.Connection) -> tuple[int, int]:
@@ -416,7 +446,8 @@ def seed_illumina_sample(
 ) -> int:
     """Insert one illumina_sample row; return illumina_sample_idx."""
     cur = conn.cursor()
-    cur.execute(
+    cur.execute(  # same-pattern-ok: test
+        # seeder inserts directly so it stays independent of the population code
         "INSERT INTO illumina_sample "
         "(prepped_sample_idx, i7_index_id, i7_sequence, "
         " i5_index_id, i5_sequence, lane) "

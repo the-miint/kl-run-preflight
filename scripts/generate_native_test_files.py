@@ -13,11 +13,6 @@ rebuild that changes only SQLite's binary header — its per-build change
 counter or library version — produces an identical snapshot and is discarded,
 so no-op binary churn is never committed and the files stay reproducible
 across the CI Python matrix without pinning SQLite.
-
-Fixtures carry a content-derived fact suffix (see derive_native_facts): a
-plain legacy load is a true preflight and keeps its bare source stem, while a
-fixture that adds accessions or PacBio placement carries the matching token so
-a consumer can pick the stage their code needs.
 """
 
 from __future__ import annotations
@@ -49,9 +44,7 @@ from tests._helpers import (  # noqa: E402
     snapshot_to_json,
 )
 
-# Source CSV for the accessioned (post-submission) PacBio fixture — a simple
-# PacBio run that, once every project and sample carries a synthetic accession,
-# is a runnable target for get_pacbio_sample_info.
+# Source CSV for the accessioned PacBio fixture: a simple PacBio run
 _ACCESSIONED_PACBIO_SOURCE = "good_pacbio_metagv11.csv"
 
 # Synthetic, fixed change_log.changed_at for setter-augmented fixtures. The
@@ -62,8 +55,8 @@ _FROZEN_CHANGED_AT = "2000-01-01 00:00:00"
 
 
 def _populate_all_accessions(conn) -> None:
-    # Give every project a synthetic bioproject and every named sample a
-    # synthetic biosample, so the accession readers return rows without raising.
+    # Give every project a synthetic bioproject accession and every named
+    # sample a synthetic biosample accession
     project_names = [
         r[0]
         for r in conn.execute("SELECT project_name FROM project ORDER BY project_idx")
@@ -94,7 +87,7 @@ def _build_legacy(csv_path: Path, tmp_dir: Path) -> tuple[Path, str]:
 
 
 def _build_accessioned_pacbio(tmp_dir: Path) -> tuple[Path, str]:
-    # Load a PacBio legacy CSV, then back-fill every accession post-load
+    # Load a PacBio legacy CSV, then set an accession on every project and sample
     src = LEGACY_DATA_DIR / _ACCESSIONED_PACBIO_SOURCE
     temp_db = tmp_dir / "accessioned_pacbio.tmp.sqlite"
     migrate_legacy_csv_to_db_file(str(src), str(temp_db))
@@ -138,7 +131,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
 
-        # True-preflight fixtures: one plain load per good_ legacy CSV
+        # Plain fixtures: one load per good_ legacy CSV
         for csv_path in sorted(LEGACY_DATA_DIR.glob(GOOD_LEGACY_GLOB)):
             temp_db, base_stem = _build_legacy(csv_path, tmp_dir)
             _promote_if_changed(temp_db, base_stem)
