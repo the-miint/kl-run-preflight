@@ -23,6 +23,15 @@ until the first release is tagged.
   identity CHECK, as does `input_sample.matrix_tube_id`, so a preflight need
   not carry NCBI accessions to identify its studies and samples.
 
+- **`set_input_sample_identifier` and `set_project_identifier` set any one
+  identifier** on an existing preflight, named by `identifier_kind`:
+  `biosample_accession`, `biosample_export_entity_id`, or `matrix_tube_id`
+  on an input sample found by `sample_name`; `bioproject_accession` or
+  `study_export_entity_id` on a project found by `project_name` or
+  `external_project_id`. Each change is logged to `change_log`. Setting a
+  project identifier that another project already holds raises
+  `sqlite3.IntegrityError`.
+
 - **Amplicon prep templates load through the shared pipeline.** A flat,
   section-less prep template is now parsed by `parse_amplicon_prep`, which
   regroups its single table into the same sections a sectioned sheet parses
@@ -461,6 +470,14 @@ until the first release is tagged.
   aliases and carrying the change to existing DBs via a rename patch.
 
 ### Deprecated
+
+- `set_biosample_accession` and `set_bioproject_accession` are thin aliases
+  for `set_input_sample_identifier` and `set_project_identifier` and emit a
+  `DeprecationWarning`. Their signatures are unchanged and they delegate, so
+  behaviour is identical with two exceptions: an empty value is reported as
+  `value` rather than `accession`, and `set_bioproject_accession` treats an
+  empty-string project key as supplied, so it is rejected by name rather
+  than skipped in favour of the other key.
 
 - `open_file` is now a thin alias for `load_file` and emits a
   `DeprecationWarning`. Every read entry point is named `load_*`, and `open`

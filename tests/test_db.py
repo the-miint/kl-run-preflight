@@ -38,12 +38,13 @@ from run_preflight.db import (
     get_projects_missing_external_id,
     get_run_projects,
     get_view_columns,
+    require_literal_member,
     sample_kind_names,
 )
 from run_preflight.legacy.api import load_legacy_csv
 from run_preflight.updates import (
-    set_biosample_accession,
     set_input_sample_do_not_use,
+    set_input_sample_identifier,
     set_pacbio_sample_run_details,
 )
 
@@ -175,6 +176,26 @@ def _expected_amplicon_row(sample_name: str) -> AmpliconSampleRow:
     return AmpliconSampleRow(f"bc_{sample_name}", True)
 
 
+class TestRequireLiteralMember(unittest.TestCase):
+    def test_require_literal_member(self):
+        # A member passes silently, so the call returns None
+        result = require_literal_member(
+            "pacbio", PlatformSpecificSampleKind, "sample kind"
+        )
+        self.assertIsNone(result)
+
+    def test_require_literal_member_rejects_non_member(self):
+        # The message names the label, the value, and every member
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^Unsupported sample kind 'nanopore'; "
+            r"supported: \['illumina', 'pacbio', 'tellseq'\]$",
+        ):
+            require_literal_member(
+                "nanopore", PlatformSpecificSampleKind, "sample kind"
+            )
+
+
 class TestCreateDb(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -227,7 +248,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             _, ils_idx = _seed_illumina(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -257,8 +280,12 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             _, ils2 = _seed_illumina(
                 conn, plate, proj, run, sample_name="S2", well="A2"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
-            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN002", sample_name="S2"
+            )
             set_input_sample_do_not_use(conn, input_sample_idx=ins1)
 
         with open_db(self.db_path) as conn:
@@ -314,7 +341,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             _, ils_idx = _seed_illumina(
                 conn, plate, other_proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -346,7 +375,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -398,7 +429,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -418,7 +451,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         )
 
     def test_get_illumina_sample_info_missing_biosample_accession(self):
-        # Skipping set_biosample_accession leaves biosample NULL → raises
+        # Setting no sample identifier leaves biosample NULL → raises
         with open_db(self.db_path) as conn:
             proj, plate, run = _seed_run_skeleton(conn)
             _, ils_idx = _seed_illumina(
@@ -464,7 +497,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             _, ils_idx = _seed_illumina(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             with self.assertRaises(ValueError) as ctx:
@@ -490,7 +525,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             with self.assertRaises(ValueError) as ctx:
@@ -523,7 +560,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             with self.assertRaises(ValueError) as ctx:
@@ -886,7 +925,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
             _, ps_idx = _seed_pacbio(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_pacbio_sample_info(conn)
@@ -933,7 +974,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_pacbio_sample_info(conn)
@@ -960,8 +1003,12 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
             _, ps2 = _seed_pacbio(conn, plate, proj, run, sample_name="S2", well="A2")
-            set_biosample_accession(conn, "S1", "SAMN001")
-            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN002", sample_name="S2"
+            )
             set_input_sample_do_not_use(conn, input_sample_idx=ins1)
 
         with open_db(self.db_path) as conn:
@@ -1010,7 +1057,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
             _, ps_idx = _seed_pacbio(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
             set_pacbio_sample_run_details(
                 conn,
                 sample_name="S1",
@@ -1048,7 +1097,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                     (stored, ps_idx),
                 )
             for name in ("S1", "S2", "S3"):
-                set_biosample_accession(conn, name, f"SAMN_{name}")
+                set_input_sample_identifier(
+                    conn, "biosample_accession", f"SAMN_{name}", sample_name=name
+                )
             conn.commit()
 
         with open_db(self.db_path) as conn:
@@ -1113,7 +1164,9 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
             _, prs_idx = _seed_amplicon(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_amplicon_sample_info(conn)
@@ -1160,7 +1213,9 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_amplicon_sample_info(conn)
@@ -1189,8 +1244,12 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
             _, prs2 = _seed_amplicon(
                 conn, plate, proj, run, sample_name="S2", well="A2"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
-            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN002", sample_name="S2"
+            )
             set_input_sample_do_not_use(conn, input_sample_idx=ins1)
 
         with open_db(self.db_path) as conn:

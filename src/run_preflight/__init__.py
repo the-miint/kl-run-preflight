@@ -36,8 +36,10 @@ from .updates import (
     set_biosample_accession,
     set_illumina_run_setting,
     set_input_sample_do_not_use,
+    set_input_sample_identifier,
     set_pacbio_sample_run_details,
     set_prepped_sample_do_not_use,
+    set_project_identifier,
     update_lane,
 )
 
@@ -70,8 +72,10 @@ __all__ = [
     "set_biosample_accession",
     "set_illumina_run_setting",
     "set_input_sample_do_not_use",
+    "set_input_sample_identifier",
     "set_pacbio_sample_run_details",
     "set_prepped_sample_do_not_use",
+    "set_project_identifier",
     "update_lane",
     "UNCHANGED",
 ]

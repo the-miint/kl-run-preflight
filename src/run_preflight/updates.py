@@ -8,10 +8,10 @@ supplied reason.
 from __future__ import annotations
 
 import sqlite3
-from typing import Literal, get_args
+import warnings
+from typing import Literal
 
 from .constants import (
-    DB_COL_BIOPROJECT_ACCESSION,
     DB_COL_BIOSAMPLE_ACCESSION,
     DB_COL_DO_NOT_USE,
     DB_COL_EXTERNAL_PROJECT_ID,
@@ -25,7 +25,9 @@ from .constants import (
     DB_COL_RUN_IDX,
     DB_COL_SAMPLE_NAME,
     DB_COL_SMRT_CELL_WELL_SAMPLE_ID,
+    InputSampleIdentifierKind,
     PlatformSpecificSampleKind,
+    ProjectIdentifierKind,
     TABLE_CHANGE_LOG,
     TABLE_ILLUMINA_RUN,
     TABLE_INPUT_SAMPLE,
@@ -36,7 +38,8 @@ from .constants import (
 from .db import (
     get_single_run_idx,
     lookup_input_samples_by_name,
-    lookup_projects_by_key,
+    lookup_project_by_key,
+    require_literal_member,
     sample_kind_names,
 )
 
@@ -211,34 +214,36 @@ def _apply_single_row_update(
     )
 
 
-def set_biosample_accession(
+def set_input_sample_identifier(
     conn: sqlite3.Connection,
+    identifier_kind: InputSampleIdentifierKind,
+    value: str | None,
+    *,
     sample_name: str,
-    accession: str | None,
     reason: str | None = None,
 ) -> None:
-    """Set biosample_accession on the input_sample matching sample_name.
+    """Set one identifier column on the input_sample matching sample_name.
 
-    *sample_name* is resolved via ``COALESCE(prepped_sample.sample_name,
-    input_sample.sample_name)`` — callers may pass either an
-    input-sample name or a per-replicate alias. All replicate aliases
-    of a single biological sample resolve to the same input_sample and
-    update the shared accession. *accession* may be None to clear.
+    *sample_name* may be an input-sample name or a per-replicate alias; all
+    aliases of one biological sample resolve to the same input_sample and
+    so share its identifiers. *value* may be None to clear.
 
     Raises:
-        ValueError: If *sample_name* or *accession* is an empty string,
-            if no input_sample matches *sample_name*, or if multiple
-            distinct input_samples match (ambiguous).
+        ValueError: If *identifier_kind* is not an input_sample identifier,
+            if *sample_name* or *value* is an empty string, if no
+            input_sample matches *sample_name*, or if multiple distinct
+            input_samples match (ambiguous).
+        sqlite3.IntegrityError: If clearing *value* would leave the
+            input_sample with no identifier.
     """
     # Reject empty strings for both the lookup key and the value
     _require_nonempty(sample_name, "sample_name")
-    _require_nonempty_or_none(accession, "accession")
-
-    cur = conn.cursor()
+    _require_nonempty_or_none(value, "value")
 
     # Resolve effective Sample_Name to a unique input_sample
-    matches = lookup_input_samples_by_name(cur, sample_name)
-    input_sample_idx, old_accession = _require_unique_match(
+    cur = conn.cursor()
+    matches = lookup_input_samples_by_name(cur, sample_name, identifier_kind)
+    input_sample_idx, old_value = _require_unique_match(
         matches,
         f"No input_sample matches Sample_Name {sample_name!r}",
         f"Sample_Name {sample_name!r} is ambiguous; resolves to "
@@ -249,10 +254,85 @@ def set_biosample_accession(
         TABLE_INPUT_SAMPLE,
         DB_COL_INPUT_SAMPLE_IDX,
         input_sample_idx,
-        DB_COL_BIOSAMPLE_ACCESSION,
-        old_accession,
-        accession,
+        identifier_kind,
+        old_value,
+        value,
         reason,
+    )
+
+
+def set_project_identifier(
+    conn: sqlite3.Connection,
+    identifier_kind: ProjectIdentifierKind,
+    value: str | None,
+    *,
+    project_name: str | None = None,
+    external_project_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Set one identifier column on the project matching the given key.
+
+    Exactly one of *project_name* or *external_project_id* must be a
+    non-empty string. *value* may be None to clear.
+
+    Raises:
+        ValueError: If *identifier_kind* is not a project identifier, if
+            zero or two keys are supplied, if the supplied key or *value*
+            is an empty string, or if no project matches the supplied key.
+        sqlite3.IntegrityError: If another project already holds *value*,
+            or if clearing *value* would leave the project with no
+            identifier.
+    """
+    # Reject empty-string value; None remains the clear path
+    _require_nonempty_or_none(value, "value")
+
+    # Require exactly one supplied key, then reject it if empty, so an empty
+    # key is never silently ignored or matched
+    key_col, key_value = _require_exactly_one_key(
+        (
+            (DB_COL_PROJECT_NAME, project_name),
+            (DB_COL_EXTERNAL_PROJECT_ID, external_project_id),
+        ),
+        "project_name or external_project_id",
+    )
+    _require_nonempty(key_value, key_col)
+
+    # Resolve the chosen key to project_idx and capture the prior value
+    cur = conn.cursor()
+    match = lookup_project_by_key(cur, key_col, key_value, identifier_kind)
+    if match is None:
+        raise ValueError(f"No project matches {key_col} {key_value!r}")
+    project_idx, old_value = match
+    _apply_single_row_update(
+        conn,
+        TABLE_PROJECT,
+        DB_COL_PROJECT_IDX,
+        project_idx,
+        identifier_kind,
+        old_value,
+        value,
+        reason,
+    )
+
+
+def set_biosample_accession(
+    conn: sqlite3.Connection,
+    sample_name: str,
+    accession: str | None,
+    reason: str | None = None,
+) -> None:
+    """Deprecated alias that sets biosample_accession; see set_input_sample_identifier."""
+    warnings.warn(
+        "set_biosample_accession is deprecated; use set_input_sample_identifier instead.",  # noqa: E501
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    set_input_sample_identifier(
+        conn,
+        "biosample_accession",
+        accession,
+        sample_name=sample_name,
+        reason=reason,
     )
 
 
@@ -396,11 +476,7 @@ def set_illumina_run_setting(
         ValueError: If *value* is an empty string, or if *setting* is
             not a supported illumina_run setting column.
     """
-    valid = get_args(IllumRunSetting)
-    if setting not in valid:
-        raise ValueError(
-            f"Unsupported illumina_run setting {setting!r}; supported: {sorted(valid)}"
-        )
+    require_literal_member(setting, IllumRunSetting, "illumina_run setting")
     _require_nonempty_or_none(value, "value")
     _set_illumina_run_column(conn, setting, value, reason)
 
@@ -413,55 +489,19 @@ def set_bioproject_accession(
     external_project_id: str | None = None,
     reason: str | None = None,
 ) -> None:
-    """Set bioproject_accession on the project matching the given key.
-
-    Exactly one of *project_name* or *external_project_id* must be
-    non-None. *accession* may be None to clear; doing so raises
-    IntegrityError if it would leave both accession identifiers NULL.
-
-    Raises:
-        ValueError: If zero or two key arguments are supplied with
-            non-empty values, if *accession* is an empty string, if no
-            project matches the supplied key, or if *external_project_id*
-            matches multiple projects (the column is not unique).
-    """
-    # Reject empty-string accession; None remains the clear path
-    _require_nonempty_or_none(accession, "accession")
-
-    # Require exactly one non-empty key.  Empty strings count as
-    # "not supplied" to avoid a silent no-match or unintended SELECT.
-    supplied = {
-        DB_COL_PROJECT_NAME: project_name,
-        DB_COL_EXTERNAL_PROJECT_ID: external_project_id,
-    }
-    # same-pattern-ok: empty string counts as absent here (truthiness), not
-    # is-not-None as in _require_exactly_one_key; message also differs
-    keys = [k for k, v in supplied.items() if v]
-    if len(keys) != 1:
-        raise ValueError(
-            "Exactly one of project_name or external_project_id must be "
-            f"supplied as a non-empty string; got {keys}"
-        )
-    key_col = keys[0]
-    key_value = supplied[key_col]
-
-    # Resolve the chosen key to project_idx and capture the prior value
-    cur = conn.cursor()
-    matches = lookup_projects_by_key(cur, key_col, key_value)
-    project_idx, old_accession = _require_unique_match(
-        matches,
-        f"No project matches {key_col} {key_value!r}",
-        f"{key_col} {key_value!r} is ambiguous; resolves to {len(matches)} projects",
+    """Deprecated alias that sets bioproject_accession; see set_project_identifier."""
+    warnings.warn(
+        "set_bioproject_accession is deprecated; use set_project_identifier instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    _apply_single_row_update(
+    set_project_identifier(
         conn,
-        TABLE_PROJECT,
-        DB_COL_PROJECT_IDX,
-        project_idx,
-        DB_COL_BIOPROJECT_ACCESSION,
-        old_accession,
+        "bioproject_accession",
         accession,
-        reason,
+        project_name=project_name,
+        external_project_id=external_project_id,
+        reason=reason,
     )
 
 

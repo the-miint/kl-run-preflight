@@ -340,8 +340,8 @@ Each patch runs in its own transaction with foreign-key enforcement
 suspended, because changing a column constraint in SQLite means rebuilding
 the table, and a table that others reference cannot be dropped while
 enforcement is on. Referential integrity is still guaranteed: the runner
-checks for foreign-key violations before committing and rolls back a patch
-that leaves any.
+rolls back a patch that introduces a foreign-key violation, and restores the
+connection's foreign-key and legacy ALTER TABLE settings afterward.
 
 ### Why custom migration code instead of an existing tool
 

@@ -1,5 +1,4 @@
-"""Tests for updates.py: set_biosample_accession, set_bioproject_accession,
-update_lane, set_illumina_run_setting."""
+"""Tests for updates.py."""
 
 from __future__ import annotations
 
@@ -7,22 +6,21 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from collections.abc import Callable
+from typing import get_args
 
 import pytest
 
 from run_preflight.constants import (
-    DB_COL_BIOPROJECT_ACCESSION,
-    DB_COL_BIOSAMPLE_ACCESSION,
-    DB_COL_BIOSAMPLE_EXPORT_ENTITY_ID,
     DB_COL_EXTERNAL_PROJECT_ID,
     DB_COL_INPUT_SAMPLE_IDX,
-    DB_COL_MATRIX_TUBE_ID,
     DB_COL_PROJECT_IDX,
     DB_COL_PROJECT_NAME,
     DB_COL_SAMPLE_NAME,
-    DB_COL_STUDY_EXPORT_ENTITY_ID,
     TABLE_INPUT_SAMPLE,
     TABLE_PROJECT,
+    InputSampleIdentifierKind,
+    ProjectIdentifierKind,
 )
 from run_preflight.db import create_db
 from run_preflight.updates import (
@@ -32,8 +30,10 @@ from run_preflight.updates import (
     set_biosample_accession,
     set_illumina_run_setting,
     set_input_sample_do_not_use,
+    set_input_sample_identifier,
     set_pacbio_sample_run_details,
     set_prepped_sample_do_not_use,
+    set_project_identifier,
     update_lane,
 )
 
@@ -131,25 +131,88 @@ class _UpdatesTestBase(unittest.TestCase):
         self.tmpdir.cleanup()
 
 
-class TestSetBiosampleAccession(_UpdatesTestBase):
-    def test_set_biosample_accession_non_replicate(self):
+def _read_change_log(conn: sqlite3.Connection) -> list[tuple]:
+    """Return every change_log row's audited fields, in insertion order."""
+    cur = conn.execute(
+        "SELECT table_name, row_idx, column_name, old_value, new_value, reason "
+        "FROM change_log ORDER BY change_idx"
+    )
+    rows = cur.fetchall()
+    return rows
+
+
+class _IdentifierSetterTestBase(_UpdatesTestBase):
+    """Shared checks for a setter that writes one identifier column per call.
+
+    Subclasses name the table, its primary key, the setter, and the setter's
+    identifier kinds; *key* arguments below are the setter's row-lookup
+    keyword arguments.
+    """
+
+    _TABLE: str
+    _PK_COL: str
+    _SETTER: Callable[..., None]
+    _IDENTIFIER_KINDS: tuple[str, ...]
+
+    def _read_identifiers(self, row_idx: int) -> tuple:
+        """Return *row_idx*'s settable identifiers, in _IDENTIFIER_KINDS order."""
+        cols = ", ".join(self._IDENTIFIER_KINDS)
+        with open_db(self.db_path) as conn:
+            cur = conn.execute(
+                f"SELECT {cols} FROM {self._TABLE} WHERE {self._PK_COL} = ?",
+                (row_idx,),
+            )
+            identifiers = cur.fetchone()
+        return identifiers
+
+    def _assert_each_kind_lands(self, row_idx: int, key: dict[str, str]) -> None:
+        """Set every identifier kind and check each lands in its own column."""
+        with open_db(self.db_path) as conn:
+            for kind in self._IDENTIFIER_KINDS:
+                self._SETTER(conn, kind, f"val_{kind}", **key)
+
+        expected = tuple(f"val_{kind}" for kind in self._IDENTIFIER_KINDS)
+        self.assertEqual(self._read_identifiers(row_idx), expected)
+
+    def _assert_audited(self, row_idx: int, key: dict[str, str]) -> None:
+        """Set every kind twice and check each change_log row and reason."""
+        # The second set of each kind captures the first one's value as old_value
+        with open_db(self.db_path) as conn:
+            for kind in self._IDENTIFIER_KINDS:
+                for value, reason in ((f"{kind}_1", "initial"), (f"{kind}_2", "fix")):
+                    self._SETTER(conn, kind, value, **key, reason=reason)
+            log_rows = _read_change_log(conn)
+
+        expected = [
+            row
+            for kind in self._IDENTIFIER_KINDS
+            for row in (
+                (self._TABLE, row_idx, kind, None, f"{kind}_1", "initial"),
+                (self._TABLE, row_idx, kind, f"{kind}_1", f"{kind}_2", "fix"),
+            )
+        ]
+        self.assertEqual(log_rows, expected)
+
+
+class TestSetInputSampleIdentifier(_IdentifierSetterTestBase):
+    _TABLE = TABLE_INPUT_SAMPLE
+    _PK_COL = DB_COL_INPUT_SAMPLE_IDX
+    _SETTER = staticmethod(set_input_sample_identifier)
+    _IDENTIFIER_KINDS = get_args(InputSampleIdentifierKind)
+
+    def _add_default_sample(self) -> int:
+        """Insert sample S1 and return its input_sample_idx."""
         with open_db(self.db_path) as conn:
             ins_idx, _ = _add_sample(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
+        return ins_idx
 
-        with open_db(self.db_path) as conn:
-            set_biosample_accession(conn, "S1", "SAMN001", reason="initial")
+    def test_set_input_sample_identifier(self):
+        ins_idx = self._add_default_sample()
+        self._assert_each_kind_lands(ins_idx, {"sample_name": "S1"})
 
-        with open_db(self.db_path) as conn:
-            cur = conn.execute(
-                "SELECT biosample_accession FROM input_sample "
-                "WHERE input_sample_idx = ?",
-                (ins_idx,),
-            )
-            self.assertEqual(cur.fetchone(), ("SAMN001",))
-
-    def test_set_biosample_accession_replicate_alias(self):
+    def test_set_input_sample_identifier_replicate_alias(self):
         # Replicate alias resolves through prs.sample_name to the
         # underlying input_sample
         with open_db(self.db_path) as conn:
@@ -164,19 +227,15 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             )
 
         with open_db(self.db_path) as conn:
-            set_biosample_accession(conn, "S1.A1", "SAMN002")
-
-        with open_db(self.db_path) as conn:
-            cur = conn.execute(
-                "SELECT biosample_accession FROM input_sample "
-                "WHERE input_sample_idx = ?",
-                (ins_idx,),
+            set_input_sample_identifier(
+                conn, "biosample_export_entity_id", "QB2", sample_name="S1.A1"
             )
-            self.assertEqual(cur.fetchone(), ("SAMN002",))
 
-    def test_set_biosample_accession_replicates_share_one_accession(self):
+        self.assertEqual(self._read_identifiers(ins_idx), (None, "QB2", None))
+
+    def test_set_input_sample_identifier_replicates_share_one_value(self):
         # Two prepped_samples (replicates) of one input_sample share
-        # the input_sample's accession
+        # the input_sample's identifier
         with open_db(self.db_path) as conn:
             cur = conn.cursor()
             cur.execute(
@@ -207,19 +266,15 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             )
             conn.commit()
 
-        # Update via one alias, the other alias shows the same accession
+        # Update via one alias, the other alias shows the same value
         with open_db(self.db_path) as conn:
-            set_biosample_accession(conn, "S1.B2", "SAMN003")
-
-        with open_db(self.db_path) as conn:
-            cur = conn.execute(
-                "SELECT biosample_accession FROM input_sample "
-                "WHERE input_sample_idx = ?",
-                (ins_idx,),
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN003", sample_name="S1.B2"
             )
-            self.assertEqual(cur.fetchone(), ("SAMN003",))
 
-    def test_set_biosample_accession_ambiguous(self):
+        self.assertEqual(self._read_identifiers(ins_idx), ("SAMN003", None, None))
+
+    def test_set_input_sample_identifier_ambiguous(self):
         # Two distinct input_samples produce the same effective Sample_Name
         with open_db(self.db_path) as conn:
             _add_sample(
@@ -239,87 +294,92 @@ class TestSetBiosampleAccession(_UpdatesTestBase):
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="ambiguous"),
         ):
-            set_biosample_accession(conn, "S1", "SAMN004")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN004", sample_name="S1"
+            )
 
-    def test_set_biosample_accession_missing(self):
+    def test_set_input_sample_identifier_missing(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="No input_sample matches"),
         ):
-            set_biosample_accession(conn, "nonexistent", "SAMN005")
-
-    def test_set_biosample_accession_audit(self):
-        with open_db(self.db_path) as conn:
-            ins_idx, _ = _add_sample(
-                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN005", sample_name="nonexistent"
             )
 
-        # Two successive sets so the second log entry captures the
-        # first call's value as old_value
-        with open_db(self.db_path) as conn:
-            set_biosample_accession(conn, "S1", "SAMN006", reason="initial")
-            set_biosample_accession(conn, "S1", "SAMN007", reason="correction")
-
-        with open_db(self.db_path) as conn:
-            cur = conn.execute(
-                "SELECT table_name, row_idx, column_name, "
-                " old_value, new_value, reason "
-                "FROM change_log ORDER BY change_idx"
+    def test_set_input_sample_identifier_unknown_kind(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Unsupported input_sample identifier"),
+        ):
+            set_input_sample_identifier(
+                conn,
+                "sample_name",  # type: ignore[arg-type]
+                "S9",
+                sample_name="S1",
             )
-            expected = [
+
+    def test_set_input_sample_identifier_audit(self):
+        ins_idx = self._add_default_sample()
+        self._assert_audited(ins_idx, {"sample_name": "S1"})
+
+    def test_set_biosample_accession_deprecated(self):
+        # The deprecated wrapper warns, then forwards its key, value, and reason
+        ins_idx = self._add_default_sample()
+        with (
+            open_db(self.db_path) as conn,
+            pytest.warns(DeprecationWarning, match="set_input_sample_identifier"),
+        ):
+            set_biosample_accession(conn, "S1", "SAMN001", reason="initial")
+            log_rows = _read_change_log(conn)
+
+        actual = (self._read_identifiers(ins_idx), log_rows)
+        expected = (
+            ("SAMN001", None, None),
+            [
                 (
-                    "input_sample",
+                    TABLE_INPUT_SAMPLE,
                     ins_idx,
                     "biosample_accession",
                     None,
-                    "SAMN006",
+                    "SAMN001",
                     "initial",
-                ),
-                (
-                    "input_sample",
-                    ins_idx,
-                    "biosample_accession",
-                    "SAMN006",
-                    "SAMN007",
-                    "correction",
-                ),
-            ]
-            self.assertEqual(cur.fetchall(), expected)
+                )
+            ],
+        )
+        self.assertEqual(actual, expected)
 
 
-class TestSetBioprojectAccession(_UpdatesTestBase):
+class TestSetProjectIdentifier(_IdentifierSetterTestBase):
     # The shared setUp seeds proj1 with external_project_id='1';
     # tests below use that default project unless noted otherwise.
+    _TABLE = TABLE_PROJECT
+    _PK_COL = DB_COL_PROJECT_IDX
+    _SETTER = staticmethod(set_project_identifier)
+    _IDENTIFIER_KINDS = get_args(ProjectIdentifierKind)
 
-    def _read_bioproject_accession(self) -> str | None:
-        """Return project.bioproject_accession for the default test project."""
-        with open_db(self.db_path) as conn:
-            (val,) = conn.execute(
-                "SELECT bioproject_accession FROM project WHERE project_idx = ?",
-                (self.project_idx,),
-            ).fetchone()
-            return val
+    def test_set_project_identifier(self):
+        self._assert_each_kind_lands(self.project_idx, {"project_name": "proj1"})
 
-    def test_set_bioproject_accession_by_project_name(self):
+    def test_set_project_identifier_by_external_project_id(self):
         with open_db(self.db_path) as conn:
-            set_bioproject_accession(
-                conn, "PRJNA001", project_name="proj1", reason="initial"
+            set_project_identifier(
+                conn, "study_export_entity_id", "QS2", external_project_id="1"
             )
-        self.assertEqual(self._read_bioproject_accession(), "PRJNA001")
+        self.assertEqual(self._read_identifiers(self.project_idx), (None, "QS2"))
 
-    def test_set_bioproject_accession_by_external_project_id(self):
-        with open_db(self.db_path) as conn:
-            set_bioproject_accession(conn, "PRJNA002", external_project_id="1")
-        self.assertEqual(self._read_bioproject_accession(), "PRJNA002")
-
-    def test_set_bioproject_accession_clear_when_external_present(self):
+    def test_set_project_identifier_clear_when_other_identifier_present(self):
         # external_project_id='1' keeps an identifier on the project; clearing is allowed
         with open_db(self.db_path) as conn:
-            set_bioproject_accession(conn, "PRJNA003", project_name="proj1")
-            set_bioproject_accession(conn, None, project_name="proj1")
-        self.assertIsNone(self._read_bioproject_accession())
+            set_project_identifier(
+                conn, "bioproject_accession", "PRJNA003", project_name="proj1"
+            )
+            set_project_identifier(
+                conn, "bioproject_accession", None, project_name="proj1"
+            )
+        self.assertEqual(self._read_identifiers(self.project_idx), (None, None))
 
-    def test_set_bioproject_accession_clear_rejected_without_other_identifier(self):
+    def test_set_project_identifier_clear_rejected_without_other_identifier(self):
         # Drop external_project_id so clearing bioproject_accession would leave no identifier
         with open_db(self.db_path) as conn:
             conn.execute(
@@ -333,70 +393,111 @@ class TestSetBioprojectAccession(_UpdatesTestBase):
             open_db(self.db_path) as conn,
             pytest.raises(sqlite3.IntegrityError, match="CHECK"),
         ):
-            set_bioproject_accession(conn, None, project_name="proj1")
+            set_project_identifier(
+                conn, "bioproject_accession", None, project_name="proj1"
+            )
 
-    def test_set_bioproject_accession_no_key(self):
-        with (
-            open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Exactly one"),
-        ):
-            set_bioproject_accession(conn, "PRJNA005")
-
-    def test_set_bioproject_accession_both_keys(self):
-        with (
-            open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Exactly one"),
-        ):
-            set_bioproject_accession(
+    def test_set_project_identifier_duplicate_value(self):
+        # Every project identifier is unique, so another project's value is refused
+        with open_db(self.db_path) as conn:
+            _helpers.seed_project(
                 conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession="PRJNA_TAKEN",
+            )
+            conn.commit()
+
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(sqlite3.IntegrityError, match="UNIQUE"),
+        ):
+            set_project_identifier(
+                conn, "bioproject_accession", "PRJNA_TAKEN", project_name="proj1"
+            )
+
+    def test_set_project_identifier_no_key(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one"),
+        ):
+            set_project_identifier(conn, "bioproject_accession", "PRJNA005")
+
+    def test_set_project_identifier_both_keys(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Exactly one"),
+        ):
+            set_project_identifier(
+                conn,
+                "bioproject_accession",
                 "PRJNA006",
                 project_name="proj1",
                 external_project_id="1",
             )
 
-    def test_set_bioproject_accession_missing(self):
+    def test_set_project_identifier_missing(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="No project matches"),
         ):
-            set_bioproject_accession(conn, "PRJNA007", project_name="nonexistent")
-
-    def test_set_bioproject_accession_audit(self):
-        # Two successive sets so the second log entry captures the
-        # first call's value as old_value
-        with open_db(self.db_path) as conn:
-            set_bioproject_accession(
-                conn, "PRJNA009", project_name="proj1", reason="initial"
-            )
-            set_bioproject_accession(
-                conn, "PRJNA010", project_name="proj1", reason="correction"
+            set_project_identifier(
+                conn, "bioproject_accession", "PRJNA007", project_name="nonexistent"
             )
 
-        with open_db(self.db_path) as conn:
-            cur = conn.execute(
-                "SELECT table_name, row_idx, column_name, "
-                " old_value, new_value, reason "
-                "FROM change_log ORDER BY change_idx"
+    def test_set_project_identifier_unknown_kind(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="Unsupported project identifier"),
+        ):
+            set_project_identifier(
+                conn,
+                "external_project_id",  # type: ignore[arg-type]
+                "9",
+                project_name="proj1",
             )
-            expected = [
+
+    def test_set_project_identifier_audit(self):
+        self._assert_audited(self.project_idx, {"project_name": "proj1"})
+
+    def test_set_bioproject_accession_deprecated(self):
+        # The deprecated wrapper warns, then forwards each key, the value, and
+        # the reason; one call per key exercises both
+        with (
+            open_db(self.db_path) as conn,
+            pytest.warns(DeprecationWarning, match="set_project_identifier"),
+        ):
+            set_bioproject_accession(
+                conn, "PRJNA001", project_name="proj1", reason="initial"
+            )
+            set_bioproject_accession(
+                conn, "PRJNA002", external_project_id="1", reason="fix"
+            )
+            log_rows = _read_change_log(conn)
+
+        actual = (self._read_identifiers(self.project_idx), log_rows)
+        expected = (
+            ("PRJNA002", None),
+            [
                 (
-                    "project",
+                    TABLE_PROJECT,
                     self.project_idx,
                     "bioproject_accession",
                     None,
-                    "PRJNA009",
+                    "PRJNA001",
                     "initial",
                 ),
                 (
-                    "project",
+                    TABLE_PROJECT,
                     self.project_idx,
                     "bioproject_accession",
-                    "PRJNA009",
-                    "PRJNA010",
-                    "correction",
+                    "PRJNA001",
+                    "PRJNA002",
+                    "fix",
                 ),
-            ]
-            self.assertEqual(cur.fetchall(), expected)
+            ],
+        )
+        self.assertEqual(actual, expected)
 
 
 class TestUpdateLane(_UpdatesTestBase):
@@ -686,16 +787,11 @@ class _IdentityCheckTestBase(_UpdatesTestBase):
 
 
 class TestInputSampleCheck(_IdentityCheckTestBase):
-    """input_sample requires at least one identity column non-null."""
+    """input_sample identity CHECK, and the non-unique export ID."""
 
     _TABLE = TABLE_INPUT_SAMPLE
     _PK_COL = DB_COL_INPUT_SAMPLE_IDX
-    _IDENTITY_COLS = (
-        DB_COL_SAMPLE_NAME,
-        DB_COL_BIOSAMPLE_ACCESSION,
-        DB_COL_BIOSAMPLE_EXPORT_ENTITY_ID,
-        DB_COL_MATRIX_TUBE_ID,
-    )
+    _IDENTITY_COLS = (DB_COL_SAMPLE_NAME, *get_args(InputSampleIdentifierKind))
 
     def _required_values(self) -> dict[str, object]:
         return {
@@ -739,7 +835,7 @@ class TestInputSampleCheck(_IdentityCheckTestBase):
                     conn,
                     {
                         DB_COL_SAMPLE_NAME: name,
-                        DB_COL_BIOSAMPLE_EXPORT_ENTITY_ID: "QB1",
+                        "biosample_export_entity_id": "QB1",
                     },
                 )
                 for name in ("S1", "S2")
@@ -751,15 +847,11 @@ class TestInputSampleCheck(_IdentityCheckTestBase):
 
 
 class TestProjectCheck(_IdentityCheckTestBase):
-    """project requires at least one identity column non-null."""
+    """project identity CHECK and identifier uniqueness."""
 
     _TABLE = TABLE_PROJECT
     _PK_COL = DB_COL_PROJECT_IDX
-    _IDENTITY_COLS = (
-        DB_COL_EXTERNAL_PROJECT_ID,
-        DB_COL_BIOPROJECT_ACCESSION,
-        DB_COL_STUDY_EXPORT_ENTITY_ID,
-    )
+    _IDENTITY_COLS = (DB_COL_EXTERNAL_PROJECT_ID, *get_args(ProjectIdentifierKind))
 
     def _required_values(self) -> dict[str, object]:
         return {
@@ -778,7 +870,7 @@ class TestProjectCheck(_IdentityCheckTestBase):
         with open_db(self.db_path) as conn:
             project_idx = self._insert(
                 conn,
-                {DB_COL_PROJECT_NAME: "p_qs", DB_COL_STUDY_EXPORT_ENTITY_ID: "QS1"},
+                {DB_COL_PROJECT_NAME: "p_qs", "study_export_entity_id": "QS1"},
             )
             self.assertEqual(
                 self._read_identity(conn, project_idx), (None, None, "QS1")
@@ -816,42 +908,68 @@ class TestEmptyStringRejection(_UpdatesTestBase):
         """Insert the matching illumina_run config row."""
         _add_illumina_run(conn, self.run_idx)
 
-    def test_set_biosample_accession_rejects_empty_sample_name(self):
+    def test_set_input_sample_identifier_rejects_empty_sample_name(self):
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="sample_name must be a non-empty string"),
         ):
             self._seed_sample(conn)
-            set_biosample_accession(conn, "", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name=""
+            )
 
-    def test_set_biosample_accession_rejects_empty_accession(self):
+    def test_set_input_sample_identifier_rejects_empty_value(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="accession must not be empty"),
+            pytest.raises(ValueError, match="value must not be empty"),
         ):
             self._seed_sample(conn)
-            set_biosample_accession(conn, "S1", "")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "", sample_name="S1"
+            )
 
-    def test_set_bioproject_accession_rejects_empty_project_name(self):
+    def test_set_project_identifier_rejects_empty_project_name(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="project_name must be a non-empty string"),
+        ):
+            set_project_identifier(
+                conn, "bioproject_accession", "PRJNA001", project_name=""
+            )
+
+    def test_set_project_identifier_rejects_empty_external_project_id(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(
+                ValueError, match="external_project_id must be a non-empty string"
+            ),
+        ):
+            set_project_identifier(
+                conn, "bioproject_accession", "PRJNA001", external_project_id=""
+            )
+
+    def test_set_project_identifier_rejects_empty_key_beside_real_key(self):
+        # An empty key still counts as supplied, so it is not silently ignored
         with (
             open_db(self.db_path) as conn,
             pytest.raises(ValueError, match="Exactly one of"),
         ):
-            set_bioproject_accession(conn, "PRJNA001", project_name="")
+            set_project_identifier(
+                conn,
+                "bioproject_accession",
+                "PRJNA001",
+                project_name="",
+                external_project_id="1",
+            )
 
-    def test_set_bioproject_accession_rejects_empty_external_project_id(self):
+    def test_set_project_identifier_rejects_empty_value(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Exactly one of"),
+            pytest.raises(ValueError, match="value must not be empty"),
         ):
-            set_bioproject_accession(conn, "PRJNA001", external_project_id="")
-
-    def test_set_bioproject_accession_rejects_empty_accession(self):
-        with (
-            open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="accession must not be empty"),
-        ):
-            set_bioproject_accession(conn, "", project_name="proj1")
+            set_project_identifier(
+                conn, "bioproject_accession", "", project_name="proj1"
+            )
 
     def test_set_illumina_run_setting_rejects_empty_value_mask_short_reads(
         self,

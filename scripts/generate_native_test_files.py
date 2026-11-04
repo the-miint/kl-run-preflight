@@ -33,8 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from run_preflight.file_io import atomic_write  # noqa: E402
 from run_preflight import (  # noqa: E402
     migrate_legacy_csv_to_db_file,
-    set_biosample_accession,
-    set_bioproject_accession,
+    set_input_sample_identifier,
+    set_project_identifier,
 )
 
 from tests._helpers import (  # noqa: E402
@@ -69,7 +69,9 @@ def _populate_all_accessions(conn) -> None:
         for r in conn.execute("SELECT project_name FROM project ORDER BY project_idx")
     ]
     for i, name in enumerate(project_names, start=1):
-        set_bioproject_accession(conn, f"PRJNA{i:06d}", project_name=name)
+        set_project_identifier(
+            conn, "bioproject_accession", f"PRJNA{i:06d}", project_name=name
+        )
 
     sample_names = [
         r[0]
@@ -79,7 +81,9 @@ def _populate_all_accessions(conn) -> None:
         )
     ]
     for i, name in enumerate(sample_names, start=1):
-        set_biosample_accession(conn, name, f"SAMN{i:08d}")
+        set_input_sample_identifier(
+            conn, "biosample_accession", f"SAMN{i:08d}", sample_name=name
+        )
 
 
 def _build_legacy(csv_path: Path, tmp_dir: Path) -> tuple[Path, str]:

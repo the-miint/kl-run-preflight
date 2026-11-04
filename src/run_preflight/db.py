@@ -16,6 +16,8 @@ from typing import NamedTuple, get_args
 from .legacy import LegacyExtraColumnWarning
 from .migrate import get_latest_version
 from .constants import (
+    DB_COL_EXTERNAL_PROJECT_ID,
+    DB_COL_PROJECT_NAME,
     EMP_515F_PRIMER,
     COL_AMPLICON_BARCODE,
     COL_AMPLICON_LINKER,
@@ -82,7 +84,9 @@ from .constants import (
     FIELD_SHEET_VERSION,
     IN_MEMORY_PATH,
     PLATFORM_ILLUMINA,
+    InputSampleIdentifierKind,
     PlatformSpecificSampleKind,
+    ProjectIdentifierKind,
     SAMPLE_TYPE_STANDARD,
     SECTION_BIOINFORMATICS,
     SECTION_CONTACT,
@@ -561,8 +565,10 @@ def get_optional_column_groups(
     return cur.fetchall()
 
 
-def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str | None]]:
-    """Return distinct (input_sample_idx, biosample_accession) rows by Sample_Name.
+def lookup_input_samples_by_name(
+    cur, sample_name: str, identifier_kind: InputSampleIdentifierKind
+) -> list[tuple[int, str | None]]:
+    """Return distinct (input_sample_idx, <identifier_kind>) rows by Sample_Name.
 
     Resolves Sample_Name via the legacy rule (replicate aliases collapse
     via DISTINCT to a single input_sample).
@@ -570,13 +576,21 @@ def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str |
     Args:
         cur: An open SQLite cursor.
         sample_name: The effective Sample_Name to match.
+        identifier_kind: The identifier column whose value each row carries.
 
     Returns:
         list[tuple[int, str | None]]: Distinct matching rows. Empty list
         means no match; multiple rows mean the name is ambiguous.
+
+    Raises:
+        ValueError: If *identifier_kind* is not an input_sample identifier.
     """
+    # identifier_kind is interpolated into SQL, so it must be a known column
+    require_literal_member(
+        identifier_kind, InputSampleIdentifierKind, "input_sample identifier"
+    )
     cur.execute(
-        "SELECT DISTINCT ins.input_sample_idx, ins.biosample_accession "
+        f"SELECT DISTINCT ins.input_sample_idx, ins.{identifier_kind} "
         "FROM input_sample ins "
         "JOIN compression_sample cs ON cs.input_sample_idx = ins.input_sample_idx "
         "JOIN prepped_sample prs ON prs.compression_sample_idx = cs.compression_sample_idx "
@@ -584,7 +598,18 @@ def lookup_input_samples_by_name(cur, sample_name: str) -> list[tuple[int, str |
         "WHERE psn.sample_name = ?",
         (sample_name,),
     )
-    return cur.fetchall()
+    matches = cur.fetchall()
+    return matches
+
+
+def require_literal_member(value: str, literal_type: object, label: str) -> None:
+    """Raise ValueError unless *value* is a member of *literal_type*.
+
+    *label* names the kind of value in the error message.
+    """
+    members = get_args(literal_type)
+    if value not in members:
+        raise ValueError(f"Unsupported {label} {value!r}; supported: {list(members)}")
 
 
 def _do_not_use_filter(include_do_not_use: bool, alias: str = "") -> str:
@@ -648,33 +673,38 @@ def get_input_sample_project_info(
     ]
 
 
-def lookup_projects_by_key(
-    cur, key_col: str, key_value: str
-) -> list[tuple[int, str | None]]:
-    """Return (project_idx, bioproject_accession) rows where key_col = key_value.
+def lookup_project_by_key(
+    cur, key_col: str, key_value: str, identifier_kind: ProjectIdentifierKind
+) -> tuple[int, str | None] | None:
+    """Return (project_idx, <identifier_kind>) for the project where key_col = key_value.
 
-    *key_col* must be "project_name" or "external_project_id" (closed
-    set; interpolated into SQL).
+    *key_col* must be "project_name" or "external_project_id"; both are
+    unique, so at most one project matches.
 
     Args:
         cur: An open SQLite cursor.
         key_col: The project lookup key column.
         key_value: The value to match in *key_col*.
+        identifier_kind: The identifier column whose value the row carries.
 
     Returns:
-        list[tuple[int, str | None]]: Matching rows. Empty list means
-        no match; multiple rows mean the key resolved ambiguously.
+        tuple[int, str | None] | None: The matching row, or None if no
+        project matches.
 
     Raises:
-        ValueError: If *key_col* is not a supported lookup column.
+        ValueError: If *key_col* is not a supported lookup column, or if
+            *identifier_kind* is not a project identifier.
     """
-    if key_col not in ("project_name", "external_project_id"):
+    # Both names are interpolated into SQL, so each must be a known column
+    if key_col not in (DB_COL_PROJECT_NAME, DB_COL_EXTERNAL_PROJECT_ID):
         raise ValueError(f"Unsupported key_col {key_col!r}")
+    require_literal_member(identifier_kind, ProjectIdentifierKind, "project identifier")
     cur.execute(
-        f"SELECT project_idx, bioproject_accession FROM project WHERE {key_col} = ?",
+        f"SELECT project_idx, {identifier_kind} FROM project WHERE {key_col} = ?",
         (key_value,),
     )
-    return cur.fetchall()
+    match = cur.fetchone()
+    return match
 
 
 class _SampleKindNames(NamedTuple):
@@ -697,11 +727,7 @@ def sample_kind_names(kind: PlatformSpecificSampleKind) -> _SampleKindNames:
     Raises:
         ValueError: If *kind* is not a declared PlatformSpecificSampleKind.
     """
-    valid_kinds = get_args(PlatformSpecificSampleKind)
-    if kind not in valid_kinds:
-        raise ValueError(
-            f"Unknown sample kind {kind!r}; expected one of {', '.join(valid_kinds)}"
-        )
+    require_literal_member(kind, PlatformSpecificSampleKind, "sample kind")
     table = f"{kind}_sample"
     idx_col = f"{kind}_sample_idx"
     run_view = f"run_{kind}_sample"

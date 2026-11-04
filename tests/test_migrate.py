@@ -265,7 +265,7 @@ class TestApplyPatches:
         assert (seen, after) == (0, 1)
 
     def test_apply_patches_rolls_back_fk_violation(self, tmp_path):
-        """A patch leaving a dangling reference is rolled back and raises."""
+        """A patch introducing a dangling reference is rolled back and raises."""
         (tmp_path / "001_dangling.sql").write_text(
             "CREATE TABLE parent (id INTEGER PRIMARY KEY);\n"
             "CREATE TABLE child (parent_id INTEGER REFERENCES parent(id));\n"

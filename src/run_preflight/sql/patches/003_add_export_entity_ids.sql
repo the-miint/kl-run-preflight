@@ -3,11 +3,11 @@
 -- matrix tube ID) alone identifies a row. Every project identifier becomes
 -- unique.
 --
--- SQLite cannot alter a CHECK in place, so both tables are rebuilt. The
--- migration runner suspends foreign-key enforcement around each patch, which
--- lets these referenced tables be dropped. legacy_alter_table stops the rename
--- from re-validating the views that reference the dropped table, so the views
--- need not be dropped and recreated.
+-- SQLite cannot alter a CHECK in place, so both tables are rebuilt; dropping
+-- these referenced tables relies on foreign-key enforcement being off while
+-- patches run. legacy_alter_table stops the rename from re-validating the
+-- views that reference the dropped table, so the views need not be dropped
+-- and recreated.
 
 PRAGMA legacy_alter_table = ON;
 

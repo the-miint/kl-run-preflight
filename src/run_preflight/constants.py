@@ -192,6 +192,13 @@ EMP_515F_PRIMER = "GTGYCAGCMGCCGCGGTAA"
 # column, and run view names are derived by convention.
 PlatformSpecificSampleKind = Literal["illumina", "pacbio", "tellseq"]
 
+# The settable identifier columns of a project and of an input_sample; each
+# member is the column name it sets.
+ProjectIdentifierKind = Literal["bioproject_accession", "study_export_entity_id"]
+InputSampleIdentifierKind = Literal[
+    "biosample_accession", "biosample_export_entity_id", "matrix_tube_id"
+]
+
 
 # ---------------------------------------------------------------------------
 # Sample-type strings (values in the sample_type reference table)
@@ -253,13 +260,9 @@ DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
 DB_COL_LANE = "lane"
 DB_COL_MASK_SHORT_READS = "mask_short_reads"
 DB_COL_OVERRIDE_CYCLES = "override_cycles"
-DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
 DB_COL_PROJECT_NAME = "project_name"
 DB_COL_EXTERNAL_PROJECT_ID = "external_project_id"
 DB_COL_DO_NOT_USE = "do_not_use"
-DB_COL_STUDY_EXPORT_ENTITY_ID = "study_export_entity_id"
-DB_COL_BIOSAMPLE_EXPORT_ENTITY_ID = "biosample_export_entity_id"
-DB_COL_MATRIX_TUBE_ID = "matrix_tube_id"
 DB_COL_SMRT_CELL_WELL_SAMPLE_ID = "smrt_cell_well_sample_id"
 DB_COL_MOVIE_CONTEXT_ID = "movie_context_id"
 

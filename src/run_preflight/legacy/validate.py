@@ -170,10 +170,9 @@ def validate_sections(conn, sections: dict) -> list[str]:
 def _check_qiita_ids(section_name: str, rows: list[dict]) -> list[str]:
     """Report empty QiitaID cells and QiitaIDs shared by several projects.
 
-    An empty QiitaID would pass the identity CHECK yet leave
-    external_project_id meaningless, and a shared one would violate its
-    uniqueness; each shared QiitaID is reported with every project using it.
+    Each shared QiitaID is reported with every project using it.
     """
+    # Report any empty QiitaID cell
     errors: list[str] = []
     if any(row.get(COL_QIITA_ID) == "" for row in rows):
         errors.append(
@@ -189,6 +188,7 @@ def _check_qiita_ids(section_name: str, rows: list[dict]) -> list[str]:
             prior_projects = projects_by_qiita_id.get(qiita_id, [])
             projects_by_qiita_id[qiita_id] = [*prior_projects, row[COL_SAMPLE_PROJECT]]
 
+    # Report each QiitaID used by more than one project
     for qiita_id, project_names in projects_by_qiita_id.items():
         if len(project_names) > 1:
             errors.append(

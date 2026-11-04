@@ -15,8 +15,7 @@ from pathlib import Path
 _PATCHES_DIR = Path(__file__).resolve().parent / "sql" / "patches"
 _PATCH_PATTERN = re.compile(r"^(\d{3})_.+\.(sql|py)$")
 
-# Connection-level flags a patch may change outside its transaction, so they
-# are saved before patching and restored after, even when a patch fails
+# Boolean connection pragmas a patch may change outside its transaction
 _PRAGMA_FOREIGN_KEYS = "foreign_keys"
 _PRAGMA_LEGACY_ALTER_TABLE = "legacy_alter_table"
 _RESTORED_PRAGMA_FLAGS = (_PRAGMA_FOREIGN_KEYS, _PRAGMA_LEGACY_ALTER_TABLE)
@@ -67,7 +66,7 @@ def _read_pragma_flag(conn: sqlite3.Connection, name: str) -> bool:
 
 
 def _write_pragma_flag(conn: sqlite3.Connection, name: str, enabled: bool) -> None:
-    """Set the boolean pragma *name*; a no-op for some pragmas mid-transaction."""
+    """Set the boolean pragma *name*."""
     conn.execute(f"PRAGMA {name} = {'ON' if enabled else 'OFF'}")
 
 
