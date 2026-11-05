@@ -14,6 +14,8 @@ from pathlib import Path
 
 from run_preflight.legacy.api import load_file, load_legacy_csv, save_legacy_csv
 
+from . import _helpers
+
 DATA_DIR = Path(__file__).parent / "data" / "legacy"
 
 # Real prep templates spanning the three registered layouts. The template is
@@ -173,6 +175,51 @@ class TestAmpliconPrepProjection(unittest.TestCase):
         self.assertEqual(
             loc, {"LocationCell": n, "LocationColumn": n, "LocationRow": n}
         )
+
+
+class TestAmpliconPrepWhitespace(unittest.TestCase):
+    def test_load_legacy_csv_strips_prep_template_cells(self):
+        # Padding around a cell is stripped, as on the sectioned-CSV path,
+        # so a padded project name does not split one project into two
+        src = (DATA_DIR / "good_amplicon_v1.txt").read_text()
+        padded = src.replace(
+            "\tS4_20006\tsample.00001\t", "\tS4_20006 \t sample.00001\u200b\t", 1
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            sheet = Path(tmp) / "padded.txt"
+            sheet.write_text(padded)
+            conn = load_legacy_csv(str(sheet))
+        try:
+            projects = conn.execute("SELECT project_name FROM project").fetchall()
+            sample_rows = conn.execute(
+                "SELECT sample_name FROM input_sample"
+            ).fetchall()
+        finally:
+            conn.close()
+        padded_names = [
+            name for (name,) in sample_rows if name != name.strip(" \u200b")
+        ]
+        self.assertEqual((projects, padded_names), ([("S4_20006",)], []))
+
+
+class TestAmpliconPrepBlankLines(unittest.TestCase):
+    def test_load_legacy_csv_skips_whitespace_only_prep_template_lines(self):
+        # Lines of only whitespace or invisible characters are skipped, as on
+        # the sectioned-CSV path
+        src = (DATA_DIR / "good_amplicon_v1.txt").read_text()
+        blank_lines = "  " + chr(0x200B) + "\n\t\n"
+        counts = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in (("plain", src), ("padded", src + blank_lines)):
+                sheet = Path(tmp) / f"{name}.txt"
+                sheet.write_text(text)
+                conn = load_legacy_csv(str(sheet))
+                try:
+                    count = _helpers.count_input_samples(conn)
+                finally:
+                    conn.close()
+                counts.append(count)
+        self.assertEqual(counts[1], counts[0])
 
 
 class TestAmpliconPrepRejection(unittest.TestCase):

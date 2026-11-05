@@ -280,18 +280,7 @@ class TestLegacyApi(unittest.TestCase):
         db_path = self.tmp_dir / "no_qid.db"
         conn = create_db(str(db_path))
         try:
-            project_idx = _helpers.seed_project(
-                conn,
-                project_name="proj_no_qid",
-                external_project_id=None,
-                bioproject_accession="PRJNA001",
-            )
-            plate_idx = _helpers.seed_plate(conn, project_idx)
-            run_idx = _helpers.seed_processing_run(conn)
-            _helpers.seed_sample_chain(
-                conn, plate_idx, project_idx, run_idx, sample_name="S1"
-            )
-            conn.commit()
+            _helpers.seed_run_with_project_lacking_qiita_id(conn)
         finally:
             conn.close()
 
@@ -596,6 +585,40 @@ class TestSaveLegacySampleIdMapCsv(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, r"no illumina_sample rows"):
             save_legacy_sample_id_map_csv(self.conn, str(self.out_path))
+
+
+class TestLoadLegacyCsvInvisibleChars(unittest.TestCase):
+    def test_load_legacy_csv_text_ignores_invisible_format_chars(self):
+        # A leading byte-order mark, a zero-width space beside a section
+        # label, or a row of only zero-width spaces does not hide structure
+        src = (DATA_DIR / "good_standard_metagv90.csv").read_text()
+        src_lines = src.splitlines(keepends=True)
+        data_label_pos = next(
+            i for i, line in enumerate(src_lines) if line.startswith("[Data]")
+        )
+        zwsp_row_lines = [
+            *src_lines[: data_label_pos + 1],
+            "\u200b,\u200b\n",
+            *src_lines[data_label_pos + 1 :],
+        ]
+        variants = {
+            "leading_bom": "\ufeff" + src,
+            "zwsp_after_data_label": src.replace("[Data]", "[Data]\u200b", 1),
+            "zwsp_only_row_in_data": "".join(zwsp_row_lines),
+        }
+        expected_conn = load_legacy_csv_text(src)
+        try:
+            expected_count = _helpers.count_input_samples(expected_conn)
+        finally:
+            expected_conn.close()
+        for variant_name, text in variants.items():
+            with self.subTest(variant=variant_name):
+                conn = load_legacy_csv_text(text)
+                try:
+                    count = _helpers.count_input_samples(conn)
+                finally:
+                    conn.close()
+                self.assertEqual(count, expected_count)
 
 
 if __name__ == "__main__":

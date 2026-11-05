@@ -2,7 +2,9 @@
 
 Each operation writes one row to ``change_log`` per modified domain
 row, capturing the prior and new values plus an optional caller-
-supplied reason.
+supplied reason. Free-text string arguments (values, lookup keys, reason)
+are stripped of surrounding whitespace and invisible format characters; one
+left empty raises ValueError, and a non-str one raises TypeError.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from .db import (
     lookup_project_by_key,
     require_literal_member,
     sample_kind_names,
+    strip_str,
 )
 
 # The platform-specific sample kinds sequenced on the Illumina platform;
@@ -72,22 +75,31 @@ UNCHANGED = Unchanged()
 
 
 def _require_nonempty_or_none(value: str | None, param_name: str) -> str | None:
-    """Reject empty-string *value*; allow None (clear) and non-empty strings.
+    """Return *value* without surrounding whitespace or format characters.
 
-    Returned unchanged on the allowed paths so call sites can chain.
+    None is returned unchanged.
+
+    Raises TypeError for a non-str *value*, and ValueError if nothing is
+    left after stripping.
     """
-    if value == "":
-        raise ValueError(
-            f"{param_name} must not be empty; pass None to clear, or supply a non-empty value"
-        )
-    return value
+    if value is None:
+        return None
+    stripped = strip_str(value, param_name)
+    if not stripped:
+        raise ValueError(f"{param_name} must not be empty or whitespace-only")
+    return stripped
 
 
-def _require_nonempty(value: str, param_name: str) -> str:
-    """Reject empty-string or None *value*; allow only non-empty strings."""
-    if value is None or value == "":
+def _require_nonempty(value: str | None, param_name: str) -> str:
+    """Return *value* without surrounding whitespace or format characters.
+
+    Raises TypeError for a non-str *value*, and ValueError if *value* is
+    None or nothing is left after stripping.
+    """
+    stripped = "" if value is None else strip_str(value, param_name)
+    if not stripped:
         raise ValueError(f"{param_name} must be a non-empty string")
-    return value
+    return stripped
 
 
 def _require_exactly_one_key(
@@ -241,15 +253,17 @@ def set_input_sample_identifier(
 
     Raises:
         ValueError: If *identifier_kind* is not an input_sample identifier,
-            if *sample_name* or *value* is an empty string, if no
+            if *sample_name* or *value* is empty or whitespace-only, if no
             input_sample matches *sample_name*, or if multiple distinct
             input_samples match (ambiguous).
+        TypeError: If *sample_name*, *value*, or *reason* is not a str.
         sqlite3.IntegrityError: If clearing *value* would leave the
             input_sample with no identifier.
     """
-    # Reject empty strings for both the lookup key and the value
-    _require_nonempty(sample_name, "sample_name")
-    _require_nonempty_or_none(value, "value")
+    # Strip the lookup key, value, and reason, rejecting any that is blank
+    sample_name = _require_nonempty(sample_name, "sample_name")
+    reason = _require_nonempty_or_none(reason, "reason")
+    value = _require_nonempty_or_none(value, "value")
 
     # Resolve effective Sample_Name to a unique input_sample
     cur = conn.cursor()
@@ -289,13 +303,16 @@ def set_project_identifier(
     Raises:
         ValueError: If *identifier_kind* is not a project identifier, if
             zero or two keys are supplied, if the supplied key or *value*
-            is an empty string, or if no project matches the supplied key.
+            is empty or whitespace-only, or if no project matches the
+            supplied key.
+        TypeError: If the supplied key, *value*, or *reason* is not a str.
         sqlite3.IntegrityError: If another project already holds *value*,
             or if clearing *value* would leave the project with no
             identifier.
     """
-    # Reject empty-string value; None remains the clear path
-    _require_nonempty_or_none(value, "value")
+    # Strip the value and reason, rejecting either if blank; None clears
+    value = _require_nonempty_or_none(value, "value")
+    reason = _require_nonempty_or_none(reason, "reason")
 
     # Require exactly one supplied key, then reject it if empty, so an empty
     # key is never silently ignored or matched
@@ -307,7 +324,7 @@ def set_project_identifier(
         ProjectLookupKey,
         "project lookup key",
     )
-    _require_nonempty(key_value, key_col)
+    key_value = _require_nonempty(key_value, key_col)
 
     # Resolve the chosen key to project_idx and capture the prior value
     cur = conn.cursor()
@@ -348,6 +365,13 @@ def set_biosample_accession(
     )
 
 
+def _require_lane_or_none(lane: object, param_name: str) -> None:
+    """Raise ValueError unless *lane* is a positive int (not a bool) or None."""
+    is_lane = isinstance(lane, int) and not isinstance(lane, bool) and lane >= 1
+    if lane is not None and not is_lane:
+        raise ValueError(f"{param_name} must be a positive int or None, got {lane!r}")
+
+
 def update_lane(
     conn: sqlite3.Connection,
     sample_kind: PlatformSpecificSampleKind,
@@ -359,13 +383,14 @@ def update_lane(
 
     Every row whose current lane equals *from_lane* (NULL is a value)
     is updated to *to_lane*. *sample_kind* must be an Illumina-platform
-    sample kind (``"illumina"`` or ``"tellseq"``). Returns the number of
-    rows updated.
+    sample kind. Returns the number of rows updated.
 
     Raises:
-        ValueError: For a sample kind without lanes, a post-update state
+        ValueError: For a lane that is neither a positive int nor None, a
+            blank *reason*, a sample kind without lanes, a post-update state
             that mixes NULL and non-NULL lane values, or a collision
             with the unique ``(prepped_sample_idx, lane)`` index.
+        TypeError: If *reason* is not a str.
     """
     if sample_kind not in _ILLUMINA_PLATFORM_SAMPLE_KINDS:
         supported = sorted(_ILLUMINA_PLATFORM_SAMPLE_KINDS)
@@ -373,6 +398,9 @@ def update_lane(
             f"Unsupported sample kind {sample_kind!r}; lane updates are only "
             f"defined for {supported}"
         )
+    _require_lane_or_none(from_lane, "from_lane")
+    _require_lane_or_none(to_lane, "to_lane")
+    reason = _require_nonempty_or_none(reason, "reason")
     names = sample_kind_names(sample_kind)
     table, pk_col = names.table, names.idx_col
     cur = conn.cursor()
@@ -463,7 +491,12 @@ def _set_illumina_run_column(
         f"SELECT {column} FROM {TABLE_ILLUMINA_RUN} WHERE run_idx = ?",
         (run_idx,),
     )
-    (old_value,) = cur.fetchone()
+    row = cur.fetchone()
+    if row is None:
+        raise ValueError(
+            f"Run {run_idx} has no illumina_run row, so it has no Illumina settings"
+        )
+    (old_value,) = row
     _apply_single_row_update(
         conn,
         TABLE_ILLUMINA_RUN,
@@ -485,11 +518,15 @@ def set_illumina_run_setting(
     """Set a named illumina_run setting column to *value*; None clears it.
 
     Raises:
-        ValueError: If *value* is an empty string, or if *setting* is
-            not a supported illumina_run setting column.
+        ValueError: If *value* is empty or whitespace-only, if *setting* is
+            not a supported illumina_run setting column, if the database does
+            not hold exactly one processing run, or if that run has no
+            illumina_run row.
+        TypeError: If *value* or *reason* is not a str.
     """
     require_literal_member(setting, IllumRunSetting, "illumina_run setting")
-    _require_nonempty_or_none(value, "value")
+    value = _require_nonempty_or_none(value, "value")
+    reason = _require_nonempty_or_none(reason, "reason")
     _set_illumina_run_column(conn, setting, value, reason)
 
 
@@ -577,9 +614,16 @@ def set_input_sample_do_not_use(
     (the flag is a hard floor); False clears the flag.
 
     Raises:
-        ValueError: If zero or two keys are supplied, if
-            *biosample_accession* is empty, or if no input_sample matches.
+        ValueError: If *value* is neither True nor False, if zero or two
+            keys are supplied, if *biosample_accession* or *reason* is
+            empty or whitespace-only, or if no input_sample matches.
+        TypeError: If *biosample_accession* or *reason* is not a str.
     """
+    if value is not True and value is not False:
+        raise ValueError(
+            f"value must be True (flag) or False (clear); {value!r} is not supported"
+        )
+
     # Require exactly one supplied key, then resolve it to (column, value)
     key_col, key_value = _require_exactly_one_key(
         (
@@ -590,7 +634,8 @@ def set_input_sample_do_not_use(
         "input_sample lookup key",
     )
     if key_col == DB_COL_BIOSAMPLE_ACCESSION:
-        _require_nonempty(biosample_accession, "biosample_accession")
+        key_value = _require_nonempty(key_value, key_col)
+    reason = _require_nonempty_or_none(reason, "reason")
 
     # Resolve the key to one or more input_sample rows and update each
     cur = conn.cursor()
@@ -620,13 +665,15 @@ def set_prepped_sample_do_not_use(
     input_sample marked do_not_use stays excluded regardless.
 
     Raises:
-        ValueError: If *value* is False, or if no prepped_sample matches
-            *prepped_sample_idx*.
+        ValueError: If *value* is neither True nor None, if *reason* is
+            blank, or if no prepped_sample matches *prepped_sample_idx*.
+        TypeError: If *reason* is not a str.
     """
-    if value is False:
+    if value is not True and value is not None:
         raise ValueError(
-            "value must be True (flag) or None (inherit); False is not supported"
+            f"value must be True (flag) or None (inherit); {value!r} is not supported"
         )
+    reason = _require_nonempty_or_none(reason, "reason")
     cur = conn.cursor()
     rows = _lookup_do_not_use_rows(
         cur,
@@ -712,8 +759,11 @@ def set_pacbio_sample_run_details(
 
     Raises:
         ValueError: If not exactly one identifier is supplied, if no field
-            is supplied, if a supplied value is an empty string, or if the
-            identifier matches zero or multiple pacbio_samples.
+            is supplied, if *sample_name* or a supplied value is empty or
+            whitespace-only, or if the identifier matches zero or multiple
+            pacbio_samples.
+        TypeError: If *sample_name*, a supplied value, or *reason* is not a
+            str.
     """
     # Require exactly one identifier key.
     key_col, key_value = _require_exactly_one_key(
@@ -724,17 +774,20 @@ def set_pacbio_sample_run_details(
         PacbioSampleLookupKey,
         "pacbio_sample lookup key",
     )
+    if key_col == DB_COL_SAMPLE_NAME:
+        key_value = _require_nonempty(key_value, key_col)
+    reason = _require_nonempty_or_none(reason, "reason")
 
     # Collect the supplied fields (UNCHANGED means leave alone); a supplied
-    # None clears the field, a supplied empty string is rejected.
+    # None clears the field, a blank string is rejected.
     updates: list[tuple[str, str | None]] = []
     for col, value in (
         (DB_COL_SMRT_CELL_WELL_SAMPLE_ID, smrt_cell_well_sample_id),
         (DB_COL_MOVIE_CONTEXT_ID, movie_context_id),
     ):
         if not isinstance(value, Unchanged):
-            _require_nonempty_or_none(value, col)
-            updates.append((col, value))
+            stripped_value = _require_nonempty_or_none(value, col)
+            updates.append((col, stripped_value))
     if not updates:
         raise ValueError(
             "At least one of smrt_cell_well_sample_id or movie_context_id "

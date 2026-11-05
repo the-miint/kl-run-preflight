@@ -81,6 +81,7 @@ from .constants import (
     FIELD_SHEET_TYPE,
     FIELD_SHEET_VERSION,
     IN_MEMORY_PATH,
+    INVISIBLE_FORMAT_CHARS,
     PLATFORM_ILLUMINA,
     InputSampleIdentifierKind,
     PlatformSpecificSampleKind,
@@ -609,6 +610,29 @@ def require_literal_member(value: str, literal_type: object, label: str) -> None
     members = get_args(literal_type)
     if value not in members:
         raise ValueError(f"Unsupported {label} {value!r}; supported: {sorted(members)}")
+
+
+def strip_text(value: str) -> str:
+    """Return *value* without surrounding whitespace or invisible format characters.
+
+    Whitespace is what ``str.strip`` removes. Interleaved runs of whitespace
+    and format characters are removed entirely.
+    """
+    # Alternate the two strips until neither removes anything
+    stripped = value
+    previous = None
+    while stripped != previous:
+        previous = stripped
+        stripped = stripped.strip().strip(INVISIBLE_FORMAT_CHARS)
+    return stripped
+
+
+def strip_str(value: object, param_name: str) -> str:
+    """Return str *value* stripped as by strip_text; raise TypeError for non-str."""
+    if not isinstance(value, str):
+        raise TypeError(f"{param_name} must be a str, not {type(value).__name__}")
+    stripped = strip_text(value)
+    return stripped
 
 
 def _do_not_use_filter(include_do_not_use: bool, alias: str = "") -> str:
@@ -1178,11 +1202,22 @@ def add_katharoseq_sample(
 ) -> None:
     """Record the KatharoSeq titration facts for one control input_sample.
 
-    Makes a KatharoSeq run explicit: the input_sample should already be typed
-    ``katharoseq_cells_positive_control``. The tube barcode lives on
-    ``input_sample.matrix_tube_id``, not here. Does not commit; the caller owns
-    the transaction (matching the populate/seed helpers).
+    The input_sample should already be typed ``katharoseq_cells_positive_control``.
+    *rack_id* is stripped of surrounding whitespace and format characters,
+    and stored as None if nothing is left. Does not commit.
+
+    Raises:
+        TypeError: If *rack_id* is neither a str nor None.
+        ValueError: If neither *number_of_cells* nor *rack_id* is supplied.
     """
+    # Strip rack_id, storing a blank one as None
+    if rack_id is not None:
+        rack_id = strip_str(rack_id, "rack_id") or None
+    if rack_id is None and number_of_cells is None:
+        raise ValueError(
+            "A katharoseq_sample row needs number_of_cells or rack_id; "
+            "one with neither asserts nothing"
+        )
     conn.execute(
         "INSERT INTO katharoseq_sample "
         "(input_sample_idx, rack_id, number_of_cells) "

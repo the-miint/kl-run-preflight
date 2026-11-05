@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -27,6 +28,8 @@ from run_preflight.db import create_db
 from run_preflight.updates import (
     UNCHANGED,
     _require_exactly_one_key,
+    _require_nonempty,
+    _require_nonempty_or_none,
     _set_illumina_run_column,
     set_bioproject_accession,
     set_biosample_accession,
@@ -41,37 +44,6 @@ from run_preflight.updates import (
 
 from . import _helpers
 from ._helpers import open_db
-
-
-def _setup_run(conn: sqlite3.Connection) -> tuple[int, int, int]:
-    """Insert a project, plate, and run; return (project_idx, plate_idx, run_idx)."""
-    project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
-    run_idx = _helpers.seed_processing_run(conn)
-    conn.commit()
-    return project_idx, plate_idx, run_idx
-
-
-def _add_sample(
-    conn: sqlite3.Connection,
-    plate_idx: int,
-    project_idx: int,
-    run_idx: int,
-    sample_name: str,
-    well: str,
-    prs_name: str | None = None,
-) -> tuple[int, int]:
-    """Insert input + compression + prepped sample; return (ins_idx, prs_idx)."""
-    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
-        conn,
-        plate_idx,
-        project_idx,
-        run_idx,
-        sample_name=sample_name,
-        well=well,
-        prs_name=prs_name,
-    )
-    conn.commit()
-    return ins_idx, prs_idx
 
 
 def _add_illumina_row(
@@ -125,7 +97,10 @@ class _UpdatesTestBase(unittest.TestCase):
         # a fresh one against a DB at the latest schema version.
         conn = create_db(self.db_path)
         try:
-            self.project_idx, self.plate_idx, self.run_idx = _setup_run(conn)
+            self.project_idx, self.plate_idx, self.run_idx = _helpers.seed_run_skeleton(
+                conn
+            )
+            conn.commit()
         finally:
             conn.close()
 
@@ -204,7 +179,7 @@ class TestSetInputSampleIdentifier(_IdentifierSetterTestBase):
     def _add_default_sample(self) -> int:
         """Insert sample S1 and return its input_sample_idx."""
         with open_db(self.db_path) as conn:
-            ins_idx, _ = _add_sample(
+            ins_idx, _ = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
         return ins_idx
@@ -217,7 +192,7 @@ class TestSetInputSampleIdentifier(_IdentifierSetterTestBase):
         # Replicate alias resolves through prs.sample_name to the
         # underlying input_sample
         with open_db(self.db_path) as conn:
-            ins_idx, _ = _add_sample(
+            ins_idx, _ = _helpers.seed_committed_sample_chain(
                 conn,
                 self.plate_idx,
                 self.project_idx,
@@ -278,10 +253,10 @@ class TestSetInputSampleIdentifier(_IdentifierSetterTestBase):
     def test_set_input_sample_identifier_ambiguous(self):
         # Two distinct input_samples produce the same effective Sample_Name
         with open_db(self.db_path) as conn:
-            _add_sample(
+            _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
-            _add_sample(
+            _helpers.seed_committed_sample_chain(
                 conn,
                 self.plate_idx,
                 self.project_idx,
@@ -508,10 +483,10 @@ class TestUpdateLane(_UpdatesTestBase):
     def test_update_lane_null_to_value(self):
         # All rows uniformly NULL, then assigned a lane
         with open_db(self.db_path) as conn:
-            _, prs1 = _add_sample(
+            _, prs1 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
-            _, prs2 = _add_sample(
+            _, prs2 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S2", "B2"
             )
             _add_illumina_row(conn, prs1, lane=None)
@@ -528,10 +503,10 @@ class TestUpdateLane(_UpdatesTestBase):
 
     def test_update_lane_value_to_value(self):
         with open_db(self.db_path) as conn:
-            _, prs1 = _add_sample(
+            _, prs1 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
-            _, prs2 = _add_sample(
+            _, prs2 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S2", "B2"
             )
             _add_illumina_row(conn, prs1, lane=1)
@@ -549,7 +524,7 @@ class TestUpdateLane(_UpdatesTestBase):
     def test_update_lane_collision(self):
         # Multi-lane fan-out: one prepped_sample at both lane 1 and lane 2
         with open_db(self.db_path) as conn:
-            _, prs1 = _add_sample(
+            _, prs1 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
             _add_illumina_row(conn, prs1, lane=1)
@@ -564,10 +539,10 @@ class TestUpdateLane(_UpdatesTestBase):
     def test_update_lane_uniformity_violation(self):
         # Setting some rows to NULL while others remain non-NULL is mixed
         with open_db(self.db_path) as conn:
-            _, prs1 = _add_sample(
+            _, prs1 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
-            _, prs2 = _add_sample(
+            _, prs2 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S2", "B2"
             )
             _add_illumina_row(conn, prs1, lane=1)
@@ -588,10 +563,10 @@ class TestUpdateLane(_UpdatesTestBase):
 
     def test_update_lane_audit(self):
         with open_db(self.db_path) as conn:
-            _, prs1 = _add_sample(
+            _, prs1 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
-            _, prs2 = _add_sample(
+            _, prs2 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S2", "B2"
             )
             i1 = _add_illumina_row(conn, prs1, lane=1)
@@ -614,7 +589,7 @@ class TestUpdateLane(_UpdatesTestBase):
 
     def test_update_lane_tellseq(self):
         with open_db(self.db_path) as conn:
-            _, prs1 = _add_sample(
+            _, prs1 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
             cur = conn.cursor()
@@ -903,7 +878,7 @@ class TestEmptyStringRejection(_UpdatesTestBase):
 
     def _seed_sample(self, conn):
         """Insert one input_sample with sample_name 'S1'."""
-        ins_idx, _ = _add_sample(
+        ins_idx, _ = _helpers.seed_committed_sample_chain(
             conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
         )
         return ins_idx
@@ -925,7 +900,9 @@ class TestEmptyStringRejection(_UpdatesTestBase):
     def test_set_input_sample_identifier_rejects_empty_value(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="value must not be empty"),
+            pytest.raises(
+                ValueError, match="^value must not be empty or whitespace-only$"
+            ),
         ):
             self._seed_sample(conn)
             set_input_sample_identifier(
@@ -1018,7 +995,7 @@ class TestSetInputSampleDoNotUse(_UpdatesTestBase):
 
     def test_set_input_sample_do_not_use_by_idx(self):
         with open_db(self.db_path) as conn:
-            ins_idx, _ = _add_sample(
+            ins_idx, _ = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
 
@@ -1031,7 +1008,7 @@ class TestSetInputSampleDoNotUse(_UpdatesTestBase):
     def test_set_input_sample_do_not_use_clear(self):
         # value=False clears a previously set flag back to 0
         with open_db(self.db_path) as conn:
-            ins_idx, _ = _add_sample(
+            ins_idx, _ = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
 
@@ -1046,10 +1023,10 @@ class TestSetInputSampleDoNotUse(_UpdatesTestBase):
         # Two distinct input_samples sharing one biosample_accession are
         # both flagged when keyed by that accession.
         with open_db(self.db_path) as conn:
-            ins1, _ = _add_sample(
+            ins1, _ = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
-            ins2, _ = _add_sample(
+            ins2, _ = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S2", "A2"
             )
             conn.execute(
@@ -1069,7 +1046,7 @@ class TestSetInputSampleDoNotUse(_UpdatesTestBase):
 
     def test_set_input_sample_do_not_use_requires_exactly_one_key(self):
         with open_db(self.db_path) as conn:
-            ins_idx, _ = _add_sample(
+            ins_idx, _ = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
 
@@ -1101,7 +1078,7 @@ class TestSetInputSampleDoNotUse(_UpdatesTestBase):
 
     def test_set_input_sample_do_not_use_audit(self):
         with open_db(self.db_path) as conn:
-            ins_idx, _ = _add_sample(
+            ins_idx, _ = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
             )
 
@@ -1134,7 +1111,7 @@ class TestSetPreppedSampleDoNotUse(_UpdatesTestBase):
     def test_set_prepped_sample_do_not_use_override(self):
         # Input sample left unflagged; the prep-level override flags one replicate
         with open_db(self.db_path) as conn:
-            _, prs_idx = _add_sample(
+            _, prs_idx = _helpers.seed_committed_sample_chain(
                 conn,
                 self.plate_idx,
                 self.project_idx,
@@ -1153,7 +1130,7 @@ class TestSetPreppedSampleDoNotUse(_UpdatesTestBase):
     def test_set_prepped_sample_do_not_use_clear(self):
         # value=None clears the override back to NULL (inherit input)
         with open_db(self.db_path) as conn:
-            _, prs_idx = _add_sample(
+            _, prs_idx = _helpers.seed_committed_sample_chain(
                 conn,
                 self.plate_idx,
                 self.project_idx,
@@ -1170,25 +1147,6 @@ class TestSetPreppedSampleDoNotUse(_UpdatesTestBase):
         with open_db(self.db_path) as conn:
             self.assertIsNone(self._do_not_use(conn, prs_idx))
 
-    def test_set_prepped_sample_do_not_use_rejects_false(self):
-        # False is not a valid prep-level state; only True / None are
-        with open_db(self.db_path) as conn:
-            _, prs_idx = _add_sample(
-                conn,
-                self.plate_idx,
-                self.project_idx,
-                self.run_idx,
-                "S1",
-                "A1",
-                prs_name="S1.A1",
-            )
-
-        with (
-            open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="False is not supported"),
-        ):
-            set_prepped_sample_do_not_use(conn, prs_idx, value=False)
-
     def test_set_prepped_sample_do_not_use_no_match(self):
         with (
             open_db(self.db_path) as conn,
@@ -1201,7 +1159,7 @@ class TestSetPacbioSampleRunDetails(_UpdatesTestBase):
     def _seed_one(self, name="S1", well="A1", smrt_cell_well_sample_id=None):
         """Seed one sample chain + pacbio_sample; return pacbio_sample_idx."""
         with open_db(self.db_path) as conn:
-            _ins, prs = _add_sample(
+            _ins, prs = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, name, well
             )
             ps_idx = _add_pacbio_sample(conn, prs, smrt_cell_well_sample_id)
@@ -1275,10 +1233,10 @@ class TestSetPacbioSampleRunDetails(_UpdatesTestBase):
     def test_set_pacbio_sample_run_details_ambiguous_name_raises(self):
         # Two input_samples share an effective Sample_Name -> two pacbio rows
         with open_db(self.db_path) as conn:
-            _i1, prs1 = _add_sample(
+            _i1, prs1 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "DUP", "A1"
             )
-            _i2, prs2 = _add_sample(
+            _i2, prs2 = _helpers.seed_committed_sample_chain(
                 conn, self.plate_idx, self.project_idx, self.run_idx, "DUP", "A2"
             )
             _add_pacbio_sample(conn, prs1)
@@ -1390,3 +1348,281 @@ class TestRequireExactlyOneKey(unittest.TestCase):
                 ProjectLookupKey,
                 "project lookup key",
             )
+
+
+class TestRequireNonempty(unittest.TestCase):
+    def test__require_nonempty(self):
+        # Surrounding whitespace is stripped; nothing left is rejected
+        self.assertEqual(_require_nonempty(" X\t", "key"), "X")
+        for blank in ("", "  ", "\t", None):
+            with (
+                self.subTest(blank=blank),
+                pytest.raises(ValueError, match="key must be a non-empty string"),
+            ):
+                _require_nonempty(blank, "key")
+
+    def test__require_nonempty_or_none(self):
+        # None passes through; whitespace is stripped; nothing left is rejected
+        results = (
+            _require_nonempty_or_none(None, "value"),
+            _require_nonempty_or_none(" X\t", "value"),
+        )
+        self.assertEqual(results, (None, "X"))
+        for blank in ("", "  ", "\t"):
+            with (
+                self.subTest(blank=blank),
+                pytest.raises(ValueError, match="value must not be empty"),
+            ):
+                _require_nonempty_or_none(blank, "value")
+
+
+class TestWhitespaceHandling(_UpdatesTestBase):
+    """Setters strip surrounding whitespace and reject whitespace-only strings."""
+
+    def test_set_project_identifier_strips_value_key_and_reason(self):
+        with open_db(self.db_path) as conn:
+            set_project_identifier(
+                conn,
+                "study_export_entity_id",
+                " 42 ",
+                project_name=" proj1 ",
+                reason=" fixed ",
+            )
+            log_rows = _read_change_log(conn)
+        expected = [
+            ("project", self.project_idx, "study_export_entity_id", None, "42", "fixed")
+        ]
+        self.assertEqual(log_rows, expected)
+
+    def test_set_input_sample_identifier_strips_sample_name(self):
+        with open_db(self.db_path) as conn:
+            ins_idx, _ = _helpers.seed_committed_sample_chain(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+            set_input_sample_identifier(
+                conn, "matrix_tube_id", "\t0363 ", sample_name=" S1 "
+            )
+            log_rows = _read_change_log(conn)
+        expected = [("input_sample", ins_idx, "matrix_tube_id", None, "0363", None)]
+        self.assertEqual(log_rows, expected)
+
+    def test_set_pacbio_sample_run_details_strips_sample_name(self):
+        with open_db(self.db_path) as conn:
+            _ins, prs = _helpers.seed_committed_sample_chain(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+            ps_idx = _add_pacbio_sample(conn, prs, None)
+            set_pacbio_sample_run_details(
+                conn, sample_name=" S1 ", movie_context_id=" m84 "
+            )
+            log_rows = _read_change_log(conn)
+        expected = [("pacbio_sample", ps_idx, "movie_context_id", None, "m84", None)]
+        self.assertEqual(log_rows, expected)
+
+    def test_setters_reject_whitespace_only(self):
+        with open_db(self.db_path) as conn:
+            ins, prs = _helpers.seed_committed_sample_chain(
+                conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+            )
+            _add_pacbio_sample(conn, prs, None)
+            _add_illumina_run(conn, self.run_idx)
+        # Each setter's call is otherwise valid, so only its blank reason fails
+        reason_calls = {
+            "reason_input_sample_identifier": lambda c: set_input_sample_identifier(
+                c, "matrix_tube_id", "0363", sample_name="S1", reason=" "
+            ),
+            "reason_update_lane": lambda c: update_lane(
+                c, "illumina", 1, 2, reason=" "
+            ),
+            "reason_illumina_setting": lambda c: set_illumina_run_setting(
+                c, "override_cycles", "Y151", reason=" "
+            ),
+            "reason_input_sample_do_not_use": lambda c: set_input_sample_do_not_use(
+                c, input_sample_idx=ins, reason=" "
+            ),
+            "reason_prepped_sample_do_not_use": lambda c: set_prepped_sample_do_not_use(
+                c, prs, reason=" "
+            ),
+            "reason_pacbio": lambda c: set_pacbio_sample_run_details(
+                c, sample_name="S1", movie_context_id="m84", reason=" "
+            ),
+        }
+        calls = {
+            **reason_calls,
+            "sample_value": lambda c: set_input_sample_identifier(
+                c, "matrix_tube_id", "  ", sample_name="S1"
+            ),
+            "sample_key": lambda c: set_input_sample_identifier(
+                c, "matrix_tube_id", "0363", sample_name="\t"
+            ),
+            "project_value": lambda c: set_project_identifier(
+                c, "bioproject_accession", " ", project_name="proj1"
+            ),
+            "illumina_value": lambda c: set_illumina_run_setting(
+                c, "override_cycles", "  "
+            ),
+            "do_not_use_key": lambda c: set_input_sample_do_not_use(
+                c, biosample_accession="  "
+            ),
+            "pacbio_key": lambda c: set_pacbio_sample_run_details(
+                c, sample_name="  ", movie_context_id="m84"
+            ),
+            "pacbio_value": lambda c: set_pacbio_sample_run_details(
+                c, sample_name="S1", movie_context_id="  "
+            ),
+            "reason": lambda c: set_project_identifier(
+                c, "bioproject_accession", "PRJNA1", project_name="proj1", reason=" "
+            ),
+        }
+        for call_name, call in calls.items():
+            with (
+                self.subTest(call=call_name),
+                open_db(self.db_path) as conn,
+                pytest.raises(
+                    ValueError, match="must be a non-empty|must not be empty"
+                ),
+            ):
+                call(conn)
+        # No rejected call may leave an audit row behind
+        with open_db(self.db_path) as conn:
+            self.assertEqual(_read_change_log(conn), [])
+
+
+class TestSetterArgumentChecks(_UpdatesTestBase):
+    """Setters check every argument before running any SQL."""
+
+    def _seed_sample_and_runs(self, conn) -> tuple[int, int]:
+        """Seed sample S1 with an illumina row on lane 1; return (ins, prs)."""
+        ins_idx, prs_idx = _helpers.seed_committed_sample_chain(
+            conn, self.plate_idx, self.project_idx, self.run_idx, "S1", "A1"
+        )
+        _add_illumina_row(conn, prs_idx, lane=1)
+        _add_illumina_run(conn, self.run_idx)
+        return ins_idx, prs_idx
+
+    def test_set_project_identifier_blank_reason_keeps_pending_write(self):
+        # A blank reason is rejected before any SQL, so the caller's
+        # uncommitted work on the connection is not rolled back
+        with open_db(self.db_path) as conn:
+            ins_idx, _ = self._seed_sample_and_runs(conn)
+            conn.execute(
+                "UPDATE input_sample SET matrix_tube_id = 'PENDING' "
+                "WHERE input_sample_idx = ?",
+                (ins_idx,),
+            )
+            with pytest.raises(ValueError, match="reason must not be empty"):
+                set_project_identifier(
+                    conn,
+                    "bioproject_accession",
+                    "PRJNA1",
+                    project_name="proj1",
+                    reason="  ",
+                )
+            conn.commit()
+            cur = conn.execute("SELECT matrix_tube_id FROM input_sample")
+            tube_ids = cur.fetchall()
+        self.assertEqual(tube_ids, [("PENDING",)])
+
+    def test_update_lane_blank_reason_with_no_matching_rows(self):
+        # reason is checked even when no row would be logged
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="reason must not be empty"),
+        ):
+            self._seed_sample_and_runs(conn)
+            update_lane(conn, "illumina", 7, 8, reason="  ")
+
+    def test_setters_reject_non_str_arguments(self):
+        with open_db(self.db_path) as conn:
+            self._seed_sample_and_runs(conn)
+        calls = {
+            "int_value": lambda c: set_project_identifier(
+                c, "study_export_entity_id", 42, project_name="proj1"
+            ),
+            "bytes_value": lambda c: set_project_identifier(
+                c, "bioproject_accession", b"PRJNA1", project_name="proj1"
+            ),
+            "int_key": lambda c: set_project_identifier(
+                c, "bioproject_accession", "PRJNA1", external_project_id=1
+            ),
+            "int_reason": lambda c: set_illumina_run_setting(
+                c, "override_cycles", "Y151", reason=5
+            ),
+            "deprecated_alias_int_key": lambda c: set_bioproject_accession(
+                c, "PRJNA1", external_project_id=1
+            ),
+        }
+        for call_name, call in calls.items():
+            with (
+                self.subTest(call=call_name),
+                open_db(self.db_path) as conn,
+                pytest.raises(TypeError, match="must be a str"),
+            ):
+                call(conn)
+
+    def test_set_illumina_run_setting_strips_value(self):
+        with open_db(self.db_path) as conn:
+            self._seed_sample_and_runs(conn)
+            set_illumina_run_setting(conn, "override_cycles", " Y151;I10 ")
+            cur = conn.execute("SELECT override_cycles FROM illumina_run")
+            stored = cur.fetchall()
+        self.assertEqual(stored, [("Y151;I10",)])
+
+    def test_set_input_sample_do_not_use_strips_biosample_accession(self):
+        with open_db(self.db_path) as conn:
+            self._seed_sample_and_runs(conn)
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN1", sample_name="S1"
+            )
+            set_input_sample_do_not_use(conn, biosample_accession=" SAMN1\u200b")
+            cur = conn.execute("SELECT do_not_use FROM input_sample")
+            flags = cur.fetchall()
+        self.assertEqual(flags, [(1,)])
+
+    def test_do_not_use_setters_reject_unsupported_values(self):
+        # Each do-not-use setter accepts only its two allowed values
+        with open_db(self.db_path) as conn:
+            ins_idx, prs_idx = self._seed_sample_and_runs(conn)
+        cases = (
+            (
+                "prepped",
+                lambda c, v: set_prepped_sample_do_not_use(c, prs_idx, value=v),
+                (False, 0, 1, "no"),
+            ),
+            (
+                "input",
+                lambda c, v: set_input_sample_do_not_use(
+                    c, input_sample_idx=ins_idx, value=v
+                ),
+                (None, 0, 1, 2, 0.5, "no"),
+            ),
+        )
+        for setter_name, call, bad_values in cases:
+            for bad_value in bad_values:
+                with (
+                    self.subTest(setter=setter_name, value=bad_value),
+                    open_db(self.db_path) as conn,
+                    pytest.raises(
+                        ValueError, match=re.escape(f"{bad_value!r} is not supported")
+                    ),
+                ):
+                    call(conn, bad_value)
+
+    def test_update_lane_rejects_non_positive_int_lanes(self):
+        with open_db(self.db_path) as conn:
+            self._seed_sample_and_runs(conn)
+        for bad_lane in (-1, 0, 1.5, "1", True):
+            for lanes in ((1, bad_lane), (bad_lane, 2)):
+                with (
+                    self.subTest(lanes=lanes),
+                    open_db(self.db_path) as conn,
+                    pytest.raises(ValueError, match="must be a positive int or None"),
+                ):
+                    update_lane(conn, "illumina", *lanes)
+
+    def test_set_illumina_run_setting_raise_no_illumina_run_err(self):
+        with (
+            open_db(self.db_path) as conn,
+            pytest.raises(ValueError, match="no illumina_run row"),
+        ):
+            set_illumina_run_setting(conn, "override_cycles", "Y151")

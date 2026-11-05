@@ -254,6 +254,68 @@ def expected_accession_only_info(
     return info
 
 
+def seed_run_skeleton(
+    conn: sqlite3.Connection, **project_fields
+) -> tuple[int, int, int]:
+    """Insert one project, input_plate, and processing_run; do not commit.
+
+    *project_fields* are passed to seed_project. Returns (project_idx,
+    plate_idx, run_idx).
+    """
+    project_idx = seed_project(conn, **project_fields)
+    plate_idx = seed_plate(conn, project_idx)
+    run_idx = seed_processing_run(conn)
+    return project_idx, plate_idx, run_idx
+
+
+def seed_committed_sample_chain(
+    conn: sqlite3.Connection,
+    plate_idx: int,
+    project_idx: int | None,
+    run_idx: int,
+    sample_name: str,
+    well: str,
+    *,
+    sample_type_name: str = "standard",
+    prs_name: str | None = None,
+) -> tuple[int, int]:
+    """Seed a sample chain and commit; return (input_sample_idx, prepped_sample_idx)."""
+    ins_idx, _cs_idx, prs_idx = seed_sample_chain(
+        conn,
+        plate_idx,
+        project_idx,
+        run_idx,
+        sample_name=sample_name,
+        sample_type_name=sample_type_name,
+        well=well,
+        prs_name=prs_name,
+    )
+    conn.commit()
+    return ins_idx, prs_idx
+
+
+def seed_run_with_project_lacking_qiita_id(conn: sqlite3.Connection) -> int:
+    """Seed and commit a run whose sole project "proj_no_qid" has no QiitaID.
+
+    The project is valid through its BioProject accession; returns run_idx.
+    """
+    project_idx, plate_idx, run_idx = seed_run_skeleton(
+        conn,
+        project_name="proj_no_qid",
+        external_project_id=None,
+        bioproject_accession="PRJNA001",
+    )
+    seed_committed_sample_chain(conn, plate_idx, project_idx, run_idx, "S1", "A1")
+    return run_idx
+
+
+def count_input_samples(conn: sqlite3.Connection) -> int:
+    """Return the number of input_sample rows."""
+    cur = conn.execute("SELECT COUNT(*) FROM input_sample")
+    (count,) = cur.fetchone()
+    return count
+
+
 def seed_project_and_plate(conn: sqlite3.Connection) -> tuple[int, int]:
     """Insert one project and one input_plate; return (project_idx, plate_idx)."""
     project_idx = seed_project(conn)

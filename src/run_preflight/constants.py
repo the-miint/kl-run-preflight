@@ -205,6 +205,9 @@ ProjectLookupKey = Literal["project_name", "external_project_id"]
 InputSampleLookupKey = Literal["input_sample_idx", "biosample_accession"]
 PacbioSampleLookupKey = Literal["sample_name", "pacbio_sample_idx"]
 
+# Invisible format characters stripped from a value's ends alongside whitespace
+INVISIBLE_FORMAT_CHARS = "\u200b\ufeff\u2060\u180e\x00"
+
 
 # ---------------------------------------------------------------------------
 # Sample-type strings (values in the sample_type reference table)

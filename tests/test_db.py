@@ -45,6 +45,7 @@ from run_preflight.db import (
     lookup_project_by_key,
     require_literal_member,
     sample_kind_names,
+    strip_text,
 )
 from run_preflight.legacy.api import load_legacy_csv
 from run_preflight.updates import (
@@ -69,16 +70,11 @@ def _seed_run_skeleton(
     primary_bioproject_accession: str | None = "PRJNA001",
 ) -> tuple[int, int, int]:
     """Insert one project + plate + run; return (project_idx, plate_idx, run_idx)."""
-    project_idx = _helpers.seed_project(
-        conn,
-        project_name="proj1",
-        external_project_id="1",
-        bioproject_accession=primary_bioproject_accession,
+    skeleton = _helpers.seed_run_skeleton(
+        conn, bioproject_accession=primary_bioproject_accession
     )
-    plate_idx = _helpers.seed_plate(conn, project_idx)
-    run_idx = _helpers.seed_processing_run(conn)
     conn.commit()
-    return project_idx, plate_idx, run_idx
+    return skeleton
 
 
 def _seed_illumina(
@@ -92,14 +88,14 @@ def _seed_illumina(
     sample_type_name: str = "standard",
 ) -> tuple[int, int]:
     """Seed sample chain + illumina_sample; return (input_sample_idx, ils_idx)."""
-    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+    ins_idx, prs_idx = _helpers.seed_committed_sample_chain(
         conn,
         plate_idx,
         project_idx,
         run_idx,
-        sample_name=sample_name,
+        sample_name,
+        well,
         sample_type_name=sample_type_name,
-        well=well,
     )
     ils_idx = _helpers.seed_illumina_sample(
         conn,
@@ -122,14 +118,14 @@ def _seed_pacbio(
     sample_type_name: str = "standard",
 ) -> tuple[int, int]:
     """Seed sample chain + pacbio_sample; return (input_sample_idx, ps_idx)."""
-    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+    ins_idx, prs_idx = _helpers.seed_committed_sample_chain(
         conn,
         plate_idx,
         project_idx,
         run_idx,
-        sample_name=sample_name,
+        sample_name,
+        well,
         sample_type_name=sample_type_name,
-        well=well,
     )
     ps_idx = _helpers.seed_pacbio_sample(conn, prs_idx, barcode_id=f"bc_{sample_name}")
     conn.commit()
@@ -162,14 +158,14 @@ def _seed_amplicon(
 
     amplicon_sample has no surrogate key, so its handle is prepped_sample_idx.
     """
-    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+    ins_idx, prs_idx = _helpers.seed_committed_sample_chain(
         conn,
         plate_idx,
         project_idx,
         run_idx,
-        sample_name=sample_name,
+        sample_name,
+        well,
         sample_type_name=sample_type_name,
-        well=well,
     )
     _helpers.seed_amplicon_run(conn, run_idx)
     _helpers.seed_amplicon_sample(conn, prs_idx, barcode=f"bc_{sample_name}")
@@ -206,6 +202,25 @@ class TestRequireLiteralMember(unittest.TestCase):
         unsorted_kind = Literal["zeta", "alpha"]
         with self.assertRaisesRegex(ValueError, r"supported: \['alpha', 'zeta'\]$"):
             require_literal_member("beta", unsorted_kind, "letter")
+
+
+class TestStripText(unittest.TestCase):
+    def test_strip_text(self):
+        # Whitespace and invisible format characters go from both ends,
+        # even interleaved; interior characters are kept
+        cases = {
+            " X ": "X",
+            "\tX\r\n": "X",
+            "\u00a0X\u3000": "X",
+            "\u200bX\ufeff": "X",
+            "\u2060X\u180e": "X",
+            "\x00X\x00": "X",
+            " \u200b \ufeffX \u2060 ": "X",
+            "A B\u200bC": "A B\u200bC",
+            " \u200b\t\ufeff ": "",
+        }
+        results = {value: strip_text(value) for value in cases}
+        self.assertEqual(results, cases)
 
 
 class TestLookupProjectByKey(unittest.TestCase):
@@ -857,18 +872,7 @@ class TestGetProjectsMissingExternalId(unittest.TestCase):
         # Primary plate project lacks external_project_id (row is
         # valid only because bioproject_accession is non-null)
         with open_db(self.db_path) as conn:
-            project_idx = _helpers.seed_project(
-                conn,
-                project_name="proj_no_qid",
-                external_project_id=None,
-                bioproject_accession="PRJNA001",
-            )
-            plate_idx = _helpers.seed_plate(conn, project_idx)
-            run_idx = _helpers.seed_processing_run(conn)
-            _helpers.seed_sample_chain(
-                conn, plate_idx, project_idx, run_idx, sample_name="S1"
-            )
-            conn.commit()
+            run_idx = _helpers.seed_run_with_project_lacking_qiita_id(conn)
             missing = get_projects_missing_external_id(conn, run_idx)
         self.assertEqual(missing, ["proj_no_qid"])
 

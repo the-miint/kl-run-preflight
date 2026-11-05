@@ -276,6 +276,21 @@ until the first release is tagged.
 - A legacy sheet that names the same `[Bioinformatics]` project in more
   than one row fails validation, naming the repeated project.
 
+- The update setters strip surrounding whitespace and invisible format
+  characters, such as the zero-width space and byte-order mark, from values,
+  lookup keys, and `reason`, and reject a string left empty. Legacy CSV and
+  amplicon prep-template cells, and a KatharoSeq `rack_id`, are stripped
+  with the same characters, and both legacy loaders skip lines left blank;
+  a blank `rack_id` is stored as None.
+- **Breaking:** a non-str value, key, or `reason` passed to an update setter,
+  including the deprecated aliases, now raises `TypeError`; pass integers
+  such as Qiita study IDs as strings.
+- **Breaking:** `set_prepped_sample_do_not_use` accepts only `True` or
+  `None`, and `set_input_sample_do_not_use` only `True` or `False`; an
+  integer such as `1` or `0`, previously accepted, now raises `ValueError`.
+- `add_katharoseq_sample` raises `ValueError` when given neither
+  `number_of_cells` nor `rack_id`.
+
 - **Schema patches run with foreign-key enforcement suspended**, so a patch
   can rebuild a table that other tables reference. A patch that introduces a
   foreign-key violation is rolled back with `sqlite3.IntegrityError`;
@@ -502,6 +517,11 @@ until the first release is tagged.
   the detached-load change. The alias delegates, so behaviour is identical.
 
 ### Fixed
+
+- `set_prepped_sample_do_not_use` no longer stores an explicit "not flagged"
+  value for `0`; `update_lane` rejects a lane that is not a positive integer;
+  and `set_illumina_run_setting` raises `ValueError` on a run with no
+  Illumina settings row.
 
 - The sample-info readers no longer report the plate's primary project's
   BioProject accession for a non-control sample whose own project is not the

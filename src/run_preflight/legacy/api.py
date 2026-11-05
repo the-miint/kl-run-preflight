@@ -21,6 +21,7 @@ from ..db import (
     get_section_formats,
     get_single_run_idx,
     populate_db,
+    strip_text,
 )
 from ..file_io import atomic_write, load_db_bytes, save_db_file
 from .parser import parse_amplicon_prep, parse_omnibus_text, read_omnibus_text
@@ -31,7 +32,7 @@ from .validate import validate_sections
 def _has_section_labels(text: str) -> bool:
     """True if the sheet's first non-blank line is a [Section] label."""
     for line in text.splitlines():
-        stripped = line.strip()
+        stripped = strip_text(line)
         if stripped:
             return stripped.startswith("[")
     return False
