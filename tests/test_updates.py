@@ -21,10 +21,12 @@ from run_preflight.constants import (
     TABLE_PROJECT,
     InputSampleIdentifierKind,
     ProjectIdentifierKind,
+    ProjectLookupKey,
 )
 from run_preflight.db import create_db
 from run_preflight.updates import (
     UNCHANGED,
+    _require_exactly_one_key,
     _set_illumina_run_column,
     set_bioproject_accession,
     set_biosample_accession,
@@ -144,9 +146,8 @@ def _read_change_log(conn: sqlite3.Connection) -> list[tuple]:
 class _IdentifierSetterTestBase(_UpdatesTestBase):
     """Shared checks for a setter that writes one identifier column per call.
 
-    Subclasses name the table, its primary key, the setter, and the setter's
-    identifier kinds; *key* arguments below are the setter's row-lookup
-    keyword arguments.
+    Subclasses set the class attributes declared below; *key* arguments
+    below are the setter's row-lookup keyword arguments.
     """
 
     _TABLE: str
@@ -419,7 +420,10 @@ class TestSetProjectIdentifier(_IdentifierSetterTestBase):
     def test_set_project_identifier_no_key(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Exactly one"),
+            pytest.raises(
+                ValueError,
+                match="^Exactly one of project_name or external_project_id must be supplied$",  # noqa: E501
+            ),
         ):
             set_project_identifier(conn, "bioproject_accession", "PRJNA005")
 
@@ -751,8 +755,8 @@ class TestSetIlluminaSettings(_UpdatesTestBase):
 class _IdentityCheckTestBase(_UpdatesTestBase):
     """Insert and read back rows of one table that vary in identity columns.
 
-    Subclasses name the table, its primary key, and its identity columns,
-    and supply the remaining NOT NULL values a new row needs.
+    Subclasses set the class attributes declared below and supply the
+    remaining NOT NULL values a new row needs.
     """
 
     _TABLE: str
@@ -1072,7 +1076,10 @@ class TestSetInputSampleDoNotUse(_UpdatesTestBase):
         # Neither key supplied
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Exactly one of"),
+            pytest.raises(
+                ValueError,
+                match="^Exactly one of input_sample_idx or biosample_accession must be supplied$",  # noqa: E501
+            ),
         ):
             set_input_sample_do_not_use(conn)
 
@@ -1295,14 +1302,17 @@ class TestSetPacbioSampleRunDetails(_UpdatesTestBase):
 
     def test_set_pacbio_sample_run_details_requires_one_identifier(self):
         ps_idx = self._seed_one()
+        expected_msg = (
+            "^Exactly one of sample_name or pacbio_sample_idx must be supplied$"
+        )
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Exactly one of sample_name"),
+            pytest.raises(ValueError, match=expected_msg),
         ):
             set_pacbio_sample_run_details(conn, movie_context_id="m84")
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="Exactly one of sample_name"),
+            pytest.raises(ValueError, match=expected_msg),
         ):
             set_pacbio_sample_run_details(
                 conn,
@@ -1358,3 +1368,25 @@ class TestSetPacbioSampleRunDetails(_UpdatesTestBase):
                 ("pacbio_sample", ps_idx, "movie_context_id", None, "m84", "loaded"),
             ],
         )
+
+
+class TestRequireExactlyOneKey(unittest.TestCase):
+    def test__require_exactly_one_key(self):
+        # The sole supplied pair is returned
+        result = _require_exactly_one_key(
+            (("project_name", None), ("external_project_id", "1111")),
+            ProjectLookupKey,
+            "project lookup key",
+        )
+        self.assertEqual(result, ("external_project_id", "1111"))
+
+    def test__require_exactly_one_key_raise_key_err(self):
+        # A supplied column outside the lookup-key Literal is rejected
+        with pytest.raises(
+            ValueError, match="^Unsupported project lookup key 'contact_email'"
+        ):
+            _require_exactly_one_key(
+                (("project_name", None), ("contact_email", "x")),
+                ProjectLookupKey,
+                "project lookup key",
+            )

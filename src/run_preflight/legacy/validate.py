@@ -168,9 +168,9 @@ def validate_sections(conn, sections: dict) -> list[str]:
 
 
 def _check_qiita_ids(section_name: str, rows: list[dict]) -> list[str]:
-    """Report empty QiitaID cells and QiitaIDs shared by several projects.
+    """Report empty QiitaID cells, repeated projects, and shared QiitaIDs.
 
-    Each shared QiitaID is reported with every project using it.
+    Each shared QiitaID is reported with every distinct project using it.
     """
     # Report any empty QiitaID cell
     errors: list[str] = []
@@ -180,13 +180,27 @@ def _check_qiita_ids(section_name: str, rows: list[dict]) -> list[str]:
             "empty; every project requires a non-empty value"
         )
 
-    # Group project names by QiitaID, in sheet order
-    projects_by_qiita_id: dict[str, list[str]] = {}
+    # Report each non-empty project name used in more than one row
+    row_project_names = [row.get(COL_SAMPLE_PROJECT) for row in rows]
+    repeated_projects = [
+        name
+        for position, name in enumerate(row_project_names)
+        if name and name in row_project_names[:position]
+    ]
+    for name in dict.fromkeys(repeated_projects):
+        errors.append(
+            f"[{section_name}] {COL_SAMPLE_PROJECT} {name!r} appears in more "
+            "than one row; every project requires exactly one"
+        )
+
+    # Group distinct project names by QiitaID, in sheet order
+    projects_by_qiita_id: dict[str, list[str | None]] = {}
     for row in rows:
         qiita_id = row.get(COL_QIITA_ID)
-        if qiita_id:
-            prior_projects = projects_by_qiita_id.get(qiita_id, [])
-            projects_by_qiita_id[qiita_id] = [*prior_projects, row[COL_SAMPLE_PROJECT]]
+        project_name = row.get(COL_SAMPLE_PROJECT)
+        prior_projects = projects_by_qiita_id.get(qiita_id, [])
+        if qiita_id and project_name not in prior_projects:
+            projects_by_qiita_id[qiita_id] = [*prior_projects, project_name]
 
     # Report each QiitaID used by more than one project
     for qiita_id, project_names in projects_by_qiita_id.items():

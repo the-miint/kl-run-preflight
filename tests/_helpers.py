@@ -29,16 +29,13 @@ LEGACY_DATA_DIR = _DATA_DIR / "legacy"
 NATIVE_DATA_DIR = _DATA_DIR / "native"
 GOOD_LEGACY_GLOB = "good_*"
 NATIVE_SNAPSHOT_SUFFIX = ".generated_snapshot.json"
+SQL_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
 
-# Content-derived fact tokens marking populated post-preflight data. A true
-# preflight (loaded from most legacy CSVs) carries none of these and so has a
-# bare filename; a fixture that adds a class of data carries the matching
-# token(s) as a dot-delimited suffix, letting a consumer pick a fixture that
-# already satisfies the stage their code needs. Facts are independent because
-# sequencing placement is platform-specific (Illumina Lane is present at
-# preflight; PacBio placement appears only post-flight) and can arrive
-# separately from NCBI accessions.
-FACT_ACCESSIONED = "accessioned"
+# Fixture-naming tokens for content-derived facts; see native_stem for how
+# they form a filename. Facts are independent because sequencing placement is
+# platform-specific (Illumina Lane is present at preflight; PacBio placement
+# appears only post-flight) and can arrive separately from public identifiers.
+FACT_PUBLIC_IDS = "accessioned"
 FACT_PLACED = "placed"
 
 
@@ -190,13 +187,12 @@ def derive_native_facts(conn: sqlite3.Connection) -> list[str]:
     """Return the sorted content-derived fact tokens for a native DB.
 
     Each fact get_preflight_data_facts reports as true maps to one
-    fixture-naming token: has_public_ids to FACT_ACCESSIONED and
-    has_pacbio_placement to FACT_PLACED.
+    fixture-naming token.
     """
     data_facts = get_preflight_data_facts(conn)
     tokens: list[str] = []
     if data_facts.has_public_ids:
-        tokens.append(FACT_ACCESSIONED)
+        tokens.append(FACT_PUBLIC_IDS)
     if data_facts.has_pacbio_placement:
         tokens.append(FACT_PLACED)
     return sorted(tokens)

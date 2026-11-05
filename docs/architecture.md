@@ -338,10 +338,9 @@ carry the same `user_version`, which keeps the two paths from diverging.
 
 Each patch runs in its own transaction with foreign-key enforcement
 suspended, because changing a column constraint in SQLite means rebuilding
-the table, and a table that others reference cannot be dropped while
-enforcement is on. Referential integrity is still guaranteed: the runner
-rolls back a patch that introduces a foreign-key violation, and restores the
-connection's foreign-key and legacy ALTER TABLE settings afterward.
+the table, and a table cannot be dropped while enforcement is on and other
+tables' rows reference it. The runner's referential-integrity and
+connection-setting guarantees are stated on `apply_patches`.
 
 ### Why custom migration code instead of an existing tool
 

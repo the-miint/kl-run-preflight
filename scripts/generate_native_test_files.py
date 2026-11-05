@@ -87,7 +87,7 @@ def _build_legacy(csv_path: Path, tmp_dir: Path) -> tuple[Path, str]:
 
 
 def _build_accessioned_pacbio(tmp_dir: Path) -> tuple[Path, str]:
-    # Load a PacBio legacy CSV, then set an accession on every project and sample
+    # Load a PacBio legacy CSV, then seed its accessions
     src = LEGACY_DATA_DIR / _ACCESSIONED_PACBIO_SOURCE
     temp_db = tmp_dir / "accessioned_pacbio.tmp.sqlite"
     migrate_legacy_csv_to_db_file(str(src), str(temp_db))

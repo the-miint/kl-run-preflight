@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 import warnings
-from typing import Literal
+from typing import Literal, get_args
 
 from .constants import (
     DB_COL_BIOSAMPLE_ACCESSION,
@@ -26,8 +26,11 @@ from .constants import (
     DB_COL_SAMPLE_NAME,
     DB_COL_SMRT_CELL_WELL_SAMPLE_ID,
     InputSampleIdentifierKind,
+    InputSampleLookupKey,
+    PacbioSampleLookupKey,
     PlatformSpecificSampleKind,
     ProjectIdentifierKind,
+    ProjectLookupKey,
     TABLE_CHANGE_LOG,
     TABLE_ILLUMINA_RUN,
     TABLE_INPUT_SAMPLE,
@@ -89,17 +92,25 @@ def _require_nonempty(value: str, param_name: str) -> str:
 
 def _require_exactly_one_key(
     pairs: tuple[tuple[str, object], ...],
-    description: str,
+    key_literal: object,
+    label: str,
 ) -> tuple[str, object]:
     """Return the sole (column, value) in *pairs* whose value is not None.
 
-    *description* names the candidate keys for the error message. Raises
-    ValueError unless exactly one value is non-None.
+    *key_literal* is the Literal of lookup-key columns the caller accepts,
+    and *label* names it in error messages. Raises ValueError unless
+    exactly one value is non-None and its column is a *key_literal* member.
     """
+    # Require exactly one supplied key, named in the Literal's order
     supplied = [(col, val) for col, val in pairs if val is not None]
     if len(supplied) != 1:
+        description = " or ".join(get_args(key_literal))
         raise ValueError(f"Exactly one of {description} must be supplied")
-    return supplied[0]
+    key_col, key_value = supplied[0]
+
+    # Reject a key column outside the Literal
+    require_literal_member(key_col, key_literal, label)
+    return key_col, key_value
 
 
 def _require_unique_match(
@@ -293,7 +304,8 @@ def set_project_identifier(
             (DB_COL_PROJECT_NAME, project_name),
             (DB_COL_EXTERNAL_PROJECT_ID, external_project_id),
         ),
-        "project_name or external_project_id",
+        ProjectLookupKey,
+        "project lookup key",
     )
     _require_nonempty(key_value, key_col)
 
@@ -574,7 +586,8 @@ def set_input_sample_do_not_use(
             (DB_COL_INPUT_SAMPLE_IDX, input_sample_idx),
             (DB_COL_BIOSAMPLE_ACCESSION, biosample_accession),
         ),
-        "input_sample_idx or biosample_accession",
+        InputSampleLookupKey,
+        "input_sample lookup key",
     )
     if key_col == DB_COL_BIOSAMPLE_ACCESSION:
         _require_nonempty(biosample_accession, "biosample_accession")
@@ -708,7 +721,8 @@ def set_pacbio_sample_run_details(
             (DB_COL_PACBIO_SAMPLE_IDX, pacbio_sample_idx),
             (DB_COL_SAMPLE_NAME, sample_name),
         ),
-        "sample_name or pacbio_sample_idx",
+        PacbioSampleLookupKey,
+        "pacbio_sample lookup key",
     )
 
     # Collect the supplied fields (UNCHANGED means leave alone); a supplied

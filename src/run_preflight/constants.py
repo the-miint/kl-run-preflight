@@ -199,6 +199,12 @@ InputSampleIdentifierKind = Literal[
     "biosample_accession", "biosample_export_entity_id", "matrix_tube_id"
 ]
 
+# Alternative lookup keys a setter accepts, of which a caller supplies exactly
+# one; each member is the lookup key's name.
+ProjectLookupKey = Literal["project_name", "external_project_id"]
+InputSampleLookupKey = Literal["input_sample_idx", "biosample_accession"]
+PacbioSampleLookupKey = Literal["sample_name", "pacbio_sample_idx"]
+
 
 # ---------------------------------------------------------------------------
 # Sample-type strings (values in the sample_type reference table)

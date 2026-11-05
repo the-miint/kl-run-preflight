@@ -469,8 +469,7 @@ CREATE TABLE legacy_extra_column (
 -- Core Domain Tables
 -- ============================================================
 
--- A project is identified by any non-empty combination of external_project_id,
--- bioproject_accession, and study_export_entity_id
+-- A project must have at least one non-NULL identifier (see the CHECK)
 CREATE TABLE project (
     project_idx                      INTEGER PRIMARY KEY AUTOINCREMENT,
     project_name                    TEXT NOT NULL UNIQUE,
@@ -504,8 +503,7 @@ CREATE TABLE input_plate (
         -- crossing axis rather than a finer one.
 );
 
--- A sample is identified by any non-empty combination of sample_name,
--- biosample_accession, biosample_export_entity_id, and matrix_tube_id
+-- A sample must have at least one non-NULL identifier (see the CHECK)
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_name         TEXT,

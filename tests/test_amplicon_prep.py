@@ -20,13 +20,13 @@ DATA_DIR = Path(__file__).parent / "data" / "legacy"
 # free-form (studies vary the column set/order); study identifiers are scrubbed.
 # Named by what each exercises; one per distinct scenario across the three formats.
 AMPLICON_FIXTURES = (
-    "good_amplicon_v1.txt",                  # v1 wide + control_description
-    "good_amplicon_v1_katharoseq.txt",       # v1 + katharoseq controls
-    "good_amplicon_v2.txt",                  # v2 narrow (well_id)
-    "good_amplicon_v2_katharoseq.txt",       # v2 + katharoseq controls
-    "good_amplicon_v2_multi_project.txt",    # v2 spanning several projects
-    "good_amplicon_v3.txt",                  # v3 wide without control_description
-    "good_amplicon_v3_extra_columns.txt",    # v3 + unrecognized columns (verbatim)
+    "good_amplicon_v1.txt",  # v1 wide + control_description
+    "good_amplicon_v1_katharoseq.txt",  # v1 + katharoseq controls
+    "good_amplicon_v2.txt",  # v2 narrow (well_id)
+    "good_amplicon_v2_katharoseq.txt",  # v2 + katharoseq controls
+    "good_amplicon_v2_multi_project.txt",  # v2 spanning several projects
+    "good_amplicon_v3.txt",  # v3 wide without control_description
+    "good_amplicon_v3_extra_columns.txt",  # v3 + unrecognized columns (verbatim)
 )
 
 

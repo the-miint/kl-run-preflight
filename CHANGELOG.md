@@ -20,8 +20,7 @@ until the first release is tagged.
   `input_sample.biosample_export_entity_id`, not unique, since one biosample
   can appear as several input samples. Both are nullable, so existing
   preflights load with them unset. Either one now satisfies its table's
-  identity CHECK, as does `input_sample.matrix_tube_id`, so a preflight need
-  not carry NCBI accessions to identify its studies and samples.
+  identity CHECK, as does `input_sample.matrix_tube_id`.
 
 - **`set_input_sample_identifier` and `set_project_identifier` set any one
   identifier** on an existing preflight, named by `identifier_kind`:
@@ -238,9 +237,8 @@ until the first release is tagged.
   snapshot and a fresh load of its source CSV.
 - Content-derived fact suffixes for native fixtures: each committed `.sqlite`
   carries a filename suffix for each fact its contents hold, guarded against
-  drift. `.accessioned` marks a fixture in which every sample and each of its
-  projects carries an identifier, so the sample-info readers return its rows
-  rather than raising; a fixture with no such fact keeps the bare source stem.
+  drift. `.accessioned` marks a fixture whose `has_public_ids` fact is true;
+  a fixture with no such fact keeps the bare source stem.
   Includes an accessioned PacBio fixture that reads cleanly through
   `get_pacbio_sample_info`.
 
@@ -274,6 +272,9 @@ until the first release is tagged.
   `study_export_entity_id` in rejecting a value already held by another
   project in the same preflight. A legacy sheet that gives two projects the
   same QiitaID fails validation, naming the projects that share it.
+
+- A legacy sheet that names the same `[Bioinformatics]` project in more
+  than one row fails validation, naming the repeated project.
 
 - **Schema patches run with foreign-key enforcement suspended**, so a patch
   can rebuild a table that other tables reference. A patch that introduces a
@@ -490,10 +491,10 @@ until the first release is tagged.
 - `set_biosample_accession` and `set_bioproject_accession` are thin aliases
   for `set_input_sample_identifier` and `set_project_identifier` and emit a
   `DeprecationWarning`. Their signatures are unchanged and they delegate, so
-  behaviour is identical with two exceptions: an empty value is reported as
-  `value` rather than `accession`, and `set_bioproject_accession` treats an
-  empty-string project key as supplied, so it is rejected by name rather
-  than skipped in favour of the other key.
+  behaviour is identical except that some error messages differ, and that
+  `set_bioproject_accession` treats an empty-string project key as supplied,
+  so passing it alongside the other key is rejected as supplying both rather
+  than falling back to the other key.
 
 - `open_file` is now a thin alias for `load_file` and emits a
   `DeprecationWarning`. Every read entry point is named `load_*`, and `open`

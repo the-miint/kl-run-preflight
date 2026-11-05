@@ -16,8 +16,6 @@ from typing import NamedTuple, get_args
 from .legacy import LegacyExtraColumnWarning
 from .migrate import get_latest_version
 from .constants import (
-    DB_COL_EXTERNAL_PROJECT_ID,
-    DB_COL_PROJECT_NAME,
     EMP_515F_PRIMER,
     COL_AMPLICON_BARCODE,
     COL_AMPLICON_LINKER,
@@ -87,6 +85,7 @@ from .constants import (
     InputSampleIdentifierKind,
     PlatformSpecificSampleKind,
     ProjectIdentifierKind,
+    ProjectLookupKey,
     SAMPLE_TYPE_STANDARD,
     SECTION_BIOINFORMATICS,
     SECTION_CONTACT,
@@ -609,7 +608,7 @@ def require_literal_member(value: str, literal_type: object, label: str) -> None
     """
     members = get_args(literal_type)
     if value not in members:
-        raise ValueError(f"Unsupported {label} {value!r}; supported: {list(members)}")
+        raise ValueError(f"Unsupported {label} {value!r}; supported: {sorted(members)}")
 
 
 def _do_not_use_filter(include_do_not_use: bool, alias: str = "") -> str:
@@ -674,12 +673,14 @@ def get_input_sample_project_info(
 
 
 def lookup_project_by_key(
-    cur, key_col: str, key_value: str, identifier_kind: ProjectIdentifierKind
+    cur,
+    key_col: ProjectLookupKey,
+    key_value: str,
+    identifier_kind: ProjectIdentifierKind,
 ) -> tuple[int, str | None] | None:
     """Return (project_idx, <identifier_kind>) for the project where key_col = key_value.
 
-    *key_col* must be "project_name" or "external_project_id"; both are
-    unique, so at most one project matches.
+    Each lookup key is unique, so at most one project matches.
 
     Args:
         cur: An open SQLite cursor.
@@ -696,8 +697,7 @@ def lookup_project_by_key(
             *identifier_kind* is not a project identifier.
     """
     # Both names are interpolated into SQL, so each must be a known column
-    if key_col not in (DB_COL_PROJECT_NAME, DB_COL_EXTERNAL_PROJECT_ID):
-        raise ValueError(f"Unsupported key_col {key_col!r}")
+    require_literal_member(key_col, ProjectLookupKey, "project lookup key")
     require_literal_member(identifier_kind, ProjectIdentifierKind, "project identifier")
     cur.execute(
         f"SELECT project_idx, {identifier_kind} FROM project WHERE {key_col} = ?",
@@ -853,7 +853,7 @@ class BiosampleIdentifiers(NamedTuple):
 
 
 class ProjectIdentifiers(NamedTuple):
-    """Every external identifier of one project (study); None where absent."""
+    """External identifiers of one project (study); None where absent."""
 
     bioproject_accession: str | None
     ena_study_accession: str | None
@@ -1040,8 +1040,11 @@ def _get_platform_specific_sample_info(
     is True.
 
     Raises:
-        ValueError: If the control / project_idx pairing is violated on any
-            row, raised before any identifier is checked.
+        ValueError: If the database does not hold exactly one processing
+            run; if the control / project_idx pairing is violated on any
+            row, raised before any identifier is checked; or if any sample's
+            biosample, primary project, or secondary project carries none of
+            its identifiers.
     """
     names = row_cls.source_names()
     run_idx = get_single_run_idx(conn)
@@ -1144,9 +1147,6 @@ def get_amplicon_sample_info(
 ) -> list[PlatformSampleInfo]:
     """Return each amplicon_sample's identifiers and amplicon row; see shared helper.
 
-    kind_row is an AmpliconSampleRow carrying the sample's Golay barcode and
-    barcodes_are_rc (all a golay-demux roster needs), and samples are keyed and
-    ordered by prepped_sample_idx (amplicon_sample has no surrogate key).
     Raises ``ValueError`` if any sample's biosample, primary project, or
     secondary project carries none of its identifiers.
     """

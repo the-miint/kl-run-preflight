@@ -14,6 +14,8 @@ from run_preflight.db import create_db
 from run_preflight.file_io import load_db_file
 from run_preflight.legacy.api import load_file
 from run_preflight.migrate import (
+    _PATCHES_DIR,
+    _discover_patches,
     SchemaVersionTooNewError,
     apply_patches,
     get_latest_version,
@@ -23,7 +25,6 @@ from run_preflight.migrate import (
 
 from . import _helpers
 
-_SQL_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
 _EXPORT_ENTITY_ID_PATCH_NUM = 3
 
 
@@ -52,15 +53,17 @@ def _build_populated_db_before_patch(
     # Stage only the shipped patches that precede patch_num
     earlier_dir = tmp_path / "earlier_patches"
     earlier_dir.mkdir()
-    for patch_path in (_SQL_DIR / "patches").glob("[0-9][0-9][0-9]_*"):
-        if int(patch_path.name[:3]) < patch_num:
+    shipped_patches = _discover_patches(_PATCHES_DIR)
+    for shipped_num, patch_path in shipped_patches.items():
+        if shipped_num < patch_num:
             shutil.copy(patch_path, earlier_dir / patch_path.name)
 
     # Bring the frozen baseline forward to just before patch_num
     conn = sqlite3.connect(IN_MEMORY_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript((_SQL_DIR / "schema_v0.sql").read_text())
+    conn.executescript((_helpers.SQL_DIR / "schema_v0.sql").read_text())
     apply_patches(conn, earlier_dir)
+    assert get_schema_version(conn) == patch_num - 1
 
     # Seed a minimal sample chain that references both rebuilt tables
     project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
@@ -216,6 +219,36 @@ class TestApplyPatches:
         assert col_names == ["id", "label"]
         assert result == 2
         assert get_schema_version(conn) == 2
+
+    @pytest.mark.parametrize("foreign_keys", ["ON", "OFF"])
+    def test_apply_patches_open_transaction_raise_err(self, tmp_path, foreign_keys):
+        """An open transaction raises before any patch runs, whatever FK setting."""
+        (tmp_path / "001_unrelated.sql").write_text("CREATE TABLE unrelated (id INT);")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute(f"PRAGMA foreign_keys = {foreign_keys}")
+        conn.execute("CREATE TABLE held (id INT)")
+        # Leave an uncommitted write so the connection holds a transaction
+        conn.execute("BEGIN")
+        conn.execute("INSERT INTO held VALUES (1)")
+        with pytest.raises(RuntimeError, match="open transaction"):
+            apply_patches(conn, tmp_path)
+        # The caller's pending write must not have been committed
+        conn.rollback()
+        held_rows = _fetch_all(conn, "SELECT id FROM held")
+        assert (get_schema_version(conn), held_rows) == (0, [])
+
+    def test_apply_patches_already_current_in_open_transaction(self, tmp_path):
+        """A current DB returns its version even with a transaction open."""
+        (tmp_path / "001_a.sql").write_text("CREATE TABLE t (id INT);")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute("PRAGMA user_version = 1")
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("CREATE TABLE held (id INT)")
+        # Leave an uncommitted write so the connection holds a transaction
+        conn.execute("BEGIN")
+        conn.execute("INSERT INTO held VALUES (1)")
+        result = apply_patches(conn, tmp_path)
+        assert (result, conn.in_transaction) == (1, True)
 
     def test_apply_patches_already_current(self, tmp_path):
         """No-op when DB is already at latest version."""

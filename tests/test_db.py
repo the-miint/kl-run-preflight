@@ -9,7 +9,7 @@ import unittest
 
 from pathlib import Path
 
-from typing import get_args
+from typing import Literal, get_args
 
 from run_preflight.constants import (
     EMP_515F_PRIMER,
@@ -42,6 +42,7 @@ from run_preflight.db import (
     get_projects_missing_external_id,
     get_run_projects,
     get_view_columns,
+    lookup_project_by_key,
     require_literal_member,
     sample_kind_names,
 )
@@ -200,6 +201,30 @@ class TestRequireLiteralMember(unittest.TestCase):
                 "nanopore", PlatformSpecificSampleKind, "sample kind"
             )
 
+    def test_require_literal_member_sorts_members(self):
+        # Members are listed sorted, whatever their declaration order
+        unsorted_kind = Literal["zeta", "alpha"]
+        with self.assertRaisesRegex(ValueError, r"supported: \['alpha', 'zeta'\]$"):
+            require_literal_member("beta", unsorted_kind, "letter")
+
+
+class TestLookupProjectByKey(unittest.TestCase):
+    def test_lookup_project_by_key_raise_key_err(self):
+        # A key outside ProjectLookupKey is rejected before any SQL runs
+        conn = create_db(IN_MEMORY_PATH)
+        try:
+            with self.assertRaisesRegex(
+                ValueError, r"^Unsupported project lookup key 'contact_email'"
+            ):
+                lookup_project_by_key(
+                    conn.cursor(),
+                    "contact_email",  # type: ignore[arg-type]
+                    "x",
+                    "bioproject_accession",
+                )
+        finally:
+            conn.close()
+
 
 class TestCreateDb(unittest.TestCase):
     def setUp(self):
@@ -269,8 +294,7 @@ class TestGetPreflightDataFacts(unittest.TestCase):
         return facts
 
     def test_get_preflight_data_facts(self):
-        # has_public_ids needs a run with samples, every non-do-not-use sample
-        # and its projects identified, and counts a matrix tube ID
+        # Cover each condition of has_public_ids
         cases = {
             "complete": ("PRJNA001", [("biosample_accession", "SAMN1", False)]),
             "tube_id_counts": (

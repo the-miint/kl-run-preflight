@@ -94,7 +94,10 @@ class TestKatharoseq(unittest.TestCase):
             proj = seed_project(conn, bioproject_accession="PRJNA1")
             plate = seed_plate(conn, proj)
             ins = seed_input_sample(
-                conn, plate, None, sample_name="kath1",
+                conn,
+                plate,
+                None,
+                sample_name="kath1",
                 sample_type_name="katharoseq_cells_positive_control",
             )
             add_katharoseq_sample(conn, ins, number_of_cells=7000, rack_id="R1")
