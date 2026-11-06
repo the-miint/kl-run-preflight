@@ -521,6 +521,9 @@ CREATE TABLE input_plate (
 
 -- A sample must have at least one non-NULL identifier (see the first CHECK)
 -- Each identity value's CHECK follows the rule explained above project
+-- Biosample public IDs (biosample_accession, matrix_tube_id,
+-- biosample_export_entity_id) are not unique, since one biosample can appear
+-- as several input_samples
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_name         TEXT,
@@ -537,8 +540,7 @@ CREATE TABLE input_sample (
         -- physical matrix/tube barcode, nullable; the amplicon prep template's
         -- TubeCode. Per-sample, so it lives here rather than on katharoseq_sample.
     biosample_export_entity_id TEXT,
-        -- Qiita-MIINT export entity ID of the biosample; not unique, since one
-        -- biosample can appear as several input_samples
+        -- Qiita-MIINT export entity ID of the biosample
     CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL
            OR biosample_export_entity_id IS NOT NULL OR matrix_tube_id IS NOT NULL),
     CHECK (sample_name IS NULL OR (sample_name = trim(sample_name, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))

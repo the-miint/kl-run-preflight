@@ -18,8 +18,8 @@ until the first release is tagged.
 - **Identity values must be clean** (schema patch `004`): a CHECK on each
   identity column of `project` and `input_sample` rejects a value that is
   empty or has surrounding whitespace or invisible format characters. A
-  preflight already holding such a value fails to load, naming each
-  offending row.
+  preflight already holding such a value fails to load, naming the first 20
+  offending values and counting the rest.
 
 - **Projects and input samples carry a Qiita-MIINT export entity ID** (schema
   patch `003`): `project.study_export_entity_id`, unique, and
@@ -263,7 +263,7 @@ until the first release is tagged.
   `biosample_accession`, `primary_bioproject_accession`, and
   `secondary_bioproject_accessions` with `biosample` (a
   `BiosampleIdentifiers`), `primary_project` (a `ProjectIdentifiers`), and
-  `secondary_projects` (a list of `ProjectIdentifiers`, one per project,
+  `secondary_projects` (a tuple of `ProjectIdentifiers`, one per project,
   ordered by project name rather than by accession). The record fields are
   `biosample_accession`, `ena_sample_accession`, `export_entity_id`, and
   `matrix_tube_id`, and `bioproject_accession`, `ena_study_accession`, and

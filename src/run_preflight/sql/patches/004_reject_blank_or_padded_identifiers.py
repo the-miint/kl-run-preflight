@@ -1,10 +1,11 @@
 """Patch 004: reject blank or padded identity values.
 
-Fails, naming each offending row, if any identity value is empty or has
-surrounding whitespace or invisible format characters. Otherwise rebuilds
-project and input_sample with a CHECK holding each identity column to that
-rule. The character set is written out here, not imported, so this patch
-behaves the same however the package's constants later change.
+Fails, naming the offending values (the first 20, then a count), if any
+identity value is empty or has surrounding whitespace or invisible format
+characters. Otherwise rebuilds project and input_sample with a CHECK holding
+each identity column to that rule. The character set is written out here,
+not imported, so this patch behaves the same however the package's constants
+later change.
 """
 
 import sqlite3

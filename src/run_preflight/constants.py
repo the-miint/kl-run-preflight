@@ -265,6 +265,7 @@ TABLE_PROJECT = "project"
 TABLE_CHANGE_LOG = "change_log"
 
 # Columns mutated by UPDATE statements
+DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
 DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
 DB_COL_LANE = "lane"
 DB_COL_MASK_SHORT_READS = "mask_short_reads"

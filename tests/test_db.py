@@ -668,7 +668,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                     "standard",
                     BiosampleIdentifiers(None, None, "QB1", None),
                     ProjectIdentifiers(None, None, "QS1"),
-                    [],
+                    (),
                     _expected_illumina_row("S1"),
                 )
             ],
@@ -678,7 +678,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                     "standard",
                     BiosampleIdentifiers(None, None, None, "0363132553"),
                     ProjectIdentifiers("PRJNA001", None, None),
-                    [],
+                    (),
                     _expected_illumina_row("S1"),
                 )
             ],
@@ -721,7 +721,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 "extraction_blank",
                 BiosampleIdentifiers("SAMN_BLK", None, None, None),
                 ProjectIdentifiers("PRJNA001", None, None),
-                [ProjectIdentifiers(None, None, "QS2")],
+                (ProjectIdentifiers(None, None, "QS2"),),
                 _expected_illumina_row("blank1"),
             )
         ]

@@ -14,6 +14,7 @@ import warnings
 from typing import Literal, get_args
 
 from .constants import (
+    DB_COL_BIOPROJECT_ACCESSION,
     DB_COL_BIOSAMPLE_ACCESSION,
     DB_COL_DO_NOT_USE,
     DB_COL_EXTERNAL_PROJECT_ID,
@@ -358,7 +359,7 @@ def set_biosample_accession(
     )
     set_input_sample_identifier(
         conn,
-        "biosample_accession",
+        DB_COL_BIOSAMPLE_ACCESSION,
         accession,
         sample_name=sample_name,
         reason=reason,
@@ -546,7 +547,7 @@ def set_bioproject_accession(
     )
     set_project_identifier(
         conn,
-        "bioproject_accession",
+        DB_COL_BIOPROJECT_ACCESSION,
         accession,
         project_name=project_name,
         external_project_id=external_project_id,

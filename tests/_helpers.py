@@ -267,10 +267,10 @@ def expected_accession_only_info(
     """Build the reader row for a sample whose only identifiers are accessions."""
     biosample = BiosampleIdentifiers(biosample_accession, None, None, None)
     primary_project = ProjectIdentifiers(primary_bioproject_accession, None, None)
-    secondary_projects = [
+    secondary_projects = tuple(
         ProjectIdentifiers(accession, None, None)
         for accession in secondary_bioproject_accessions
-    ]
+    )
     info = PlatformSampleInfo(
         sample_idx,
         sample_type,

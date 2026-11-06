@@ -899,7 +899,7 @@ class PlatformSampleInfo(NamedTuple):
     sample_type: str
     biosample: BiosampleIdentifiers
     primary_project: ProjectIdentifiers
-    secondary_projects: list[ProjectIdentifiers]
+    secondary_projects: tuple[ProjectIdentifiers, ...]
     kind_row: IlluminaSampleRow | PacbioSampleRow | AmpliconSampleRow
 
 
@@ -934,7 +934,7 @@ class _SampleIdentity(NamedTuple):
     own_project_idx: int | None
     biosample: BiosampleIdentifiers
     primary_project: ProjectIdentifiers
-    secondary_projects: list[ProjectIdentifiers]
+    secondary_projects: tuple[ProjectIdentifiers, ...]
 
 
 def _fetch_sample_identities(
@@ -1016,12 +1016,12 @@ def _fetch_sample_identities(
         )
 
         # Each row with a secondary project contributes one project record
-        secondary_projects = [
+        secondary_projects = tuple(
             ProjectIdentifiers(bioproject, None, export_id)  # same-pattern-ok: one-line
             # record build; a shared helper would obscure it
             for *_, project_idx, bioproject, export_id in group_rows
             if project_idx is not None
-        ]
+        )
 
         identities[prepped_sample_idx] = _SampleIdentity(
             sample_type, own_project_idx, biosample, primary_project, secondary_projects

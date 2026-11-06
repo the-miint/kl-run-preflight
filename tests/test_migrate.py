@@ -517,8 +517,8 @@ class TestTableRebuildPatches:
         conn.close()
         assert version == _IDENTITY_CHECK_PATCH_NUM - 1
 
-    def test_apply_patches_identity_check_caps_listed_rows(self, tmp_path):
-        """Past the cap, the error lists the first rows and counts the rest."""
+    def test_apply_patches_identity_check_caps_listed_values(self, tmp_path):
+        """Past the cap, the error lists the first values and counts the rest."""
         conn, keys = _build_populated_db_before_patch(
             tmp_path, _IDENTITY_CHECK_PATCH_NUM
         )
@@ -532,12 +532,12 @@ class TestTableRebuildPatches:
         with pytest.raises(ValueError) as excinfo:
             apply_patches(conn)
         conn.close()
-        listed_rows = [
+        listed_values = [
             idx
             for idx in padded_idxs
             if f"input_sample.sample_name row {idx}:" in str(excinfo.value)
         ]
-        assert (listed_rows, str(excinfo.value).endswith("; and 5 more")) == (
+        assert (listed_values, str(excinfo.value).endswith("; and 5 more")) == (
             padded_idxs[:20],
             True,
         )
