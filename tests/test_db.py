@@ -9,7 +9,7 @@ import unittest
 
 from pathlib import Path
 
-from typing import Literal, get_args
+from typing import get_args
 
 from run_preflight.constants import (
     EMP_515F_PRIMER,
@@ -24,8 +24,8 @@ from run_preflight.db import (
     LABEL_NONSTANDARD_WITH_PROJECT,
     LABEL_STANDARD_NO_PROJECT,
     AmpliconSampleRow,
-    BiosampleIdentifiers,
     IlluminaSampleRow,
+    InputSampleIdentifiers,
     PacbioSampleRow,
     PlatformSampleInfo,
     PreflightDataFacts,
@@ -43,11 +43,10 @@ from run_preflight.db import (
     get_run_projects,
     get_view_columns,
     lookup_project_by_key,
-    require_literal_member,
     sample_kind_names,
-    strip_text,
 )
 from run_preflight.legacy.api import load_legacy_csv
+from run_preflight.validation import strip_text
 from run_preflight.updates import (
     set_input_sample_do_not_use,
     set_input_sample_identifier,
@@ -176,51 +175,6 @@ def _seed_amplicon(
 def _expected_amplicon_row(sample_name: str) -> AmpliconSampleRow:
     """Build the AmpliconSampleRow _seed_amplicon produces for *sample_name*."""
     return AmpliconSampleRow(f"bc_{sample_name}", True)
-
-
-class TestRequireLiteralMember(unittest.TestCase):
-    def test_require_literal_member(self):
-        # A member passes silently, so the call returns None
-        result = require_literal_member(
-            "pacbio", PlatformSpecificSampleKind, "sample kind"
-        )
-        self.assertIsNone(result)
-
-    def test_require_literal_member_rejects_non_member(self):
-        # The message names the label, the value, and every member
-        with self.assertRaisesRegex(
-            ValueError,
-            r"^Unsupported sample kind 'nanopore'; "
-            r"supported: \['illumina', 'pacbio', 'tellseq'\]$",
-        ):
-            require_literal_member(
-                "nanopore", PlatformSpecificSampleKind, "sample kind"
-            )
-
-    def test_require_literal_member_sorts_members(self):
-        # Members are listed sorted, whatever their declaration order
-        unsorted_kind = Literal["zeta", "alpha"]
-        with self.assertRaisesRegex(ValueError, r"supported: \['alpha', 'zeta'\]$"):
-            require_literal_member("beta", unsorted_kind, "letter")
-
-
-class TestStripText(unittest.TestCase):
-    def test_strip_text(self):
-        # Whitespace and invisible format characters go from both ends,
-        # even interleaved; interior characters are kept
-        cases = {
-            " X ": "X",
-            "\tX\r\n": "X",
-            "\u00a0X\u3000": "X",
-            "\u200bX\ufeff": "X",
-            "\u2060X\u180e": "X",
-            "\x00X\x00": "X",
-            " \u200b \ufeffX \u2060 ": "X",
-            "A B\u200bC": "A B\u200bC",
-            " \u200b\t\ufeff ": "",
-        }
-        results = {value: strip_text(value) for value in cases}
-        self.assertEqual(results, cases)
 
 
 class TestIdentityValueCheck(unittest.TestCase):
@@ -666,7 +620,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 PlatformSampleInfo(
                     sample_idxs["export_ids"],
                     "standard",
-                    BiosampleIdentifiers(None, None, "QB1", None),
+                    InputSampleIdentifiers(None, None, "QB1", None),
                     ProjectIdentifiers(None, None, "QS1"),
                     (),
                     _expected_illumina_row("S1"),
@@ -676,7 +630,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 PlatformSampleInfo(
                     sample_idxs["tube_id"],
                     "standard",
-                    BiosampleIdentifiers(None, None, None, "0363132553"),
+                    InputSampleIdentifiers(None, None, None, "0363132553"),
                     ProjectIdentifiers("PRJNA001", None, None),
                     (),
                     _expected_illumina_row("S1"),
@@ -719,7 +673,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             PlatformSampleInfo(
                 ils_idx,
                 "extraction_blank",
-                BiosampleIdentifiers("SAMN_BLK", None, None, None),
+                InputSampleIdentifiers("SAMN_BLK", None, None, None),
                 ProjectIdentifiers("PRJNA001", None, None),
                 (ProjectIdentifiers(None, None, "QS2"),),
                 _expected_illumina_row("blank1"),

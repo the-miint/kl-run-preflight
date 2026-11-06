@@ -890,7 +890,7 @@ class TestEmptyStringRejection(_UpdatesTestBase):
     def test_set_input_sample_identifier_rejects_empty_sample_name(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="sample_name must be a non-empty string"),
+            pytest.raises(ValueError, match="sample_name must not be empty"),
         ):
             self._seed_sample(conn)
             set_input_sample_identifier(
@@ -912,7 +912,7 @@ class TestEmptyStringRejection(_UpdatesTestBase):
     def test_set_project_identifier_rejects_empty_project_name(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="project_name must be a non-empty string"),
+            pytest.raises(ValueError, match="project_name must not be empty"),
         ):
             set_project_identifier(
                 conn, "bioproject_accession", "PRJNA001", project_name=""
@@ -921,9 +921,7 @@ class TestEmptyStringRejection(_UpdatesTestBase):
     def test_set_project_identifier_rejects_empty_external_project_id(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(
-                ValueError, match="external_project_id must be a non-empty string"
-            ),
+            pytest.raises(ValueError, match="external_project_id must not be empty"),
         ):
             set_project_identifier(
                 conn, "bioproject_accession", "PRJNA001", external_project_id=""
@@ -979,7 +977,7 @@ class TestEmptyStringRejection(_UpdatesTestBase):
     def test_set_input_sample_do_not_use_rejects_empty_biosample_accession(self):
         with (
             open_db(self.db_path) as conn,
-            pytest.raises(ValueError, match="biosample_accession must be a non-empty"),
+            pytest.raises(ValueError, match="biosample_accession must not be empty"),
         ):
             set_input_sample_do_not_use(conn, biosample_accession="")
 
@@ -1357,7 +1355,7 @@ class TestRequireNonempty(unittest.TestCase):
         for blank in ("", "  ", "\t", None):
             with (
                 self.subTest(blank=blank),
-                pytest.raises(ValueError, match="key must be a non-empty string"),
+                pytest.raises(ValueError, match="key must not be empty"),
             ):
                 _require_nonempty(blank, "key")
 
@@ -1478,9 +1476,7 @@ class TestWhitespaceHandling(_UpdatesTestBase):
             with (
                 self.subTest(call=call_name),
                 open_db(self.db_path) as conn,
-                pytest.raises(
-                    ValueError, match="must be a non-empty|must not be empty"
-                ),
+                pytest.raises(ValueError, match="must not be empty"),
             ):
                 call(conn)
         # No rejected call may leave an audit row behind

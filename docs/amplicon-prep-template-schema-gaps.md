@@ -46,4 +46,5 @@ Flow: register the study's biosamples in Qiita → write public IDs back into th
 preflight DB (`set_input_sample_identifier`) → at submit, read
 `get_amplicon_sample_info` (its `AmpliconSampleRow` carries `barcode` and
 `barcodes_are_rc`) and join on any public ID the sample's `biosample` record
-carries (`biosample_accession`, `export_entity_id`, or `matrix_tube_id`).
+carries (`biosample_accession`, `biosample_export_entity_id`, or
+`matrix_tube_id`).

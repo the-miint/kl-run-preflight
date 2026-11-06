@@ -48,7 +48,8 @@ from ..constants import (
     SECTION_SAMPLE_CONTEXT,
     SHEET_TYPE_AMPLICON,
 )
-from ..db import get_amplicon_format_for_header, strip_text
+from ..db import get_amplicon_format_for_header
+from ..validation import strip_text
 
 # Prefixes marking a control in an amplicon prep template's sample_name,
 # matched case-insensitively because sheets differ on capitalisation:

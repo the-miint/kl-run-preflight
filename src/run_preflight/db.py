@@ -11,10 +11,11 @@ import sqlite3
 import warnings
 from itertools import groupby
 from pathlib import Path
-from typing import NamedTuple, get_args
+from typing import NamedTuple
 
 from .legacy import LegacyExtraColumnWarning
 from .migrate import get_latest_version
+from .validation import require_literal_member, strip_str
 from .constants import (
     EMP_515F_PRIMER,
     COL_AMPLICON_BARCODE,
@@ -81,7 +82,6 @@ from .constants import (
     FIELD_SHEET_TYPE,
     FIELD_SHEET_VERSION,
     IN_MEMORY_PATH,
-    INVISIBLE_FORMAT_CHARS,
     PLATFORM_ILLUMINA,
     InputSampleIdentifierKind,
     PlatformSpecificSampleKind,
@@ -602,39 +602,6 @@ def lookup_input_samples_by_name(
     return matches
 
 
-def require_literal_member(value: str, literal_type: object, label: str) -> None:
-    """Raise ValueError unless *value* is a member of *literal_type*.
-
-    *label* names the kind of value in the error message.
-    """
-    members = get_args(literal_type)
-    if value not in members:
-        raise ValueError(f"Unsupported {label} {value!r}; supported: {sorted(members)}")
-
-
-def strip_text(value: str) -> str:
-    """Return *value* without surrounding whitespace or invisible format characters.
-
-    Whitespace is what ``str.strip`` removes. Interleaved runs of whitespace
-    and format characters are removed entirely.
-    """
-    # Alternate the two strips until neither removes anything
-    stripped = value
-    previous = None
-    while stripped != previous:
-        previous = stripped
-        stripped = stripped.strip().strip(INVISIBLE_FORMAT_CHARS)
-    return stripped
-
-
-def strip_str(value: object, param_name: str) -> str:
-    """Return str *value* stripped as by strip_text; raise TypeError for non-str."""
-    if not isinstance(value, str):
-        raise TypeError(f"{param_name} must be a str, not {type(value).__name__}")
-    stripped = strip_text(value)
-    return stripped
-
-
 def _do_not_use_filter(include_do_not_use: bool, alias: str = "") -> str:
     """Return an ``AND <alias>do_not_use = 0`` SQL clause, or ``""``.
 
@@ -867,12 +834,12 @@ class AmpliconSampleRow(NamedTuple):
         return row._replace(barcodes_are_rc=bool(row.barcodes_are_rc))
 
 
-class BiosampleIdentifiers(NamedTuple):
-    """Every external identifier of one biosample; None where absent."""
+class InputSampleIdentifiers(NamedTuple):
+    """External identifiers of one input_sample; None where absent."""
 
     biosample_accession: str | None
     ena_sample_accession: str | None
-    export_entity_id: str | None
+    biosample_export_entity_id: str | None
     matrix_tube_id: str | None
 
 
@@ -881,7 +848,7 @@ class ProjectIdentifiers(NamedTuple):
 
     bioproject_accession: str | None
     ena_study_accession: str | None
-    export_entity_id: str | None
+    study_export_entity_id: str | None
 
 
 class PlatformSampleInfo(NamedTuple):
@@ -890,14 +857,14 @@ class PlatformSampleInfo(NamedTuple):
     sample_type is the DB sample_type.name (e.g. "standard",
     "extraction_blank"). primary_project is the sample's own project, or the
     plate's primary project for a control; secondary_projects lists the
-    plate's other projects, ordered by project name, and is empty except for
-    a control on a plate shared by several projects. *kind_row* carries the
-    platform-specific columns.
+    plate's other projects, ordered by project name only so the order is
+    stable, and is empty except for a control on a plate shared by several
+    projects. *kind_row* carries the platform-specific columns.
     """
 
     sample_idx: int
     sample_type: str
-    biosample: BiosampleIdentifiers
+    biosample: InputSampleIdentifiers
     primary_project: ProjectIdentifiers
     secondary_projects: tuple[ProjectIdentifiers, ...]
     kind_row: IlluminaSampleRow | PacbioSampleRow | AmpliconSampleRow
@@ -932,7 +899,7 @@ class _SampleIdentity(NamedTuple):
 
     sample_type: str
     own_project_idx: int | None
-    biosample: BiosampleIdentifiers
+    biosample: InputSampleIdentifiers
     primary_project: ProjectIdentifiers
     secondary_projects: tuple[ProjectIdentifiers, ...]
 
@@ -948,8 +915,8 @@ def _fetch_sample_identities(
     do_not_use_filter = _do_not_use_filter(include_do_not_use, "psn.")
 
     # One row per (prepped sample x secondary project); the LEFT JOINs keep a
-    # single row when there is none. The leading ORDER BY on the prepped
-    # sample is load-bearing: the groupby() below relies on adjacent rows.
+    # single row when there is none. groupby() below needs each prepped
+    # sample's rows adjacent, which the leading ORDER BY gives.
     cur = conn.execute(
         f"""
         SELECT
@@ -1008,7 +975,7 @@ def _fetch_sample_identities(
             primary_study_export_entity_id,
             *_,
         ) = group_rows[0]
-        biosample = BiosampleIdentifiers(
+        biosample = InputSampleIdentifiers(
             biosample_accession, None, biosample_export_entity_id, matrix_tube_id
         )
         primary_project = ProjectIdentifiers(
@@ -1029,7 +996,7 @@ def _fetch_sample_identities(
     return identities
 
 
-def _is_identified(identifiers: BiosampleIdentifiers | ProjectIdentifiers) -> bool:
+def _is_identified(identifiers: InputSampleIdentifiers | ProjectIdentifiers) -> bool:
     """Return True if any one of an entity's identifiers is set."""
     return any(value is not None for value in identifiers)
 

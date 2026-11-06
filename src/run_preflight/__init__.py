@@ -2,8 +2,8 @@
 
 from .db import (
     AmpliconSampleRow,
-    BiosampleIdentifiers,
     IlluminaSampleRow,
+    InputSampleIdentifiers,
     KatharoseqSampleInfo,
     PacbioSampleRow,
     PlatformSampleInfo,
@@ -48,8 +48,8 @@ from .updates import (
 __all__ = [
     "create_db",
     "AmpliconSampleRow",
-    "BiosampleIdentifiers",
     "IlluminaSampleRow",
+    "InputSampleIdentifiers",
     "KatharoseqSampleInfo",
     "PacbioSampleRow",
     "PlatformSampleInfo",

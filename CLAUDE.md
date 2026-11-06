@@ -48,6 +48,7 @@ scripts are in `scripts/`; design notes are in `docs/`.
 | `src/run_preflight/file_io.py` | Reads and writes native SQLite files and blobs, writes bcl-convert v1 sample sheets, and provides `atomic_write`, the staged-write primitive every write path in the project uses |
 | `src/run_preflight/migrate.py` | Applies numbered schema patches and reports schema version |
 | `src/run_preflight/updates.py` | Applies post-fill updates to a filled preflight, logging each change to `change_log` |
+| `src/run_preflight/validation.py` | Validates and normalizes caller-supplied text and closed-set values |
 | `src/run_preflight/sql/patches/` | Holds the numbered schema patches applied on load |
 | `src/run_preflight/sql/schema_v0.sql` | Frozen v0 baseline; never edited, since live v0 databases exist |
 | `src/run_preflight/legacy/__init__.py` | Defines `LegacyExtraColumnWarning`, raised when unrecognized `[Data]` columns are carried through verbatim |

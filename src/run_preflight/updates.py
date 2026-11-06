@@ -45,10 +45,9 @@ from .db import (
     get_single_run_idx,
     lookup_input_samples_by_name,
     lookup_project_by_key,
-    require_literal_member,
     sample_kind_names,
-    strip_str,
 )
+from .validation import require_literal_member, strip_str
 
 # The platform-specific sample kinds sequenced on the Illumina platform;
 # these are the lane-bearing tables that lane updates may target. Their
@@ -97,9 +96,8 @@ def _require_nonempty(value: str | None, param_name: str) -> str:
     Raises TypeError for a non-str *value*, and ValueError if *value* is
     None or nothing is left after stripping.
     """
-    stripped = "" if value is None else strip_str(value, param_name)
-    if not stripped:
-        raise ValueError(f"{param_name} must be a non-empty string")
+    # None is checked as an empty string so the rejection has one message
+    stripped = _require_nonempty_or_none("" if value is None else value, param_name)
     return stripped
 
 
@@ -189,8 +187,8 @@ def _apply_row_update(
 ) -> None:
     """Update one row's *column* and log the change; caller owns the commit.
 
-    *table*, *pk_col*, and *column* must come from a closed set of
-    constants — they are interpolated into the SQL statement. Issues no
+    *table*, *pk_col*, and *column* are interpolated into the SQL statement,
+    so each must already be checked against a closed set. Issues no
     commit or rollback so a caller can batch several rows into one
     transaction.
     """

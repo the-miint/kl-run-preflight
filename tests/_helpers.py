@@ -16,9 +16,16 @@ import json
 import re
 import sqlite3
 from pathlib import Path
+from typing import get_args
 
+from run_preflight.constants import (
+    DB_COL_EXTERNAL_PROJECT_ID,
+    DB_COL_SAMPLE_NAME,
+    InputSampleIdentifierKind,
+    ProjectIdentifierKind,
+)
 from run_preflight.db import (
-    BiosampleIdentifiers,
+    InputSampleIdentifiers,
     PlatformSampleInfo,
     ProjectIdentifiers,
     get_preflight_data_facts,
@@ -34,15 +41,12 @@ SQL_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sq
 # Identity columns whose values must be clean, keyed by (table, primary key)
 IDENTITY_COLUMNS = {
     ("project", "project_idx"): (
-        "external_project_id",
-        "bioproject_accession",
-        "study_export_entity_id",
+        DB_COL_EXTERNAL_PROJECT_ID,
+        *get_args(ProjectIdentifierKind),
     ),
     ("input_sample", "input_sample_idx"): (
-        "sample_name",
-        "biosample_accession",
-        "biosample_export_entity_id",
-        "matrix_tube_id",
+        DB_COL_SAMPLE_NAME,
+        *get_args(InputSampleIdentifierKind),
     ),
 }
 
@@ -265,7 +269,7 @@ def expected_accession_only_info(
     kind_row: tuple,
 ) -> PlatformSampleInfo:
     """Build the reader row for a sample whose only identifiers are accessions."""
-    biosample = BiosampleIdentifiers(biosample_accession, None, None, None)
+    biosample = InputSampleIdentifiers(biosample_accession, None, None, None)
     primary_project = ProjectIdentifiers(primary_bioproject_accession, None, None)
     secondary_projects = tuple(
         ProjectIdentifiers(accession, None, None)

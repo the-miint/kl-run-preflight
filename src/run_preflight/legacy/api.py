@@ -21,12 +21,12 @@ from ..db import (
     get_section_formats,
     get_single_run_idx,
     populate_db,
-    strip_text,
 )
 from ..file_io import atomic_write, load_db_bytes, save_db_file
 from .parser import parse_amplicon_prep, parse_omnibus_text, read_omnibus_text
 from .reconstruct import reconstruct_omnibus
 from .validate import validate_sections
+from ..validation import strip_text
 
 
 def _has_section_labels(text: str) -> bool:
