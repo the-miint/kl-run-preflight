@@ -728,9 +728,8 @@ def sample_kind_names(kind: PlatformSpecificSampleKind) -> _SampleKindNames:
 class PacbioSampleRow(NamedTuple):
     """PacBio-specific columns of one pacbio_sample row.
 
-    Field names match the pacbio_sample DB columns; the field order is
-    load-bearing — it drives the SELECT column list built in
-    _get_platform_specific_sample_info. Build instances from a raw run-view
+    Each field name must be a column of the platform's run view, since the
+    reader selects each field by name. Build instances from a raw run-view
     value tuple via from_run_view, which applies storage-to-domain coercion.
     """
 
@@ -765,9 +764,8 @@ class PacbioSampleRow(NamedTuple):
 class IlluminaSampleRow(NamedTuple):
     """Illumina-specific columns of one illumina_sample row.
 
-    Field names match the illumina_sample DB columns; the field order is
-    load-bearing — it drives the SELECT column list built in
-    _get_platform_specific_sample_info. Build instances from a raw run-view
+    Each field name must be a column of the platform's run view, since the
+    reader selects each field by name. Build instances from a raw run-view
     value tuple via from_run_view.
     """
 

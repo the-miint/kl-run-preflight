@@ -480,11 +480,13 @@ def _set_illumina_run_column(
     value: str | None,
     reason: str | None,
 ) -> None:
-    """Set *column* on the sole illumina_run row to *value*.
+    """Set *column*, an IllumRunSetting member, on the sole illumina_run row.
 
-    *column* must be a constant from this module's closed set, never
-    user input — it is interpolated into the SQL statement.
+    Raises ValueError if *column* is not an IllumRunSetting member, if the
+    database does not hold exactly one processing run, or if that run has
+    no illumina_run row.
     """
+    require_literal_member(column, IllumRunSetting, "illumina_run setting")
     run_idx = get_single_run_idx(conn)
     cur = conn.execute(
         f"SELECT {column} FROM {TABLE_ILLUMINA_RUN} WHERE run_idx = ?",
@@ -523,7 +525,6 @@ def set_illumina_run_setting(
             illumina_run row.
         TypeError: If *value* or *reason* is not a str.
     """
-    require_literal_member(setting, IllumRunSetting, "illumina_run setting")
     value = _require_nonempty_or_none(value, "value")
     reason = _require_nonempty_or_none(reason, "reason")
     _set_illumina_run_column(conn, setting, value, reason)
