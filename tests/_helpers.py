@@ -31,6 +31,34 @@ GOOD_LEGACY_GLOB = "good_*"
 NATIVE_SNAPSHOT_SUFFIX = ".generated_snapshot.json"
 SQL_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
 
+# Identity columns whose values must be clean, keyed by (table, primary key)
+IDENTITY_COLUMNS = {
+    ("project", "project_idx"): (
+        "external_project_id",
+        "bioproject_accession",
+        "study_export_entity_id",
+    ),
+    ("input_sample", "input_sample_idx"): (
+        "sample_name",
+        "biosample_accession",
+        "biosample_export_entity_id",
+        "matrix_tube_id",
+    ),
+}
+
+# Identity values a clean-value CHECK must refuse
+UNCLEAN_IDENTITY_VALUES = (
+    "",
+    "  ",
+    " X",
+    "X\t",
+    chr(0x200B),
+    "X" + chr(0x2060),
+    "X" + chr(0xFEFF),
+    chr(0) + "X",
+    "X" + chr(0),
+)
+
 # Fixture-naming tokens for content-derived facts; see native_stem for how
 # they form a filename. Facts are independent because sequencing placement is
 # platform-specific (Illumina Lane is present at preflight; PacBio placement

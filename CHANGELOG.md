@@ -15,6 +15,12 @@ until the first release is tagged.
 
 ### Added
 
+- **Identity values must be clean** (schema patch `004`): a CHECK on each
+  identity column of `project` and `input_sample` rejects a value that is
+  empty or has surrounding whitespace or invisible format characters. A
+  preflight already holding such a value fails to load, naming each
+  offending row.
+
 - **Projects and input samples carry a Qiita-MIINT export entity ID** (schema
   patch `003`): `project.study_export_entity_id`, unique, and
   `input_sample.biosample_export_entity_id`, not unique, since one biosample

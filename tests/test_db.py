@@ -223,6 +223,60 @@ class TestStripText(unittest.TestCase):
         self.assertEqual(results, cases)
 
 
+class TestIdentityValueCheck(unittest.TestCase):
+    """Identity columns hold only values strip_text would leave unchanged."""
+
+    def setUp(self):
+        self.conn = create_db(IN_MEMORY_PATH)
+        project_idx, plate_idx, run_idx = _helpers.seed_run_skeleton(self.conn)
+        ins_idx, _ = _helpers.seed_committed_sample_chain(
+            self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
+        )
+        self.row_idxs = {"project": project_idx, "input_sample": ins_idx}
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _accepts(self, table: str, pk_col: str, column: str, value: str) -> bool:
+        """Return whether setting *column* to *value* passes the table's CHECKs."""
+        try:
+            self.conn.execute(
+                f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
+                (value, self.row_idxs[table]),
+            )
+        except sqlite3.IntegrityError:
+            return False
+        return True
+
+    def test_identity_columns_reject_unclean_values(self):
+        unclean = _helpers.UNCLEAN_IDENTITY_VALUES
+        for (table, pk_col), columns in _helpers.IDENTITY_COLUMNS.items():
+            for column in columns:
+                results = {
+                    value: self._accepts(table, pk_col, column, value)
+                    for value in (*unclean, f"clean_{column}", "A B")
+                }
+                expected = {value: False for value in unclean}
+                expected.update({f"clean_{column}": True, "A B": True})
+                with self.subTest(column=f"{table}.{column}"):
+                    self.assertEqual(results, expected)
+
+    def test_identity_check_agrees_with_strip_text(self):
+        # Every BMP character, at either end, is accepted exactly when
+        # strip_text would leave the value unchanged
+        disagreements = []
+        for code in range(0x10000):
+            if 0xD800 <= code <= 0xDFFF:
+                continue
+            for value in ("X" + chr(code), chr(code) + "X"):
+                accepted = self._accepts(
+                    "project", "project_idx", "study_export_entity_id", value
+                )
+                if accepted != (strip_text(value) == value):
+                    disagreements.append(value)
+        self.assertEqual(disagreements, [])
+
+
 class TestLookupProjectByKey(unittest.TestCase):
     def test_lookup_project_by_key_raise_key_err(self):
         # A key outside ProjectLookupKey is rejected before any SQL runs

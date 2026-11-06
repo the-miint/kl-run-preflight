@@ -469,7 +469,11 @@ CREATE TABLE legacy_extra_column (
 -- Core Domain Tables
 -- ============================================================
 
--- A project must have at least one non-NULL identifier (see the CHECK)
+-- A project must have at least one non-NULL identifier (see the first CHECK)
+-- Each identity value's CHECK rejects one that is empty or has surrounding
+-- whitespace or invisible format characters. char(...) lists the code points
+-- stripped from a value's ends; NUL is excluded because SQLite's trim()
+-- cannot take it, and is checked separately through hex()
 CREATE TABLE project (
     project_idx                      INTEGER PRIMARY KEY AUTOINCREMENT,
     project_name                    TEXT NOT NULL UNIQUE,
@@ -483,7 +487,19 @@ CREATE TABLE project (
     study_export_entity_id          TEXT UNIQUE,
         -- Qiita-MIINT export entity ID of the study
     CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL
-           OR study_export_entity_id IS NOT NULL)
+           OR study_export_entity_id IS NOT NULL),
+    CHECK (external_project_id IS NULL OR (external_project_id = trim(external_project_id, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))
+           AND external_project_id <> ''
+           AND hex(external_project_id) NOT LIKE '00%'
+           AND hex(external_project_id) NOT LIKE '%00')),
+    CHECK (bioproject_accession IS NULL OR (bioproject_accession = trim(bioproject_accession, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))
+           AND bioproject_accession <> ''
+           AND hex(bioproject_accession) NOT LIKE '00%'
+           AND hex(bioproject_accession) NOT LIKE '%00')),
+    CHECK (study_export_entity_id IS NULL OR (study_export_entity_id = trim(study_export_entity_id, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))
+           AND study_export_entity_id <> ''
+           AND hex(study_export_entity_id) NOT LIKE '00%'
+           AND hex(study_export_entity_id) NOT LIKE '%00'))
 );
 
 CREATE TABLE input_plate (
@@ -503,7 +519,8 @@ CREATE TABLE input_plate (
         -- crossing axis rather than a finer one.
 );
 
--- A sample must have at least one non-NULL identifier (see the CHECK)
+-- A sample must have at least one non-NULL identifier (see the first CHECK)
+-- Each identity value's CHECK follows the rule explained above project
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_name         TEXT,
@@ -523,7 +540,23 @@ CREATE TABLE input_sample (
         -- Qiita-MIINT export entity ID of the biosample; not unique, since one
         -- biosample can appear as several input_samples
     CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL
-           OR biosample_export_entity_id IS NOT NULL OR matrix_tube_id IS NOT NULL)
+           OR biosample_export_entity_id IS NOT NULL OR matrix_tube_id IS NOT NULL),
+    CHECK (sample_name IS NULL OR (sample_name = trim(sample_name, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))
+           AND sample_name <> ''
+           AND hex(sample_name) NOT LIKE '00%'
+           AND hex(sample_name) NOT LIKE '%00')),
+    CHECK (biosample_accession IS NULL OR (biosample_accession = trim(biosample_accession, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))
+           AND biosample_accession <> ''
+           AND hex(biosample_accession) NOT LIKE '00%'
+           AND hex(biosample_accession) NOT LIKE '%00')),
+    CHECK (biosample_export_entity_id IS NULL OR (biosample_export_entity_id = trim(biosample_export_entity_id, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))
+           AND biosample_export_entity_id <> ''
+           AND hex(biosample_export_entity_id) NOT LIKE '00%'
+           AND hex(biosample_export_entity_id) NOT LIKE '%00')),
+    CHECK (matrix_tube_id IS NULL OR (matrix_tube_id = trim(matrix_tube_id, char(9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 6158, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8232, 8233, 8239, 8287, 8288, 12288, 65279))
+           AND matrix_tube_id <> ''
+           AND hex(matrix_tube_id) NOT LIKE '00%'
+           AND hex(matrix_tube_id) NOT LIKE '%00'))
 );
 
 CREATE TABLE processing_run (

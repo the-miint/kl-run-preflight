@@ -25,7 +25,19 @@ from run_preflight.migrate import (
 
 from . import _helpers
 
-_EXPORT_ENTITY_ID_PATCH_NUM = 3
+# Shipped patches that rebuild project and input_sample
+_TABLE_REBUILD_PATCH_NUMS = (3, 4)
+
+# Shipped patch that adds the identity-value CHECKs
+_IDENTITY_CHECK_PATCH_NUM = 4
+
+# Seeded-row key naming each identity table's row
+_SEEDED_ROW_KEYS = {"project": "project_idx", "input_sample": "ins_idx"}
+_IDENTITY_CASES = [
+    (table, pk_col, _SEEDED_ROW_KEYS[table], column)
+    for (table, pk_col), columns in _helpers.IDENTITY_COLUMNS.items()
+    for column in columns
+]
 
 
 def _fetch_all(conn: sqlite3.Connection, sql: str) -> list[tuple]:
@@ -417,12 +429,11 @@ class TestCreateDbVersion:
         conn.close()
 
 
-class TestExportEntityIdPatch:
-    def test_apply_patches_export_entity_id_patch_preserves_rows(self, tmp_path):
+class TestTableRebuildPatches:
+    @pytest.mark.parametrize("patch_num", _TABLE_REBUILD_PATCH_NUMS)
+    def test_apply_patches_table_rebuild_preserves_rows(self, tmp_path, patch_num):
         """Rebuilding project and input_sample keeps rows, keys, and views."""
-        conn, keys = _build_populated_db_before_patch(
-            tmp_path, _EXPORT_ENTITY_ID_PATCH_NUM
-        )
+        conn, keys = _build_populated_db_before_patch(tmp_path, patch_num)
         apply_patches(conn)
 
         # Read back the rebuilt rows, a view joining through them, and the
@@ -458,11 +469,10 @@ class TestExportEntityIdPatch:
         }
         assert actual == expected
 
-    def test_apply_patches_export_entity_id_patch_keeps_autoincrement(self, tmp_path):
+    @pytest.mark.parametrize("patch_num", _TABLE_REBUILD_PATCH_NUMS)
+    def test_apply_patches_table_rebuild_keeps_autoincrement(self, tmp_path, patch_num):
         """Ids of rows deleted before the rebuild are never reissued."""
-        conn, keys = _build_populated_db_before_patch(
-            tmp_path, _EXPORT_ENTITY_ID_PATCH_NUM
-        )
+        conn, keys = _build_populated_db_before_patch(tmp_path, patch_num)
 
         # Raise each high-water mark above the surviving rows, then delete
         doomed_project_idx = _helpers.seed_project(
@@ -485,3 +495,49 @@ class TestExportEntityIdPatch:
 
         expected = [("input_sample", doomed_ins_idx), ("project", doomed_project_idx)]
         assert (before, after) == (expected, expected)
+
+    @pytest.mark.parametrize(("table", "pk_col", "key_name", "column"), _IDENTITY_CASES)
+    @pytest.mark.parametrize("unclean_value", _helpers.UNCLEAN_IDENTITY_VALUES)
+    def test_apply_patches_identity_check_raise_unclean_value_err(
+        self, tmp_path, table, pk_col, key_name, column, unclean_value
+    ):
+        """An unclean identity value fails the patch, naming its row."""
+        conn, keys = _build_populated_db_before_patch(
+            tmp_path, _IDENTITY_CHECK_PATCH_NUM
+        )
+        row_idx = keys[key_name]
+        conn.execute(
+            f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
+            (unclean_value, row_idx),
+        )
+        conn.commit()
+        with pytest.raises(ValueError, match=rf"{table}\.{column} row {row_idx}:"):
+            apply_patches(conn)
+        version = get_schema_version(conn)
+        conn.close()
+        assert version == _IDENTITY_CHECK_PATCH_NUM - 1
+
+    def test_apply_patches_identity_check_caps_listed_rows(self, tmp_path):
+        """Past the cap, the error lists the first rows and counts the rest."""
+        conn, keys = _build_populated_db_before_patch(
+            tmp_path, _IDENTITY_CHECK_PATCH_NUM
+        )
+        padded_idxs = [
+            _helpers.seed_input_sample(
+                conn, keys["plate_idx"], keys["project_idx"], sample_name=f" S{i}"
+            )
+            for i in range(25)
+        ]
+        conn.commit()
+        with pytest.raises(ValueError) as excinfo:
+            apply_patches(conn)
+        conn.close()
+        listed_rows = [
+            idx
+            for idx in padded_idxs
+            if f"input_sample.sample_name row {idx}:" in str(excinfo.value)
+        ]
+        assert (listed_rows, str(excinfo.value).endswith("; and 5 more")) == (
+            padded_idxs[:20],
+            True,
+        )
