@@ -84,9 +84,7 @@ def _require_nonempty_or_none(value: str | None, param_name: str) -> str | None:
     """
     if value is None:
         return None
-    stripped = strip_str(value, param_name)
-    if not stripped:
-        raise ValueError(f"{param_name} must not be empty or whitespace-only")
+    stripped = _require_nonempty(value, param_name)
     return stripped
 
 
@@ -97,7 +95,9 @@ def _require_nonempty(value: str | None, param_name: str) -> str:
     None or nothing is left after stripping.
     """
     # None is checked as an empty string so the rejection has one message
-    stripped = _require_nonempty_or_none("" if value is None else value, param_name)
+    stripped = "" if value is None else strip_str(value, param_name)
+    if not stripped:
+        raise ValueError(f"{param_name} must not be empty or whitespace-only")
     return stripped
 
 

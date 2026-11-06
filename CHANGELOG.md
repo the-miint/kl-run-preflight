@@ -269,11 +269,10 @@ until the first release is tagged.
   `ena_sample_accession`, `biosample_export_entity_id`, and `matrix_tube_id`,
   and `bioproject_accession`, `ena_study_accession`, and
   `study_export_entity_id`; the ENA fields have no column and are always
-  `None`. The readers now
-  refuse a sample only when its biosample, primary project, or a secondary
-  project carries none of its identifiers, rather than whenever an NCBI
-  accession is missing, and the error category is "missing required
-  identifier".
+  `None`. The readers now refuse a sample only when its biosample, primary
+  project, or a secondary project carries none of its identifiers, rather
+  than whenever an NCBI accession is missing, and the error category is
+  "missing required identifier".
 
 - **Every project identifier is unique** (schema patch `003`):
   `external_project_id` and `bioproject_accession` join
@@ -514,11 +513,11 @@ until the first release is tagged.
 - `set_biosample_accession` and `set_bioproject_accession` are thin aliases
   for `set_input_sample_identifier` and `set_project_identifier` and emit a
   `DeprecationWarning`. Their signatures are unchanged and they delegate, so
-  their behavior matches the previous functions' except for the stripping
-  and `TypeError` described under Changed, that some error messages differ,
-  and that `set_bioproject_accession` treats an empty-string project key as
-  supplied, so passing it alongside the other key is rejected as supplying
-  both rather than falling back to the other key.
+  their behavior matches the previous functions' except that they strip and
+  raise `TypeError` as described under Changed, that some error messages
+  differ, and that `set_bioproject_accession` treats an empty-string project
+  key as supplied, so passing it alongside the other key is rejected as
+  supplying both rather than falling back to the other key.
 
 - `open_file` is now a thin alias for `load_file` and emits a
   `DeprecationWarning`. Every read entry point is named `load_*`, and `open`

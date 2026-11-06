@@ -1,4 +1,4 @@
-"""Validate and normalize caller-supplied text and closed-set values."""
+"""Validate and normalize text values and closed-set members."""
 
 from __future__ import annotations
 
