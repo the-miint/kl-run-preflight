@@ -49,6 +49,7 @@ from ..constants import (
     SHEET_TYPE_AMPLICON,
 )
 from ..db import get_amplicon_format_for_header
+from ..validation import strip_text
 
 # Prefixes marking a control in an amplicon prep template's sample_name,
 # matched case-insensitively because sheets differ on capitalisation:
@@ -128,10 +129,10 @@ def parse_omnibus_text(text: str, section_formats: dict[str, str]) -> dict:
     reader = csv.reader(io.StringIO(text))
     for row in reader:
         # Skip blank rows.
-        if not row or all(cell.strip() == "" for cell in row):
+        if not row or all(strip_text(cell) == "" for cell in row):
             continue
 
-        first = row[0].strip()
+        first = strip_text(row[0])
 
         # Detect section boundary — e.g. "[Header]".
         if is_section_header(first):
@@ -188,7 +189,7 @@ def extract_section_name(stripped_line):
 
 
 def strip_entries(a_row):
-    return [cell.strip() for cell in a_row]
+    return [strip_text(cell) for cell in a_row]
 
 
 def _finalize_section(
@@ -255,28 +256,33 @@ def _split_prep_template(text: str, delimiter: str) -> list[list[str]]:
     """Split flat prep-template content into rows, rejecting a malformed sheet.
 
     The format has no quoting and no embedded delimiters or newlines, so a
-    manual split is exact.
+    manual split is exact. Lines that are blank after stripping are skipped;
+    error messages give a row's line number in the original text.
 
     Raises:
         ValueError: If the content has no data rows, or any row's width
             differs from the header's.
     """
-    lines = text.splitlines()
-    while lines and lines[-1] == "":
-        lines.pop()
-    rows = [line.split(delimiter) for line in lines]
-    if len(rows) < 2:
+    # Keep each non-blank line's stripped cells with its original line number
+    numbered_rows = [
+        (line_number, strip_entries(line.split(delimiter)))
+        for line_number, line in enumerate(text.splitlines(), start=1)
+        if strip_text(line)
+    ]
+    if len(numbered_rows) < 2:
         raise ValueError(
             "prep template has a header but no sample rows; nothing to load"
         )
 
-    width = len(rows[0])
-    for line_number, row in enumerate(rows[1:], start=2):
+    # Reject any row whose width differs from the header's
+    width = len(numbered_rows[0][1])
+    for line_number, row in numbered_rows[1:]:
         if len(row) != width:
             raise ValueError(
                 f"prep template line {line_number} has {len(row)} columns, "
                 f"expected {width}"
             )
+    rows = [row for _, row in numbered_rows]
     return rows
 
 

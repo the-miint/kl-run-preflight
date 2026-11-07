@@ -1,16 +1,7 @@
 """Guards for the committed native-format test files.
 
-Enforces five invariants over ``tests/data/native/``: every good_ legacy
-sheet has a committed true-preflight ``.sqlite`` + snapshot (coverage); the
-native directory is internally paired (every ``.sqlite`` has a snapshot and
-vice versa); each committed ``.sqlite`` reproduces its committed snapshot
-(consistency); freshly loading each good_ legacy sheet reproduces its
-true-preflight snapshot (correctness); and every committed ``.sqlite``'s
-fact-suffix matches the data it actually holds (labelling). A source sheet may
-back more than one fixture — a bare true-preflight load plus setter-augmented
-fixtures carrying a fact suffix. A failure names the offending file and points
-at the regenerator, so a forgotten regeneration fails loudly rather than
-leaving a silent gap.
+A failure names the offending file and points at the regenerator, so a
+forgotten regeneration fails loudly rather than leaving a silent gap.
 """
 
 from __future__ import annotations
@@ -21,7 +12,6 @@ from pathlib import Path
 
 from run_preflight import (
     PacbioSampleRow,
-    PlatformSampleInfo,
     get_pacbio_sample_info,
     migrate_legacy_csv_to_db_file,
 )
@@ -33,6 +23,7 @@ from ._helpers import (
     NATIVE_SNAPSHOT_SUFFIX,
     capture_db_snapshot,
     derive_native_facts,
+    expected_accession_only_info,
     facts_in_native_stem,
     open_db,
     snapshot_to_json,
@@ -141,13 +132,13 @@ class TestAccessionedFixtureIsRunnable(unittest.TestCase):
     """The accessioned PacBio fixture is a runnable get_pacbio_sample_info target."""
 
     def test_get_pacbio_sample_info(self):
-        # A true-preflight fixture raises (no accessions); this post-submission
-        # fixture is the shipped example that reads cleanly through the reader
+        # Every sample and project in this fixture carries an accession, so
+        # the reader returns its rows rather than raising
         db_path = _sqlite_path("good_pacbio_metagv11.accessioned")
         with open_db(str(db_path)) as conn:
             result = get_pacbio_sample_info(conn)
         expected = [
-            PlatformSampleInfo(
+            expected_accession_only_info(
                 1,
                 "standard",
                 "SAMN00000001",
@@ -161,7 +152,7 @@ class TestAccessionedFixtureIsRunnable(unittest.TestCase):
                     movie_context_id=None,
                 ),
             ),
-            PlatformSampleInfo(
+            expected_accession_only_info(
                 2,
                 "standard",
                 "SAMN00000002",
@@ -175,7 +166,7 @@ class TestAccessionedFixtureIsRunnable(unittest.TestCase):
                     movie_context_id=None,
                 ),
             ),
-            PlatformSampleInfo(
+            expected_accession_only_info(
                 3,
                 "extraction_blank",
                 "SAMN00000003",

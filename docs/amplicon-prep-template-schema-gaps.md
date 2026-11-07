@@ -40,9 +40,11 @@ emits a canonical column order and does not preserve the source's order.
 
 Qiita's golay-demux needs a per-sample `(prep_sample_idx, barcode,
 barcodes_are_rc)` roster. Qiita mints `prep_sample.idx` from a `biosample_idx`, so
-the bridge is the **biosample accession**, not a shared idx: preflight
-`sample_name` / `input_sample.biosample_accession` → Qiita biosample →
-`prep_sample.idx`. Flow: register the study's biosamples in Qiita → write
-accessions back into the preflight DB (`set_biosample_accession`) → at submit,
-read `get_amplicon_sample_info` (its `AmpliconSampleRow` carries `barcode` and
-`barcodes_are_rc`) and join on `biosample_accession`.
+the bridge is a **biosample public ID**, not a shared idx: preflight
+`sample_name` / input_sample public ID → Qiita biosample → `prep_sample.idx`.
+Flow: register the study's biosamples in Qiita → write public IDs back into the
+preflight DB (`set_input_sample_identifier`) → at submit, read
+`get_amplicon_sample_info` (its `AmpliconSampleRow` carries `barcode` and
+`barcodes_are_rc`) and join on any public ID the sample's `biosample` record
+carries (`biosample_accession`, `biosample_export_entity_id`, or
+`matrix_tube_id`).

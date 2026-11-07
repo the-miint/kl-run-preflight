@@ -11,6 +11,8 @@ from pathlib import Path
 
 from typing import get_args
 
+import pytest
+
 from run_preflight.constants import (
     EMP_515F_PRIMER,
     IN_MEMORY_PATH,
@@ -20,13 +22,16 @@ from run_preflight.constants import (
 )
 from run_preflight.db import (
     ERR_CATEGORY_INVARIANT,
-    ERR_CATEGORY_MISSING_ACCESSION,
+    ERR_CATEGORY_MISSING_IDENTIFIER,
     LABEL_NONSTANDARD_WITH_PROJECT,
     LABEL_STANDARD_NO_PROJECT,
     AmpliconSampleRow,
     IlluminaSampleRow,
+    InputSampleIdentifiers,
     PacbioSampleRow,
     PlatformSampleInfo,
+    PreflightDataFacts,
+    ProjectIdentifiers,
     _barcodes_are_rc_for_primer,
     _has_do_not_use_token,
     create_db,
@@ -35,15 +40,19 @@ from run_preflight.db import (
     get_illumina_sample_rows,
     get_input_sample_project_info,
     get_pacbio_sample_info,
+    get_preflight_data_facts,
     get_projects_missing_external_id,
     get_run_projects,
     get_view_columns,
+    lookup_project_by_key,
     sample_kind_names,
 )
 from run_preflight.legacy.api import load_legacy_csv
+from run_preflight.validation import strip_text
 from run_preflight.updates import (
-    set_biosample_accession,
     set_input_sample_do_not_use,
+    set_input_sample_identifier,
+    set_project_identifier,
     set_pacbio_sample_run_details,
 )
 
@@ -62,16 +71,11 @@ def _seed_run_skeleton(
     primary_bioproject_accession: str | None = "PRJNA001",
 ) -> tuple[int, int, int]:
     """Insert one project + plate + run; return (project_idx, plate_idx, run_idx)."""
-    project_idx = _helpers.seed_project(
-        conn,
-        project_name="proj1",
-        external_project_id="1",
-        bioproject_accession=primary_bioproject_accession,
+    skeleton = _helpers.seed_run_skeleton(
+        conn, bioproject_accession=primary_bioproject_accession
     )
-    plate_idx = _helpers.seed_plate(conn, project_idx)
-    run_idx = _helpers.seed_processing_run(conn)
     conn.commit()
-    return project_idx, plate_idx, run_idx
+    return skeleton
 
 
 def _seed_illumina(
@@ -85,14 +89,14 @@ def _seed_illumina(
     sample_type_name: str = "standard",
 ) -> tuple[int, int]:
     """Seed sample chain + illumina_sample; return (input_sample_idx, ils_idx)."""
-    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+    ins_idx, prs_idx = _helpers.seed_committed_sample_chain(
         conn,
         plate_idx,
         project_idx,
         run_idx,
-        sample_name=sample_name,
+        sample_name,
+        well,
         sample_type_name=sample_type_name,
-        well=well,
     )
     ils_idx = _helpers.seed_illumina_sample(
         conn,
@@ -115,14 +119,14 @@ def _seed_pacbio(
     sample_type_name: str = "standard",
 ) -> tuple[int, int]:
     """Seed sample chain + pacbio_sample; return (input_sample_idx, ps_idx)."""
-    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+    ins_idx, prs_idx = _helpers.seed_committed_sample_chain(
         conn,
         plate_idx,
         project_idx,
         run_idx,
-        sample_name=sample_name,
+        sample_name,
+        well,
         sample_type_name=sample_type_name,
-        well=well,
     )
     ps_idx = _helpers.seed_pacbio_sample(conn, prs_idx, barcode_id=f"bc_{sample_name}")
     conn.commit()
@@ -155,14 +159,14 @@ def _seed_amplicon(
 
     amplicon_sample has no surrogate key, so its handle is prepped_sample_idx.
     """
-    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+    ins_idx, prs_idx = _helpers.seed_committed_sample_chain(
         conn,
         plate_idx,
         project_idx,
         run_idx,
-        sample_name=sample_name,
+        sample_name,
+        well,
         sample_type_name=sample_type_name,
-        well=well,
     )
     _helpers.seed_amplicon_run(conn, run_idx)
     _helpers.seed_amplicon_sample(conn, prs_idx, barcode=f"bc_{sample_name}")
@@ -173,6 +177,105 @@ def _seed_amplicon(
 def _expected_amplicon_row(sample_name: str) -> AmpliconSampleRow:
     """Build the AmpliconSampleRow _seed_amplicon produces for *sample_name*."""
     return AmpliconSampleRow(f"bc_{sample_name}", True)
+
+
+@pytest.fixture(params=_helpers.SQLITE_TEXT_ENCODINGS)
+def identity_check_db(request):
+    """Yield a seeded current-schema DB, one SQLite text encoding per parameter.
+
+    Yields the connection plus each identity table's seeded row key.
+    """
+    conn = _helpers.build_encoded_schema_db("schema.sql", request.param)
+
+    # Seed one row in each identity table
+    project_idx, plate_idx, run_idx = _helpers.seed_run_skeleton(conn)
+    ins_idx, _ = _helpers.seed_committed_sample_chain(
+        conn, plate_idx, project_idx, run_idx, "S1", "A1"
+    )
+    row_idxs = {"project": project_idx, "input_sample": ins_idx}
+    yield conn, row_idxs
+    conn.close()
+
+
+def _identity_check_accepts(
+    conn: sqlite3.Connection,
+    row_idxs: dict[str, int],
+    table: str,
+    pk_col: str,
+    column: str,
+    value: str,
+) -> bool:
+    """Return whether setting *column* to *value* passes the table's CHECKs."""
+    try:
+        conn.execute(
+            f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
+            (value, row_idxs[table]),
+        )
+    except sqlite3.IntegrityError:
+        return False
+    return True
+
+
+class TestIdentityValueCheck:
+    """Identity columns hold only values strip_text would leave unchanged."""
+
+    def test_identity_columns_reject_unclean_values(self, identity_check_db):
+        conn, row_idxs = identity_check_db
+        unclean = _helpers.UNCLEAN_IDENTITY_VALUES
+        results = {}
+        expected = {}
+        for (table, pk_col), columns in _helpers.IDENTITY_COLUMNS.items():
+            for column in columns:
+                clean = (f"clean_{column}", *_helpers.CLEAN_IDENTITY_VALUES)
+                results[f"{table}.{column}"] = {
+                    value: _identity_check_accepts(
+                        conn, row_idxs, table, pk_col, column, value
+                    )
+                    for value in (*unclean, *clean)
+                }
+                column_expected = {value: False for value in unclean}
+                column_expected.update({value: True for value in clean})
+                expected[f"{table}.{column}"] = column_expected
+        assert results == expected
+
+    def test_identity_check_agrees_with_strip_text(self, identity_check_db):
+        # Every BMP character, at either end, is accepted exactly when
+        # strip_text would leave the value unchanged
+        conn, row_idxs = identity_check_db
+        disagreements = []
+        for code in range(0x10000):
+            if 0xD800 <= code <= 0xDFFF:
+                continue
+            for value in ("X" + chr(code), chr(code) + "X"):
+                accepted = _identity_check_accepts(
+                    conn,
+                    row_idxs,
+                    "project",
+                    "project_idx",
+                    "study_export_entity_id",
+                    value,
+                )
+                if accepted != (strip_text(value) == value):
+                    disagreements.append(value)
+        assert disagreements == []
+
+
+class TestLookupProjectByKey(unittest.TestCase):
+    def test_lookup_project_by_key_raise_key_err(self):
+        # A key outside ProjectLookupKey is rejected before any SQL runs
+        conn = create_db(IN_MEMORY_PATH)
+        try:
+            with self.assertRaisesRegex(
+                ValueError, r"^Unsupported project lookup key 'contact_email'"
+            ):
+                lookup_project_by_key(
+                    conn.cursor(),
+                    "contact_email",  # type: ignore[arg-type]
+                    "x",
+                    "bioproject_accession",
+                )
+        finally:
+            conn.close()
 
 
 class TestCreateDb(unittest.TestCase):
@@ -207,6 +310,86 @@ class TestCreateDb(unittest.TestCase):
         self.assertFalse(link_target.exists())
 
 
+class TestGetPreflightDataFacts(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _facts_for(self, label, project_accession, sample_identifiers):
+        """Build a fresh DB with one project and one sample per (kind, value, flag).
+
+        A None value leaves that sample with no identifier, and a True flag
+        marks it do-not-use. Returns the facts.
+        """
+        db_path = os.path.join(self.tmpdir.name, f"{label}.db")
+        conn = create_db(db_path)
+        conn.close()
+
+        # Seed the project, then each sample and its one identifier
+        with open_db(db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(
+                conn, primary_bioproject_accession=project_accession
+            )
+            for position, sample in enumerate(sample_identifiers, start=1):
+                kind, value, do_not_use = sample
+                name = f"S{position}"
+                ins_idx, _ = _seed_illumina(
+                    conn, plate, proj, run, sample_name=name, well=f"A{position}"
+                )
+                if value is not None:
+                    set_input_sample_identifier(conn, kind, value, sample_name=name)
+                if do_not_use:
+                    set_input_sample_do_not_use(conn, input_sample_idx=ins_idx)
+            facts = get_preflight_data_facts(conn)
+        return facts
+
+    def test_get_preflight_data_facts(self):
+        # Cover each condition of has_public_ids
+        cases = {
+            "complete": ("PRJNA001", [("biosample_accession", "SAMN1", False)]),
+            "tube_id_counts": (
+                "PRJNA001",
+                [("matrix_tube_id", "0363132553", False)],
+            ),
+            "one_sample_unidentified": (
+                "PRJNA001",
+                [
+                    ("biosample_accession", "SAMN1", False),
+                    ("biosample_accession", None, False),
+                ],
+            ),
+            "project_unidentified": (None, [("biosample_accession", "SAMN1", False)]),
+            "no_samples": ("PRJNA001", []),
+            "only_do_not_use_samples": (
+                "PRJNA001",
+                [("biosample_accession", "SAMN1", True)],
+            ),
+            "unidentified_sample_is_do_not_use": (
+                "PRJNA001",
+                [
+                    ("biosample_accession", "SAMN1", False),
+                    ("biosample_accession", None, True),
+                ],
+            ),
+        }
+        actual = {
+            label: self._facts_for(label, project_accession, sample_identifiers)
+            for label, (project_accession, sample_identifiers) in cases.items()
+        }
+        expected = {
+            "complete": PreflightDataFacts(True, False),
+            "tube_id_counts": PreflightDataFacts(True, False),
+            "one_sample_unidentified": PreflightDataFacts(False, False),
+            "project_unidentified": PreflightDataFacts(False, False),
+            "no_samples": PreflightDataFacts(False, False),
+            "only_do_not_use_samples": PreflightDataFacts(False, False),
+            "unidentified_sample_is_do_not_use": PreflightDataFacts(True, False),
+        }
+        self.assertEqual(actual, expected)
+
+
 class TestGetIlluminaSampleInfo(unittest.TestCase):
     """End-to-end tests for get_illumina_sample_info."""
 
@@ -227,7 +410,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             _, ils_idx = _seed_illumina(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -235,7 +420,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ils_idx,
                     "standard",
                     "SAMN001",
@@ -257,8 +442,12 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             _, ils2 = _seed_illumina(
                 conn, plate, proj, run, sample_name="S2", well="A2"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
-            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN002", sample_name="S2"
+            )
             set_input_sample_do_not_use(conn, input_sample_idx=ins1)
 
         with open_db(self.db_path) as conn:
@@ -268,7 +457,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         self.assertEqual(
             default_result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ils2,
                     "standard",
                     "SAMN002",
@@ -281,7 +470,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         self.assertEqual(
             full_result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ils1,
                     "standard",
                     "SAMN001",
@@ -289,7 +478,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                     [],
                     _expected_illumina_row("S1"),
                 ),
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ils2,
                     "standard",
                     "SAMN002",
@@ -314,7 +503,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             _, ils_idx = _seed_illumina(
                 conn, plate, other_proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -322,7 +513,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ils_idx,
                     "standard",
                     "SAMN001",
@@ -346,7 +537,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -354,7 +547,7 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ils_idx,
                     "extraction_blank",
                     "SAMN_BLK",
@@ -367,10 +560,10 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
 
     def test_get_illumina_sample_info_control_multi_project(self):
         # Control on a multi-project plate: secondary lists every non-primary
-        # plate project's bioproject_accession sorted by the accession value.
-        # The two secondary projects are seeded so that project_idx order
-        # (proj2 then proj3) does NOT match accession order (PRJNA111 then
-        # PRJNA999), proving the function sorts by accession not project_idx.
+        # plate project, ordered by project name. The two secondary projects
+        # are seeded so that name order (proj2 then proj3) does NOT match
+        # accession order (PRJNA111 then PRJNA999), proving the function
+        # sorts by name, not accession.
         with open_db(self.db_path) as conn:
             _, plate, run = _seed_run_skeleton(conn)
             proj2 = _helpers.seed_project(
@@ -398,7 +591,9 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_illumina_sample_info(conn)
@@ -406,105 +601,75 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ils_idx,
                     "extraction_blank",
                     "SAMN_BLK",
                     "PRJNA001",
-                    ["PRJNA111", "PRJNA999"],
+                    ["PRJNA999", "PRJNA111"],
                     _expected_illumina_row("blank1"),
                 )
             ],
         )
 
-    def test_get_illumina_sample_info_missing_biosample_accession(self):
-        # Skipping set_biosample_accession leaves biosample NULL → raises
-        with open_db(self.db_path) as conn:
-            proj, plate, run = _seed_run_skeleton(conn)
-            _, ils_idx = _seed_illumina(
-                conn, plate, proj, run, sample_name="S1", well="A1"
-            )
-
-        with open_db(self.db_path) as conn:
-            with self.assertRaises(ValueError) as ctx:
-                get_illumina_sample_info(conn)
-
-        msg = str(ctx.exception)
-        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
-        self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn("biosample_accession", msg)
-
-    def test_get_illumina_sample_info_missing_multiple_biosample_accessions(self):
-        # Two rows missing biosample_accession both appear in the summary
-        with open_db(self.db_path) as conn:
-            proj, plate, run = _seed_run_skeleton(conn)
-            _, ils1 = _seed_illumina(
-                conn, plate, proj, run, sample_name="S1", well="A1"
-            )
-            _, ils2 = _seed_illumina(
-                conn, plate, proj, run, sample_name="S2", well="A2"
-            )
-
-        with open_db(self.db_path) as conn:
-            with self.assertRaises(ValueError) as ctx:
-                get_illumina_sample_info(conn)
-
-        msg = str(ctx.exception)
-        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
-        self.assertIn("biosample_accession", msg)
-        self.assertIn(f"illumina_sample_idx={ils1}", msg)
-        self.assertIn(f"illumina_sample_idx={ils2}", msg)
-
-    def test_get_illumina_sample_info_missing_own_bioproject_accession(self):
-        # Non-control whose own project has NULL bioproject_accession
-        with open_db(self.db_path) as conn:
-            proj, plate, run = _seed_run_skeleton(
-                conn, primary_bioproject_accession=None
-            )
-            _, ils_idx = _seed_illumina(
-                conn, plate, proj, run, sample_name="S1", well="A1"
-            )
-            set_biosample_accession(conn, "S1", "SAMN001")
-
-        with open_db(self.db_path) as conn:
-            with self.assertRaises(ValueError) as ctx:
-                get_illumina_sample_info(conn)
-
-        msg = str(ctx.exception)
-        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
-        self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn("primary_bioproject_accession", msg)
-
-    def test_get_illumina_sample_info_missing_primary_bioproject_accession_for_control(
-        self,
-    ):
-        # Control inherits via plate primary; missing primary bioproject accession errors
-        with open_db(self.db_path) as conn:
-            _, plate, run = _seed_run_skeleton(conn, primary_bioproject_accession=None)
-            _, ils_idx = _seed_illumina(
-                conn,
-                plate,
+    def test_get_illumina_sample_info_non_accession_identifiers(self):
+        # Export entity IDs, or a matrix tube ID, identify an entity without
+        # any accession; each case gets its own DB
+        cases = {
+            "export_ids": (
                 None,
-                run,
-                sample_name="blank1",
-                well="A1",
-                sample_type_name="extraction_blank",
-            )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+                [("study_export_entity_id", "QS1")],
+                [("biosample_export_entity_id", "QB1")],
+            ),
+            "tube_id": ("PRJNA001", [], [("matrix_tube_id", "0363132553")]),
+        }
+        actual = {}
+        sample_idxs = {}
+        for label, (project_accession, project_ids, sample_ids) in cases.items():
+            db_path = os.path.join(self.tmpdir.name, f"{label}.db")
+            conn = create_db(db_path)
+            conn.close()
 
-        with open_db(self.db_path) as conn:
-            with self.assertRaises(ValueError) as ctx:
-                get_illumina_sample_info(conn)
+            # Seed one sample, then apply this case's project and sample IDs
+            with open_db(db_path) as conn:
+                proj, plate, run = _seed_run_skeleton(
+                    conn, primary_bioproject_accession=project_accession
+                )
+                _, sample_idxs[label] = _seed_illumina(
+                    conn, plate, proj, run, sample_name="S1", well="A1"
+                )
+                for kind, value in project_ids:
+                    set_project_identifier(conn, kind, value, project_name="proj1")
+                for kind, value in sample_ids:
+                    set_input_sample_identifier(conn, kind, value, sample_name="S1")
+                actual[label] = get_illumina_sample_info(conn)
 
-        msg = str(ctx.exception)
-        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
-        self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn("primary_bioproject_accession", msg)
+        expected = {
+            "export_ids": [
+                PlatformSampleInfo(
+                    sample_idxs["export_ids"],
+                    "standard",
+                    InputSampleIdentifiers(None, None, "QB1", None),
+                    ProjectIdentifiers(None, None, "QS1"),
+                    (),
+                    _expected_illumina_row("S1"),
+                )
+            ],
+            "tube_id": [
+                PlatformSampleInfo(
+                    sample_idxs["tube_id"],
+                    "standard",
+                    InputSampleIdentifiers(None, None, None, "0363132553"),
+                    ProjectIdentifiers("PRJNA001", None, None),
+                    (),
+                    _expected_illumina_row("S1"),
+                )
+            ],
+        }
+        self.assertEqual(actual, expected)
 
-    def test_get_illumina_sample_info_missing_secondary_bioproject_accession_for_control(
-        self,
-    ):
-        # Control on multi-project plate where one secondary has NULL bioproject accession
+    def test_get_illumina_sample_info_control_secondary_project_export_id(self):
+        # A secondary project with only an export entity ID is still identified
         with open_db(self.db_path) as conn:
             _, plate, run = _seed_run_skeleton(conn)
             proj2 = _helpers.seed_project(
@@ -523,16 +688,154 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
+            set_project_identifier(
+                conn, "study_export_entity_id", "QS2", project_name="proj2"
+            )
+
+        with open_db(self.db_path) as conn:
+            result = get_illumina_sample_info(conn)
+
+        expected = [
+            PlatformSampleInfo(
+                ils_idx,
+                "extraction_blank",
+                InputSampleIdentifiers("SAMN_BLK", None, None, None),
+                ProjectIdentifiers("PRJNA001", None, None),
+                (ProjectIdentifiers(None, None, "QS2"),),
+                _expected_illumina_row("blank1"),
+            )
+        ]
+        self.assertEqual(result, expected)
+
+    def test_get_illumina_sample_info_missing_biosample_identifier(self):
+        # Setting no sample identifier leaves biosample NULL → raises
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _, ils_idx = _seed_illumina(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
 
         with open_db(self.db_path) as conn:
             with self.assertRaises(ValueError) as ctx:
                 get_illumina_sample_info(conn)
 
-        msg = str(ctx.exception)
-        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
-        self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn("secondary_bioproject_accessions", msg)
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_MISSING_IDENTIFIER}: illumina_sample_idx={ils_idx} (biosample)",
+        )
+
+    def test_get_illumina_sample_info_missing_multiple_biosample_identifiers(self):
+        # Two rows with no biosample identifier both appear in the summary
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _, ils1 = _seed_illumina(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            _, ils2 = _seed_illumina(
+                conn, plate, proj, run, sample_name="S2", well="A2"
+            )
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaises(ValueError) as ctx:
+                get_illumina_sample_info(conn)
+
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_MISSING_IDENTIFIER}: "
+            f"illumina_sample_idx={ils1} (biosample), "
+            f"illumina_sample_idx={ils2} (biosample)",
+        )
+
+    def test_get_illumina_sample_info_missing_own_project_identifier(self):
+        # Non-control whose own project has no identifier the reader counts
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(
+                conn, primary_bioproject_accession=None
+            )
+            _, ils_idx = _seed_illumina(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaises(ValueError) as ctx:
+                get_illumina_sample_info(conn)
+
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_MISSING_IDENTIFIER}: "
+            f"illumina_sample_idx={ils_idx} (primary_project)",
+        )
+
+    def test_get_illumina_sample_info_missing_primary_project_identifier_for_control(
+        self,
+    ):
+        # Control inherits via plate primary; a primary project with no identifier errors
+        with open_db(self.db_path) as conn:
+            _, plate, run = _seed_run_skeleton(conn, primary_bioproject_accession=None)
+            _, ils_idx = _seed_illumina(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                well="A1",
+                sample_type_name="extraction_blank",
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaises(ValueError) as ctx:
+                get_illumina_sample_info(conn)
+
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_MISSING_IDENTIFIER}: "
+            f"illumina_sample_idx={ils_idx} (primary_project)",
+        )
+
+    def test_get_illumina_sample_info_missing_secondary_project_identifier_for_control(
+        self,
+    ):
+        # Control on multi-project plate where one secondary project has no identifier
+        with open_db(self.db_path) as conn:
+            _, plate, run = _seed_run_skeleton(conn)
+            proj2 = _helpers.seed_project(
+                conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession=None,
+            )
+            _helpers.seed_input_sample(conn, plate, proj2, sample_name="S2")
+            _, ils_idx = _seed_illumina(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                well="A1",
+                sample_type_name="extraction_blank",
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaises(ValueError) as ctx:
+                get_illumina_sample_info(conn)
+
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_MISSING_IDENTIFIER}: "
+            f"illumina_sample_idx={ils_idx} (secondary_projects)",
+        )
 
     def test_get_illumina_sample_info_invariant_standard_null_project(self):
         # Standard sample_type with NULL project_idx violates the pairing
@@ -552,10 +855,10 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 get_illumina_sample_info(conn)
 
-        msg = str(ctx.exception)
-        self.assertIn(ERR_CATEGORY_INVARIANT, msg)
-        self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn(LABEL_STANDARD_NO_PROJECT, msg)
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_INVARIANT}: illumina_sample_idx={ils_idx} ({LABEL_STANDARD_NO_PROJECT})",
+        )
 
     def test_get_illumina_sample_info_invariant_control_with_project(self):
         # Control sample_type with non-NULL project_idx violates the pairing
@@ -575,10 +878,10 @@ class TestGetIlluminaSampleInfo(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 get_illumina_sample_info(conn)
 
-        msg = str(ctx.exception)
-        self.assertIn(ERR_CATEGORY_INVARIANT, msg)
-        self.assertIn(f"illumina_sample_idx={ils_idx}", msg)
-        self.assertIn(LABEL_NONSTANDARD_WITH_PROJECT, msg)
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_INVARIANT}: illumina_sample_idx={ils_idx} ({LABEL_NONSTANDARD_WITH_PROJECT})",
+        )
 
 
 class TestGetProjectsMissingExternalId(unittest.TestCase):
@@ -606,18 +909,7 @@ class TestGetProjectsMissingExternalId(unittest.TestCase):
         # Primary plate project lacks external_project_id (row is
         # valid only because bioproject_accession is non-null)
         with open_db(self.db_path) as conn:
-            project_idx = _helpers.seed_project(
-                conn,
-                project_name="proj_no_qid",
-                external_project_id=None,
-                bioproject_accession="PRJNA001",
-            )
-            plate_idx = _helpers.seed_plate(conn, project_idx)
-            run_idx = _helpers.seed_processing_run(conn)
-            _helpers.seed_sample_chain(
-                conn, plate_idx, project_idx, run_idx, sample_name="S1"
-            )
-            conn.commit()
+            run_idx = _helpers.seed_run_with_project_lacking_qiita_id(conn)
             missing = get_projects_missing_external_id(conn, run_idx)
         self.assertEqual(missing, ["proj_no_qid"])
 
@@ -886,7 +1178,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
             _, ps_idx = _seed_pacbio(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_pacbio_sample_info(conn)
@@ -894,7 +1188,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps_idx,
                     "standard",
                     "SAMN001",
@@ -907,7 +1201,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
 
     def test_get_pacbio_sample_info_control_multi_project(self):
         # Control on a multi-project plate: secondary lists every non-primary
-        # plate project's bioproject_accession, sorted by accession value.
+        # plate project, ordered by project name.
         with open_db(self.db_path) as conn:
             _, plate, run = _seed_run_skeleton(conn)
             proj2 = _helpers.seed_project(
@@ -933,7 +1227,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_pacbio_sample_info(conn)
@@ -941,12 +1237,12 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps_idx,
                     "extraction_blank",
                     "SAMN_BLK",
                     "PRJNA001",
-                    ["PRJNA111", "PRJNA999"],
+                    ["PRJNA999", "PRJNA111"],
                     _expected_pacbio_row("blank1"),
                 )
             ],
@@ -960,8 +1256,12 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
             _, ps2 = _seed_pacbio(conn, plate, proj, run, sample_name="S2", well="A2")
-            set_biosample_accession(conn, "S1", "SAMN001")
-            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN002", sample_name="S2"
+            )
             set_input_sample_do_not_use(conn, input_sample_idx=ins1)
 
         with open_db(self.db_path) as conn:
@@ -971,7 +1271,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(
             default_result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps2,
                     "standard",
                     "SAMN002",
@@ -984,7 +1284,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(
             full_result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps1,
                     "standard",
                     "SAMN001",
@@ -992,7 +1292,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                     [],
                     _expected_pacbio_row("S1"),
                 ),
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps2,
                     "standard",
                     "SAMN002",
@@ -1010,7 +1310,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
             _, ps_idx = _seed_pacbio(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
             set_pacbio_sample_run_details(
                 conn,
                 sample_name="S1",
@@ -1027,7 +1329,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps_idx, "standard", "SAMN001", "PRJNA001", [], expected_row
                 )
             ],
@@ -1048,7 +1350,9 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                     (stored, ps_idx),
                 )
             for name in ("S1", "S2", "S3"):
-                set_biosample_accession(conn, name, f"SAMN_{name}")
+                set_input_sample_identifier(
+                    conn, "biosample_accession", f"SAMN_{name}", sample_name=name
+                )
             conn.commit()
 
         with open_db(self.db_path) as conn:
@@ -1057,7 +1361,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps1,
                     "standard",
                     "SAMN_S1",
@@ -1065,7 +1369,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                     [],
                     PacbioSampleRow("bc_S1", None, True, None, None),
                 ),
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps2,
                     "standard",
                     "SAMN_S2",
@@ -1073,7 +1377,7 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
                     [],
                     PacbioSampleRow("bc_S2", None, False, None, None),
                 ),
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     ps3,
                     "standard",
                     "SAMN_S3",
@@ -1106,14 +1410,16 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def test_non_control_single_project(self):
+    def test_get_amplicon_sample_info_non_control_single_project(self):
         # Non-control on a single-project plate: primary = own; secondary = []
         with open_db(self.db_path) as conn:
             proj, plate, run = _seed_run_skeleton(conn)
             _, prs_idx = _seed_amplicon(
                 conn, plate, proj, run, sample_name="S1", well="A1"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_amplicon_sample_info(conn)
@@ -1121,7 +1427,7 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     prs_idx,
                     "standard",
                     "SAMN001",
@@ -1132,9 +1438,9 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
             ],
         )
 
-    def test_control_multi_project(self):
+    def test_get_amplicon_sample_info_control_multi_project(self):
         # Control on a multi-project plate: secondary lists every non-primary
-        # plate project's bioproject_accession, sorted by accession value.
+        # plate project, ordered by project name.
         with open_db(self.db_path) as conn:
             _, plate, run = _seed_run_skeleton(conn)
             proj2 = _helpers.seed_project(
@@ -1160,7 +1466,9 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
                 well="A1",
                 sample_type_name="extraction_blank",
             )
-            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN_BLK", sample_name="blank1"
+            )
 
         with open_db(self.db_path) as conn:
             result = get_amplicon_sample_info(conn)
@@ -1168,18 +1476,18 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                PlatformSampleInfo(
+                _helpers.expected_accession_only_info(
                     prs_idx,
                     "extraction_blank",
                     "SAMN_BLK",
                     "PRJNA001",
-                    ["PRJNA111", "PRJNA999"],
+                    ["PRJNA999", "PRJNA111"],
                     _expected_amplicon_row("blank1"),
                 )
             ],
         )
 
-    def test_excludes_do_not_use_by_default(self):
+    def test_get_amplicon_sample_info_excludes_do_not_use_by_default(self):
         # One flagged do-not-use is dropped by default, returned when requested.
         with open_db(self.db_path) as conn:
             proj, plate, run = _seed_run_skeleton(conn)
@@ -1189,8 +1497,12 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
             _, prs2 = _seed_amplicon(
                 conn, plate, proj, run, sample_name="S2", well="A2"
             )
-            set_biosample_accession(conn, "S1", "SAMN001")
-            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN001", sample_name="S1"
+            )
+            set_input_sample_identifier(
+                conn, "biosample_accession", "SAMN002", sample_name="S2"
+            )
             set_input_sample_do_not_use(conn, input_sample_idx=ins1)
 
         with open_db(self.db_path) as conn:
@@ -1200,17 +1512,21 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
         self.assertEqual([r.sample_idx for r in default_result], [prs2])
         self.assertEqual([r.sample_idx for r in full_result], [prs1, prs2])
 
-    def test_missing_accession_raises(self):
-        # No biosample accession set -> accession-gated reader raises.
+    def test_get_amplicon_sample_info_missing_identifier(self):
+        # No biosample identifier set -> the reader raises.
         with open_db(self.db_path) as conn:
             proj, plate, run = _seed_run_skeleton(conn)
-            _seed_amplicon(conn, plate, proj, run, sample_name="S1", well="A1")
+            _, prs_idx = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
 
         with open_db(self.db_path) as conn:
             with self.assertRaises(ValueError) as ctx:
                 get_amplicon_sample_info(conn)
-        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, str(ctx.exception))
-        self.assertIn("prepped_sample_idx", str(ctx.exception))
+        self.assertEqual(
+            str(ctx.exception),
+            f"{ERR_CATEGORY_MISSING_IDENTIFIER}: prepped_sample_idx={prs_idx} (biosample)",
+        )
 
     def test_run_amplicon_sample_exposes_expected_columns(self):
         with open_db(self.db_path) as conn:

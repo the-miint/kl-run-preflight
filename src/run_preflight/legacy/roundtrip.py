@@ -55,7 +55,9 @@ def _id_reorder_sections(
     return reorders
 
 
-def _reorder_row(ref_cols: list[str], col_map: dict[str, int], row: list[str]) -> list[str]:
+def _reorder_row(
+    ref_cols: list[str], col_map: dict[str, int], row: list[str]
+) -> list[str]:
     """Rewrite one row into *ref_cols* order, padding back to its own width."""
     reordered = [row[col_map[c]] for c in ref_cols]
     while len(reordered) < len(row):

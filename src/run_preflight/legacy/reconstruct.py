@@ -465,9 +465,7 @@ def reconstruct_omnibus(conn, run_idx: int) -> str:
         # A view with no printable key of its own carries the reserved
         # prepped_sample_idx so rows can be ordered and matched to their extras.
         key_col = (
-            DB_COL_PREPPED_SAMPLE_IDX
-            if DB_COL_PREPPED_SAMPLE_IDX in reserved
-            else None
+            DB_COL_PREPPED_SAMPLE_IDX if DB_COL_PREPPED_SAMPLE_IDX in reserved else None
         )
 
         if section_format == FORMAT_TABULAR:
