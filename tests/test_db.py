@@ -11,6 +11,8 @@ from pathlib import Path
 
 from typing import get_args
 
+import pytest
+
 from run_preflight.constants import (
     EMP_515F_PRIMER,
     IN_MEMORY_PATH,
@@ -177,58 +179,85 @@ def _expected_amplicon_row(sample_name: str) -> AmpliconSampleRow:
     return AmpliconSampleRow(f"bc_{sample_name}", True)
 
 
-class TestIdentityValueCheck(unittest.TestCase):
+@pytest.fixture(params=_helpers.SQLITE_TEXT_ENCODINGS)
+def identity_check_db(request):
+    """Yield a seeded current-schema DB, one SQLite text encoding per parameter.
+
+    Yields the connection plus each identity table's seeded row key.
+    """
+    conn = _helpers.build_encoded_schema_db("schema.sql", request.param)
+
+    # Seed one row in each identity table
+    project_idx, plate_idx, run_idx = _helpers.seed_run_skeleton(conn)
+    ins_idx, _ = _helpers.seed_committed_sample_chain(
+        conn, plate_idx, project_idx, run_idx, "S1", "A1"
+    )
+    row_idxs = {"project": project_idx, "input_sample": ins_idx}
+    yield conn, row_idxs
+    conn.close()
+
+
+def _identity_check_accepts(
+    conn: sqlite3.Connection,
+    row_idxs: dict[str, int],
+    table: str,
+    pk_col: str,
+    column: str,
+    value: str,
+) -> bool:
+    """Return whether setting *column* to *value* passes the table's CHECKs."""
+    try:
+        conn.execute(
+            f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
+            (value, row_idxs[table]),
+        )
+    except sqlite3.IntegrityError:
+        return False
+    return True
+
+
+class TestIdentityValueCheck:
     """Identity columns hold only values strip_text would leave unchanged."""
 
-    def setUp(self):
-        self.conn = create_db(IN_MEMORY_PATH)
-        project_idx, plate_idx, run_idx = _helpers.seed_run_skeleton(self.conn)
-        ins_idx, _ = _helpers.seed_committed_sample_chain(
-            self.conn, plate_idx, project_idx, run_idx, "S1", "A1"
-        )
-        self.row_idxs = {"project": project_idx, "input_sample": ins_idx}
-
-    def tearDown(self):
-        self.conn.close()
-
-    def _accepts(self, table: str, pk_col: str, column: str, value: str) -> bool:
-        """Return whether setting *column* to *value* passes the table's CHECKs."""
-        try:
-            self.conn.execute(
-                f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
-                (value, self.row_idxs[table]),
-            )
-        except sqlite3.IntegrityError:
-            return False
-        return True
-
-    def test_identity_columns_reject_unclean_values(self):
+    def test_identity_columns_reject_unclean_values(self, identity_check_db):
+        conn, row_idxs = identity_check_db
         unclean = _helpers.UNCLEAN_IDENTITY_VALUES
+        results = {}
+        expected = {}
         for (table, pk_col), columns in _helpers.IDENTITY_COLUMNS.items():
             for column in columns:
-                results = {
-                    value: self._accepts(table, pk_col, column, value)
-                    for value in (*unclean, f"clean_{column}", "A B")
+                clean = (f"clean_{column}", *_helpers.CLEAN_IDENTITY_VALUES)
+                results[f"{table}.{column}"] = {
+                    value: _identity_check_accepts(
+                        conn, row_idxs, table, pk_col, column, value
+                    )
+                    for value in (*unclean, *clean)
                 }
-                expected = {value: False for value in unclean}
-                expected.update({f"clean_{column}": True, "A B": True})
-                with self.subTest(column=f"{table}.{column}"):
-                    self.assertEqual(results, expected)
+                column_expected = {value: False for value in unclean}
+                column_expected.update({value: True for value in clean})
+                expected[f"{table}.{column}"] = column_expected
+        assert results == expected
 
-    def test_identity_check_agrees_with_strip_text(self):
+    def test_identity_check_agrees_with_strip_text(self, identity_check_db):
         # Every BMP character, at either end, is accepted exactly when
         # strip_text would leave the value unchanged
+        conn, row_idxs = identity_check_db
         disagreements = []
         for code in range(0x10000):
             if 0xD800 <= code <= 0xDFFF:
                 continue
             for value in ("X" + chr(code), chr(code) + "X"):
-                accepted = self._accepts(
-                    "project", "project_idx", "study_export_entity_id", value
+                accepted = _identity_check_accepts(
+                    conn,
+                    row_idxs,
+                    "project",
+                    "project_idx",
+                    "study_export_entity_id",
+                    value,
                 )
                 if accepted != (strip_text(value) == value):
                     disagreements.append(value)
-        self.assertEqual(disagreements, [])
+        assert disagreements == []
 
 
 class TestLookupProjectByKey(unittest.TestCase):

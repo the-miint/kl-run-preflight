@@ -55,12 +55,12 @@ def _fetch_scalar(conn: sqlite3.Connection, sql: str):
 
 
 def _build_populated_db_before_patch(
-    tmp_path: Path, patch_num: int
+    tmp_path: Path, patch_num: int, encoding: str = "UTF-8"
 ) -> tuple[sqlite3.Connection, dict[str, int]]:
     """Build an FK-enforcing DB one version short of *patch_num*, seeded.
 
-    Seeds one project, plate, run, and sample chain, and returns the
-    connection plus the seeded row keys.
+    The DB stores text in *encoding*. Seeds one project, plate, run, and
+    sample chain, and returns the connection plus the seeded row keys.
     """
     # Stage only the shipped patches that precede patch_num
     earlier_dir = tmp_path / "earlier_patches"
@@ -71,9 +71,7 @@ def _build_populated_db_before_patch(
             shutil.copy(patch_path, earlier_dir / patch_path.name)
 
     # Bring the frozen baseline forward to just before patch_num
-    conn = sqlite3.connect(IN_MEMORY_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript((_helpers.SQL_DIR / "schema_v0.sql").read_text())
+    conn = _helpers.build_encoded_schema_db("schema_v0.sql", encoding)
     apply_patches(conn, earlier_dir)
     assert get_schema_version(conn) == patch_num - 1
 
@@ -91,6 +89,31 @@ def _build_populated_db_before_patch(
         "prs_idx": prs_idx,
     }
     return conn, keys
+
+
+def _build_db_with_identity_value(
+    tmp_path: Path,
+    encoding: str,
+    table: str,
+    pk_col: str,
+    key_name: str,
+    column: str,
+    value: str,
+) -> tuple[sqlite3.Connection, int]:
+    """Build a DB awaiting the identity-check patch, holding *value*.
+
+    The seeded *table* row's *column* is set to *value*; returns the
+    connection plus that row's key.
+    """
+    conn, keys = _build_populated_db_before_patch(
+        tmp_path, _IDENTITY_CHECK_PATCH_NUM, encoding
+    )
+    row_idx = keys[key_name]
+    conn.execute(
+        f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?", (value, row_idx)
+    )
+    conn.commit()
+    return conn, row_idx
 
 
 def _seed_v0_db_with_pending_patch(tmp_path) -> tuple[str, Path]:
@@ -496,21 +519,34 @@ class TestTableRebuildPatches:
         expected = [("input_sample", doomed_ins_idx), ("project", doomed_project_idx)]
         assert (before, after) == (expected, expected)
 
+    @pytest.mark.parametrize("encoding", _helpers.SQLITE_TEXT_ENCODINGS)
+    @pytest.mark.parametrize(("table", "pk_col", "key_name", "column"), _IDENTITY_CASES)
+    @pytest.mark.parametrize("clean_value", _helpers.CLEAN_IDENTITY_VALUES)
+    def test_apply_patches_identity_check_accept_clean_value(
+        self, tmp_path, encoding, table, pk_col, key_name, column, clean_value
+    ):
+        """A clean identity value passes the patch in any text encoding."""
+        conn, row_idx = _build_db_with_identity_value(
+            tmp_path, encoding, table, pk_col, key_name, column, clean_value
+        )
+        apply_patches(conn)
+        stored_value = _fetch_scalar(
+            conn, f"SELECT {column} FROM {table} WHERE {pk_col} = {row_idx}"
+        )
+        version = get_schema_version(conn)
+        conn.close()
+        assert (stored_value, version) == (clean_value, get_latest_version())
+
+    @pytest.mark.parametrize("encoding", _helpers.SQLITE_TEXT_ENCODINGS)
     @pytest.mark.parametrize(("table", "pk_col", "key_name", "column"), _IDENTITY_CASES)
     @pytest.mark.parametrize("unclean_value", _helpers.UNCLEAN_IDENTITY_VALUES)
     def test_apply_patches_identity_check_raise_unclean_value_err(
-        self, tmp_path, table, pk_col, key_name, column, unclean_value
+        self, tmp_path, encoding, table, pk_col, key_name, column, unclean_value
     ):
         """An unclean identity value fails the patch, naming its row."""
-        conn, keys = _build_populated_db_before_patch(
-            tmp_path, _IDENTITY_CHECK_PATCH_NUM
+        conn, row_idx = _build_db_with_identity_value(
+            tmp_path, encoding, table, pk_col, key_name, column, unclean_value
         )
-        row_idx = keys[key_name]
-        conn.execute(
-            f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?",
-            (unclean_value, row_idx),
-        )
-        conn.commit()
         with pytest.raises(ValueError, match=rf"{table}\.{column} row {row_idx}:"):
             apply_patches(conn)
         version = get_schema_version(conn)

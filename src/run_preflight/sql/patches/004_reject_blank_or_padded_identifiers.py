@@ -83,10 +83,12 @@ _INPUT_SAMPLE_COLUMNS = (
 def _clean_value_sql(column: str) -> str:
     """Return the SQL condition that non-NULL *column* is clean."""
     trim_set = "char(" + ", ".join(str(code) for code in _TRIM_CODES) + ")"
-    # The hex() NUL tests assume UTF-8 storage, SQLite's default encoding
+    # hex(char(0)) is NUL's hex form in the DB's text encoding, so the start
+    # and end tests each match one whole code unit
     clean_value = (
         f"{column} = trim({column}, {trim_set}) AND {column} <> '' "
-        f"AND hex({column}) NOT LIKE '00%' AND hex({column}) NOT LIKE '%00'"
+        f"AND hex({column}) NOT LIKE hex(char(0)) || '%' "
+        f"AND hex({column}) NOT LIKE '%' || hex(char(0))"
     )
     return clean_value
 

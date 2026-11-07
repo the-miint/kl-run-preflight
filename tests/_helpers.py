@@ -21,6 +21,7 @@ from typing import get_args
 from run_preflight.constants import (
     DB_COL_EXTERNAL_PROJECT_ID,
     DB_COL_SAMPLE_NAME,
+    IN_MEMORY_PATH,
     InputSampleIdentifierKind,
     ProjectIdentifierKind,
 )
@@ -63,6 +64,17 @@ UNCLEAN_IDENTITY_VALUES = (
     "X" + chr(0),
 )
 
+# Identity values a clean-value CHECK must accept; U+0100 stores a zero byte
+# at a value's start or end under UTF-16
+CLEAN_IDENTITY_VALUES = (
+    "A B",
+    chr(0x100) + "X",
+    "X" + chr(0x100),
+)
+
+# Text encodings a SQLite database can be created with
+SQLITE_TEXT_ENCODINGS = ("UTF-8", "UTF-16le", "UTF-16be")
+
 # Fixture-naming tokens for content-derived facts; see native_stem for how
 # they form a filename. Facts are independent because sequencing placement is
 # platform-specific (Illumina Lane is present at preflight; PacBio placement
@@ -80,6 +92,25 @@ def open_db(db_path: str):
         yield conn
     finally:
         conn.close()
+
+
+def build_encoded_schema_db(schema_file: str, encoding: str) -> sqlite3.Connection:
+    """Return an FK-enforcing in-memory DB built from *schema_file*.
+
+    *schema_file* names a file in SQL_DIR; the DB stores text in *encoding*.
+    """
+    # Build the schema directly instead of calling create_db: the encoding must be
+    # set before the first schema object exists, and create_db does not set it
+    conn = sqlite3.connect(IN_MEMORY_PATH)
+    conn.execute(f"PRAGMA encoding = '{encoding}'")
+    # SQLite silently ignores an encoding set too late, so confirm it applied
+    cur = conn.execute("PRAGMA encoding")
+    applied_encoding = cur.fetchone()[0]
+    assert applied_encoding == encoding, f"encoding not applied: {applied_encoding}"
+    conn.execute("PRAGMA foreign_keys = ON")
+    schema_sql = (SQL_DIR / schema_file).read_text()
+    conn.executescript(schema_sql)
+    return conn
 
 
 def _normalize_sql(sql: str | None) -> str:
