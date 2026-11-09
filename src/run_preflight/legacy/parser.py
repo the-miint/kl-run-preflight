@@ -256,18 +256,21 @@ def _split_prep_template(text: str, delimiter: str) -> list[list[str]]:
     """Split flat prep-template content into rows, rejecting a malformed sheet.
 
     The format has no quoting and no embedded delimiters or newlines, so a
-    manual split is exact. Lines that are blank after stripping are skipped;
-    error messages give a row's line number in the original text.
+    manual split is exact. Rows whose every cell is blank after stripping are
+    skipped; error messages give a row's line number in the original text.
 
     Raises:
         ValueError: If the content has no data rows, or any row's width
             differs from the header's.
     """
-    # Keep each non-blank line's stripped cells with its original line number
-    numbered_rows = [
+    # Keep each row's stripped cells, with its original line number, unless
+    # every cell is blank
+    stripped_rows = [
         (line_number, strip_entries(line.split(delimiter)))
         for line_number, line in enumerate(text.splitlines(), start=1)
-        if strip_text(line)
+    ]
+    numbered_rows = [
+        (line_number, cells) for line_number, cells in stripped_rows if any(cells)
     ]
     if len(numbered_rows) < 2:
         raise ValueError(

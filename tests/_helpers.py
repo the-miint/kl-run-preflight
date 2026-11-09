@@ -60,6 +60,10 @@ UNCLEAN_IDENTITY_VALUES = (
     chr(0x200B),
     "X" + chr(0x2060),
     "X" + chr(0xFEFF),
+    "X" + chr(0x200E),
+    chr(0x200F) + "X",
+    "X" + chr(0x00AD),
+    chr(0x202E) + "X",
     chr(0) + "X",
     "X" + chr(0),
 )
@@ -78,8 +82,8 @@ SQLITE_TEXT_ENCODINGS = ("UTF-8", "UTF-16le", "UTF-16be")
 # Fixture-naming tokens for content-derived facts; see native_stem for how
 # they form a filename. Facts are independent because sequencing placement is
 # platform-specific (Illumina Lane is present at preflight; PacBio placement
-# appears only post-flight) and can arrive separately from public identifiers.
-FACT_PUBLIC_IDS = "accessioned"
+# appears only post-flight) and can arrive separately from external identifiers.
+FACT_EXTERNAL_IDS = "accessioned"
 FACT_PLACED = "placed"
 
 
@@ -254,8 +258,8 @@ def derive_native_facts(conn: sqlite3.Connection) -> list[str]:
     """
     data_facts = get_preflight_data_facts(conn)
     tokens: list[str] = []
-    if data_facts.has_public_ids:
-        tokens.append(FACT_PUBLIC_IDS)
+    if data_facts.has_external_ids:
+        tokens.append(FACT_EXTERNAL_IDS)
     if data_facts.has_pacbio_placement:
         tokens.append(FACT_PLACED)
     return sorted(tokens)

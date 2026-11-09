@@ -17,16 +17,20 @@ until the first release is tagged.
 
 - **Identity values must be clean** (schema patch `004`): a CHECK on each
   identity column of `project` and `input_sample` rejects a value that is
-  empty or has surrounding whitespace or invisible format characters. A
-  preflight already holding such a value fails to load, naming the first 20
-  offending values and counting the rest.
+  empty or has surrounding whitespace or invisible characters (every Unicode
+  format character in the Basic Multilingual Plane, such as left-to-right
+  marks and bidi controls, plus NUL). A preflight already holding such a value
+  fails to load, naming the first 20 offending values and counting the rest.
 
 - **Projects and input samples carry a Qiita-MIINT export entity ID** (schema
   patch `003`): `project.study_export_entity_id`, unique, and
   `input_sample.biosample_export_entity_id`, not unique, since one biosample
   can appear as several input samples. Both are nullable, so existing
   preflights load with them unset. Either one now satisfies its table's
-  identity CHECK, as does `input_sample.matrix_tube_id`.
+  identity CHECK, as does `input_sample.matrix_tube_id`. `external_project_id`
+  and `bioproject_accession` become unique too; a preflight in which two
+  projects share either one fails to load, naming each shared value and its
+  rows.
 
 - **`set_input_sample_identifier` and `set_project_identifier` set any one
   identifier** on an existing preflight, named by `identifier_kind`:
@@ -46,7 +50,8 @@ until the first release is tagged.
   match; an unrecognised layout fails to load naming its header, rather than
   being silently absorbed. `legacy/flat.py`, which reimplemented parsing,
   population, and reconstruction alongside the omnibus path, is deleted, and
-  no `INSERT` statement remains anywhere under `legacy/`.
+  no `INSERT` statement remains anywhere under `legacy/`. A row whose every
+  cell is blank is skipped whatever the format's delimiter.
 
 - **A format declares whether its replicate well semantics round-trip**
   (`replicates_supported`, schema patch `002`). The loader previously rejected
@@ -243,7 +248,7 @@ until the first release is tagged.
   snapshot and a fresh load of its source CSV.
 - Content-derived fact suffixes for native fixtures: each committed `.sqlite`
   carries a filename suffix for each fact its contents hold, guarded against
-  drift. `.accessioned` marks a fixture whose `has_public_ids` fact is true;
+  drift. `.accessioned` marks a fixture whose `has_external_ids` fact is true;
   a fixture with no such fact keeps the bare source stem.
   Includes an accessioned PacBio fixture that reads cleanly through
   `get_pacbio_sample_info`.

@@ -46,6 +46,8 @@ class TestStripText(unittest.TestCase):
             "\u200bX\ufeff": "X",
             "\u2060X\u180e": "X",
             "\x00X\x00": "X",
+            "\u200fX\u200e": "X",
+            "\u202aX\u00ad": "X",
             " \u200b \ufeffX \u2060 ": "X",
             "A B\u200bC": "A B\u200bC",
             " \u200b\t\ufeff ": "",

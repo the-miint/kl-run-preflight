@@ -346,7 +346,7 @@ class TestGetPreflightDataFacts(unittest.TestCase):
         return facts
 
     def test_get_preflight_data_facts(self):
-        # Cover each condition of has_public_ids
+        # Cover each condition of has_external_ids
         cases = {
             "complete": ("PRJNA001", [("biosample_accession", "SAMN1", False)]),
             "tube_id_counts": (

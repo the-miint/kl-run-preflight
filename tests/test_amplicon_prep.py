@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 from run_preflight.legacy.api import load_file, load_legacy_csv, save_legacy_csv
+from run_preflight.legacy.parser import _split_prep_template
 
 from . import _helpers
 
@@ -220,6 +221,15 @@ class TestAmpliconPrepBlankLines(unittest.TestCase):
                     conn.close()
                 counts.append(count)
         self.assertEqual(counts[1], counts[0])
+
+    def test__split_prep_template_skip_all_blank_row(self):
+        # A row whose every cell is blank is skipped whatever the delimiter
+        results = {}
+        for delimiter in (",", "\t"):
+            text = f"a{delimiter}b\n1{delimiter}2\n {delimiter}{chr(0x200B)}\n"
+            results[delimiter] = _split_prep_template(text, delimiter)
+        expected_rows = [["a", "b"], ["1", "2"]]
+        self.assertEqual(results, {",": expected_rows, "\t": expected_rows})
 
 
 class TestAmpliconPrepRejection(unittest.TestCase):

@@ -269,13 +269,13 @@ def get_run_projects(
 class PreflightDataFacts(NamedTuple):
     """Which classes of data a run preflight has populated.
 
-    has_public_ids is true when the run has at least one prepped sample not
+    has_external_ids is true when the run has at least one prepped sample not
     flagged do-not-use, and every such sample's biosample and each of its
     primary and secondary projects carries at least one of its identifiers;
     has_pacbio_placement is true when any PacBio SMRT Cell placement is set.
     """
 
-    has_public_ids: bool
+    has_external_ids: bool
     has_pacbio_placement: bool
 
 
@@ -286,13 +286,13 @@ def get_preflight_data_facts(conn: sqlite3.Connection) -> PreflightDataFacts:
     need not know the underlying columns. Raises ValueError unless the
     database holds exactly one processing run.
     """
-    # Public IDs: the run has samples, and none lacks an identifier
+    # External IDs: the run has samples, and none lacks an identifier
     run_idx = get_single_run_idx(conn)
     identities = _fetch_sample_identities(conn, run_idx, include_do_not_use=False)
     any_unidentified = any(
         _unidentified_entities(identity) for identity in identities.values()
     )
-    has_public_ids = bool(identities) and not any_unidentified
+    has_external_ids = bool(identities) and not any_unidentified
 
     # PacBio placement: any SMRT Cell well or movie-context assignment
     cur = conn.cursor()
@@ -303,7 +303,7 @@ def get_preflight_data_facts(conn: sqlite3.Connection) -> PreflightDataFacts:
     (placement_count,) = cur.fetchone()
 
     has_pacbio_placement = bool(placement_count)
-    return PreflightDataFacts(has_public_ids, has_pacbio_placement)
+    return PreflightDataFacts(has_external_ids, has_pacbio_placement)
 
 
 def get_section_formats(conn: sqlite3.Connection) -> dict[str, str]:

@@ -28,6 +28,9 @@ from . import _helpers
 # Shipped patches that rebuild project and input_sample
 _TABLE_REBUILD_PATCH_NUMS = (3, 4)
 
+# Shipped patch that makes every project identifier unique
+_UNIQUE_PROJECT_ID_PATCH_NUM = 3
+
 # Shipped patch that adds the identity-value CHECKs
 _IDENTITY_CHECK_PATCH_NUM = 4
 
@@ -518,6 +521,39 @@ class TestTableRebuildPatches:
 
         expected = [("input_sample", doomed_ins_idx), ("project", doomed_project_idx)]
         assert (before, after) == (expected, expected)
+
+    @pytest.mark.parametrize("column", ["external_project_id", "bioproject_accession"])
+    def test_apply_patches_project_identity_raise_duplicate_err(self, tmp_path, column):
+        """A project identifier shared by two rows fails the patch, naming both."""
+        conn, _keys = _build_populated_db_before_patch(
+            tmp_path, _UNIQUE_PROJECT_ID_PATCH_NUM
+        )
+
+        # Seed two more projects sharing one value of the column under test
+        duplicate_value = "DUP9"
+        clashing_idxs = []
+        for suffix in ("2", "3"):
+            identifiers = {"external_project_id": suffix, "bioproject_accession": None}
+            identifiers[column] = duplicate_value
+            project_idx = _helpers.seed_project(
+                conn, project_name=f"proj{suffix}", **identifiers
+            )
+            clashing_idxs.append(project_idx)
+        conn.commit()
+
+        with pytest.raises(ValueError) as excinfo:
+            apply_patches(conn)
+        version = get_schema_version(conn)
+        conn.close()
+
+        expected_message = (
+            "Project identifiers must be unique; fix these before upgrading: "
+            f"project.{column} 'DUP9' in rows {clashing_idxs[0]}, {clashing_idxs[1]}"
+        )
+        assert (str(excinfo.value), version) == (
+            expected_message,
+            _UNIQUE_PROJECT_ID_PATCH_NUM - 1,
+        )
 
     @pytest.mark.parametrize("encoding", _helpers.SQLITE_TEXT_ENCODINGS)
     @pytest.mark.parametrize(("table", "pk_col", "key_name", "column"), _IDENTITY_CASES)

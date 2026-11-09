@@ -205,8 +205,9 @@ ProjectLookupKey = Literal["project_name", "external_project_id"]
 InputSampleLookupKey = Literal["input_sample_idx", "biosample_accession"]
 PacbioSampleLookupKey = Literal["sample_name", "pacbio_sample_idx"]
 
-# Invisible format characters stripped from a value's ends alongside whitespace
-INVISIBLE_FORMAT_CHARS = "\u200b\ufeff\u2060\u180e\x00"
+# Invisible characters stripped from a value's ends alongside whitespace: every
+# Unicode 16.0 format (Cf) character in the Basic Multilingual Plane, plus NUL
+INVISIBLE_FORMAT_CHARS = "\u00ad\u0600\u0601\u0602\u0603\u0604\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u180e\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\u206a\u206b\u206c\u206d\u206e\u206f\ufeff\ufff9\ufffa\ufffb\x00"  # noqa: E501
 
 
 # ---------------------------------------------------------------------------
