@@ -192,6 +192,23 @@ EMP_515F_PRIMER = "GTGYCAGCMGCCGCGGTAA"
 # column, and run view names are derived by convention.
 PlatformSpecificSampleKind = Literal["illumina", "pacbio", "tellseq"]
 
+# The settable identifier columns of a project and of an input_sample; each
+# member is the column name it sets.
+ProjectIdentifierKind = Literal["bioproject_accession", "study_export_entity_id"]
+InputSampleIdentifierKind = Literal[
+    "biosample_accession", "biosample_export_entity_id", "matrix_tube_id"
+]
+
+# Alternative lookup keys a setter accepts, of which a caller supplies exactly
+# one; each member is the lookup key's name.
+ProjectLookupKey = Literal["project_name", "external_project_id"]
+InputSampleLookupKey = Literal["input_sample_idx", "biosample_accession"]
+PacbioSampleLookupKey = Literal["sample_name", "pacbio_sample_idx"]
+
+# Invisible characters stripped from a value's ends alongside whitespace: every
+# Unicode 16.0 format (Cf) character in the Basic Multilingual Plane, plus NUL
+INVISIBLE_FORMAT_CHARS = "\u00ad\u0600\u0601\u0602\u0603\u0604\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u180e\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\u206a\u206b\u206c\u206d\u206e\u206f\ufeff\ufff9\ufffa\ufffb\x00"  # noqa: E501
+
 
 # ---------------------------------------------------------------------------
 # Sample-type strings (values in the sample_type reference table)
@@ -249,11 +266,11 @@ TABLE_PROJECT = "project"
 TABLE_CHANGE_LOG = "change_log"
 
 # Columns mutated by UPDATE statements
+DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
 DB_COL_BIOSAMPLE_ACCESSION = "biosample_accession"
 DB_COL_LANE = "lane"
 DB_COL_MASK_SHORT_READS = "mask_short_reads"
 DB_COL_OVERRIDE_CYCLES = "override_cycles"
-DB_COL_BIOPROJECT_ACCESSION = "bioproject_accession"
 DB_COL_PROJECT_NAME = "project_name"
 DB_COL_EXTERNAL_PROJECT_ID = "external_project_id"
 DB_COL_DO_NOT_USE = "do_not_use"

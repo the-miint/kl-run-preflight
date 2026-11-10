@@ -15,6 +15,12 @@ from pathlib import Path
 _PATCHES_DIR = Path(__file__).resolve().parent / "sql" / "patches"
 _PATCH_PATTERN = re.compile(r"^(\d{3})_.+\.(sql|py)$")
 
+# Boolean connection settings that a rollback does not undo, so the runner
+# saves and restores each around patching
+_PRAGMA_FOREIGN_KEYS = "foreign_keys"
+_PRAGMA_LEGACY_ALTER_TABLE = "legacy_alter_table"
+_RESTORED_PRAGMA_FLAGS = (_PRAGMA_FOREIGN_KEYS, _PRAGMA_LEGACY_ALTER_TABLE)
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -51,6 +57,25 @@ def _discover_patches(patches_dir: Path) -> dict[int, Path]:
         if m:
             patches[int(m.group(1))] = entry
     return patches
+
+
+def _read_pragma_flag(conn: sqlite3.Connection, name: str) -> bool:
+    """Return the current value of the boolean pragma *name*."""
+    cur = conn.execute(f"PRAGMA {name}")
+    row = cur.fetchone()
+    return bool(row[0])
+
+
+def _write_pragma_flag(conn: sqlite3.Connection, name: str, enabled: bool) -> None:
+    """Set the boolean pragma *name*."""
+    conn.execute(f"PRAGMA {name} = {'ON' if enabled else 'OFF'}")
+
+
+def _foreign_key_violations(conn: sqlite3.Connection) -> set[tuple]:
+    """Return every current foreign-key violation as a hashable row."""
+    cur = conn.execute("PRAGMA foreign_key_check")
+    rows = cur.fetchall()
+    return set(rows)
 
 
 def _load_py_patch(patch_num: int, patch_path: Path):
@@ -168,7 +193,12 @@ def apply_patches(
 ) -> int:
     """Apply all pending patches to the database in order.
 
-    A ``.py`` patch must define an ``apply(conn)`` entry point.
+    A ``.py`` patch must define an ``apply(conn)`` entry point. Foreign-key
+    enforcement is suspended while patches run, so a patch may rebuild a
+    referenced table; a patch that introduces a foreign-key violation is
+    rolled back, while violations already present are not attributed to it.
+    The connection settings the runner saves are restored afterward,
+    whether or not a patch fails.
 
     Args:
         conn: An open SQLite connection.
@@ -183,33 +213,68 @@ def apply_patches(
             latest patch.
         ValueError: If a patch file is missing from the expected
             sequence.
+        sqlite3.IntegrityError: If a patch introduces a foreign-key
+            violation.
+        RuntimeError: If patches are pending and the connection has an
+            open transaction.
     """
     pending = get_pending_patches(conn, patches_dir)
 
-    for patch_num, patch_path in pending:
-        # Apply the patch body and stamp its version inside a single
-        # transaction: SQLite DDL is transactional and PRAGMA user_version
-        # participates in it, so a statement failing part-way rolls the whole
-        # patch back rather than stranding a half-applied schema at the prior
-        # version (which would make every later open re-run and re-fail it).
-        try:
-            if patch_path.suffix == ".sql":
-                patch_sql = patch_path.read_text()
-                # executescript commits any open transaction first, then runs
-                # the script verbatim; wrapping in BEGIN/COMMIT makes it atomic.
-                conn.executescript(
-                    f"BEGIN;\n{patch_sql}\nPRAGMA user_version = {patch_num};\nCOMMIT;"
-                )
-            elif patch_path.suffix == ".py":
-                module = _load_py_patch(patch_num, patch_path)
-                conn.execute("BEGIN")
-                module.apply(conn)
+    # A current database needs no connection-setting changes
+    if not pending:
+        current_version = get_schema_version(conn)
+        return current_version
+
+    # Refuse an open transaction: SQLite ignores the FK pragma inside one,
+    # and running a patch script would commit the caller's pending writes
+    if conn.in_transaction:
+        raise RuntimeError(
+            "Cannot apply patches; the connection has an open transaction"
+        )
+
+    # Suspend FK enforcement for the patches
+    saved_flags = {
+        name: _read_pragma_flag(conn, name) for name in _RESTORED_PRAGMA_FLAGS
+    }
+    _write_pragma_flag(conn, _PRAGMA_FOREIGN_KEYS, False)
+    try:
+        for patch_num, patch_path in pending:
+            # Apply the patch body and stamp its version inside a single
+            # transaction: SQLite DDL is transactional and PRAGMA user_version
+            # participates in it, so a statement failing part-way rolls the
+            # whole patch back rather than stranding a half-applied schema at
+            # the prior version (which would make every later open re-run and
+            # re-fail it).
+            try:
+                violations_before = _foreign_key_violations(conn)
+                if patch_path.suffix == ".sql":
+                    # executescript commits any open transaction first, then
+                    # runs the script verbatim, leaving its BEGIN open
+                    patch_sql = patch_path.read_text()
+                    conn.executescript(f"BEGIN;\n{patch_sql}")
+                elif patch_path.suffix == ".py":
+                    module = _load_py_patch(patch_num, patch_path)
+                    conn.execute("BEGIN")
+                    module.apply(conn)
+
+                # Refuse to commit a patch that broke referential integrity
+                violations_after = _foreign_key_violations(conn)
+                new_violations = sorted(violations_after - violations_before, key=str)
+                if new_violations:
+                    raise sqlite3.IntegrityError(
+                        f"Patch {patch_path.name} left foreign-key violations: "
+                        f"{new_violations}"
+                    )
                 conn.execute(f"PRAGMA user_version = {patch_num}")
                 conn.execute("COMMIT")
-        except Exception:
-            # Undo the partially-applied patch so a later retry starts clean
-            conn.rollback()
-            raise
+            except Exception:
+                # Undo the partially-applied patch so a later retry starts clean
+                conn.rollback()
+                raise
+    finally:
+        for name, enabled in saved_flags.items():
+            _write_pragma_flag(conn, name, enabled)
 
-    # Return final version without re-reading PRAGMA when patches were applied
-    return pending[-1][0] if pending else get_schema_version(conn)
+    # Return the last applied patch's version without re-reading the PRAGMA
+    final_version = pending[-1][0]
+    return final_version

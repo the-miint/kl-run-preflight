@@ -16,24 +16,74 @@ import json
 import re
 import sqlite3
 from pathlib import Path
+from typing import get_args
 
-from run_preflight.db import get_preflight_data_facts
+from run_preflight.constants import (
+    DB_COL_EXTERNAL_PROJECT_ID,
+    DB_COL_SAMPLE_NAME,
+    IN_MEMORY_PATH,
+    InputSampleIdentifierKind,
+    ProjectIdentifierKind,
+)
+from run_preflight.db import (
+    InputSampleIdentifiers,
+    PlatformSampleInfo,
+    ProjectIdentifiers,
+    get_preflight_data_facts,
+)
 
 _DATA_DIR = Path(__file__).parent / "data"
 LEGACY_DATA_DIR = _DATA_DIR / "legacy"
 NATIVE_DATA_DIR = _DATA_DIR / "native"
 GOOD_LEGACY_GLOB = "good_*"
 NATIVE_SNAPSHOT_SUFFIX = ".generated_snapshot.json"
+SQL_DIR = Path(__file__).resolve().parent.parent / "src" / "run_preflight" / "sql"
 
-# Content-derived fact tokens marking populated post-preflight data. A true
-# preflight (loaded from most legacy CSVs) carries none of these and so has a
-# bare filename; a fixture that adds a class of data carries the matching
-# token(s) as a dot-delimited suffix, letting a consumer pick a fixture that
-# already satisfies the stage their code needs. Facts are independent because
-# sequencing placement is platform-specific (Illumina Lane is present at
-# preflight; PacBio placement appears only post-flight) and can arrive
-# separately from NCBI accessions.
-FACT_ACCESSIONED = "accessioned"
+# Identity columns whose values must be clean, keyed by (table, primary key)
+IDENTITY_COLUMNS = {
+    ("project", "project_idx"): (
+        DB_COL_EXTERNAL_PROJECT_ID,
+        *get_args(ProjectIdentifierKind),
+    ),
+    ("input_sample", "input_sample_idx"): (
+        DB_COL_SAMPLE_NAME,
+        *get_args(InputSampleIdentifierKind),
+    ),
+}
+
+# Identity values a clean-value CHECK must refuse
+UNCLEAN_IDENTITY_VALUES = (
+    "",
+    "  ",
+    " X",
+    "X\t",
+    chr(0x200B),
+    "X" + chr(0x2060),
+    "X" + chr(0xFEFF),
+    "X" + chr(0x200E),
+    chr(0x200F) + "X",
+    "X" + chr(0x00AD),
+    chr(0x202E) + "X",
+    chr(0) + "X",
+    "X" + chr(0),
+)
+
+# Identity values a clean-value CHECK must accept; U+0100 stores a zero byte
+# at a value's start or end under UTF-16
+CLEAN_IDENTITY_VALUES = (
+    "A B",
+    chr(0x100) + "X",
+    "X" + chr(0x100),
+)
+
+# Text encodings a SQLite database can be created with
+SQLITE_TEXT_ENCODINGS = ("UTF-8", "UTF-16le", "UTF-16be")
+
+# Fixture-naming tokens for content-derived facts; see native_stem for how
+# they form a filename. Facts are independent because sequencing placement is
+# platform-specific (Illumina Lane is present at preflight; PacBio placement
+# appears only post-flight) and can arrive separately from external identifiers.
+FACT_EXTERNAL_IDS = "accessioned"
 FACT_PLACED = "placed"
 
 
@@ -46,6 +96,25 @@ def open_db(db_path: str):
         yield conn
     finally:
         conn.close()
+
+
+def build_encoded_schema_db(schema_file: str, encoding: str) -> sqlite3.Connection:
+    """Return an FK-enforcing in-memory DB built from *schema_file*.
+
+    *schema_file* names a file in SQL_DIR; the DB stores text in *encoding*.
+    """
+    # Build the schema directly instead of calling create_db: the encoding must be
+    # set before the first schema object exists, and create_db does not set it
+    conn = sqlite3.connect(IN_MEMORY_PATH)
+    conn.execute(f"PRAGMA encoding = '{encoding}'")
+    # SQLite silently ignores an encoding set too late, so confirm it applied
+    cur = conn.execute("PRAGMA encoding")
+    applied_encoding = cur.fetchone()[0]
+    assert applied_encoding == encoding, f"encoding not applied: {applied_encoding}"
+    conn.execute("PRAGMA foreign_keys = ON")
+    schema_sql = (SQL_DIR / schema_file).read_text()
+    conn.executescript(schema_sql)
+    return conn
 
 
 def _normalize_sql(sql: str | None) -> str:
@@ -184,15 +253,13 @@ def capture_db_snapshot(conn: sqlite3.Connection) -> dict:
 def derive_native_facts(conn: sqlite3.Connection) -> list[str]:
     """Return the sorted content-derived fact tokens for a native DB.
 
-    Maps the domain facts from get_preflight_data_facts to this suite's
-    fixture-naming tokens: FACT_ACCESSIONED when any NCBI accession is
-    populated, FACT_PLACED when any PacBio SMRT Cell placement is populated.
-    A true preflight yields [].
+    Each fact get_preflight_data_facts reports as true maps to one
+    fixture-naming token.
     """
     data_facts = get_preflight_data_facts(conn)
     tokens: list[str] = []
-    if data_facts.has_accessions:
-        tokens.append(FACT_ACCESSIONED)
+    if data_facts.has_external_ids:
+        tokens.append(FACT_EXTERNAL_IDS)
     if data_facts.has_pacbio_placement:
         tokens.append(FACT_PLACED)
     return sorted(tokens)
@@ -201,8 +268,8 @@ def derive_native_facts(conn: sqlite3.Connection) -> list[str]:
 def native_stem(base_stem: str, facts: list[str]) -> str:
     """Build a native fixture stem: source stem plus sorted fact suffixes.
 
-    A true preflight (empty *facts*) keeps the bare source stem; each fact
-    token is appended as a dot-delimited suffix.
+    Each fact token is appended as a dot-delimited suffix, so a fixture with
+    no facts keeps the bare source stem.
     """
     suffix = "".join(f".{fact}" for fact in sorted(facts))
     return f"{base_stem}{suffix}"
@@ -226,6 +293,94 @@ def snapshot_to_json(snapshot: dict) -> str:
     freshly captured one can be diffed directly.
     """
     return json.dumps(snapshot, indent=2, sort_keys=True) + "\n"
+
+
+def expected_accession_only_info(
+    sample_idx: int,
+    sample_type: str,
+    biosample_accession: str,
+    primary_bioproject_accession: str,
+    secondary_bioproject_accessions: list[str],
+    kind_row: tuple,
+) -> PlatformSampleInfo:
+    """Build the reader row for a sample whose only identifiers are accessions."""
+    biosample = InputSampleIdentifiers(biosample_accession, None, None, None)
+    primary_project = ProjectIdentifiers(primary_bioproject_accession, None, None)
+    secondary_projects = tuple(
+        ProjectIdentifiers(accession, None, None)
+        for accession in secondary_bioproject_accessions
+    )
+    info = PlatformSampleInfo(
+        sample_idx,
+        sample_type,
+        biosample,
+        primary_project,
+        secondary_projects,
+        kind_row,
+    )
+    return info
+
+
+def seed_run_skeleton(
+    conn: sqlite3.Connection, **project_fields
+) -> tuple[int, int, int]:
+    """Insert one project, input_plate, and processing_run; do not commit.
+
+    *project_fields* are passed to seed_project. Returns (project_idx,
+    plate_idx, run_idx).
+    """
+    project_idx = seed_project(conn, **project_fields)
+    plate_idx = seed_plate(conn, project_idx)
+    run_idx = seed_processing_run(conn)
+    return project_idx, plate_idx, run_idx
+
+
+def seed_committed_sample_chain(
+    conn: sqlite3.Connection,
+    plate_idx: int,
+    project_idx: int | None,
+    run_idx: int,
+    sample_name: str,
+    well: str,
+    *,
+    sample_type_name: str = "standard",
+    prs_name: str | None = None,
+) -> tuple[int, int]:
+    """Seed a sample chain and commit; return (input_sample_idx, prepped_sample_idx)."""
+    ins_idx, _cs_idx, prs_idx = seed_sample_chain(
+        conn,
+        plate_idx,
+        project_idx,
+        run_idx,
+        sample_name=sample_name,
+        sample_type_name=sample_type_name,
+        well=well,
+        prs_name=prs_name,
+    )
+    conn.commit()
+    return ins_idx, prs_idx
+
+
+def seed_run_with_project_lacking_qiita_id(conn: sqlite3.Connection) -> int:
+    """Seed and commit a run whose sole project "proj_no_qid" has no QiitaID.
+
+    The project is valid through its BioProject accession; returns run_idx.
+    """
+    project_idx, plate_idx, run_idx = seed_run_skeleton(
+        conn,
+        project_name="proj_no_qid",
+        external_project_id=None,
+        bioproject_accession="PRJNA001",
+    )
+    seed_committed_sample_chain(conn, plate_idx, project_idx, run_idx, "S1", "A1")
+    return run_idx
+
+
+def count_input_samples(conn: sqlite3.Connection) -> int:
+    """Return the number of input_sample rows."""
+    cur = conn.execute("SELECT COUNT(*) FROM input_sample")
+    (count,) = cur.fetchone()
+    return count
 
 
 def seed_project_and_plate(conn: sqlite3.Connection) -> tuple[int, int]:
@@ -416,7 +571,8 @@ def seed_illumina_sample(
 ) -> int:
     """Insert one illumina_sample row; return illumina_sample_idx."""
     cur = conn.cursor()
-    cur.execute(
+    cur.execute(  # same-pattern-ok: test
+        # seeder inserts directly so it stays independent of the population code
         "INSERT INTO illumina_sample "
         "(prepped_sample_idx, i7_index_id, i7_sequence, "
         " i5_index_id, i5_sequence, lane) "

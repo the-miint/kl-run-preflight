@@ -13,6 +13,9 @@ import unittest
 from pathlib import Path
 
 from run_preflight.legacy.api import load_file, load_legacy_csv, save_legacy_csv
+from run_preflight.legacy.parser import _split_prep_template
+
+from . import _helpers
 
 DATA_DIR = Path(__file__).parent / "data" / "legacy"
 
@@ -20,13 +23,13 @@ DATA_DIR = Path(__file__).parent / "data" / "legacy"
 # free-form (studies vary the column set/order); study identifiers are scrubbed.
 # Named by what each exercises; one per distinct scenario across the three formats.
 AMPLICON_FIXTURES = (
-    "good_amplicon_v1.txt",                  # v1 wide + control_description
-    "good_amplicon_v1_katharoseq.txt",       # v1 + katharoseq controls
-    "good_amplicon_v2.txt",                  # v2 narrow (well_id)
-    "good_amplicon_v2_katharoseq.txt",       # v2 + katharoseq controls
-    "good_amplicon_v2_multi_project.txt",    # v2 spanning several projects
-    "good_amplicon_v3.txt",                  # v3 wide without control_description
-    "good_amplicon_v3_extra_columns.txt",    # v3 + unrecognized columns (verbatim)
+    "good_amplicon_v1.txt",  # v1 wide + control_description
+    "good_amplicon_v1_katharoseq.txt",  # v1 + katharoseq controls
+    "good_amplicon_v2.txt",  # v2 narrow (well_id)
+    "good_amplicon_v2_katharoseq.txt",  # v2 + katharoseq controls
+    "good_amplicon_v2_multi_project.txt",  # v2 spanning several projects
+    "good_amplicon_v3.txt",  # v3 wide without control_description
+    "good_amplicon_v3_extra_columns.txt",  # v3 + unrecognized columns (verbatim)
 )
 
 
@@ -173,6 +176,60 @@ class TestAmpliconPrepProjection(unittest.TestCase):
         self.assertEqual(
             loc, {"LocationCell": n, "LocationColumn": n, "LocationRow": n}
         )
+
+
+class TestAmpliconPrepWhitespace(unittest.TestCase):
+    def test_load_legacy_csv_strips_prep_template_cells(self):
+        # Padding around a cell is stripped, as on the sectioned-CSV path,
+        # so a padded project name does not split one project into two
+        src = (DATA_DIR / "good_amplicon_v1.txt").read_text()
+        padded = src.replace(
+            "\tS4_20006\tsample.00001\t", "\tS4_20006 \t sample.00001\u200b\t", 1
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            sheet = Path(tmp) / "padded.txt"
+            sheet.write_text(padded)
+            conn = load_legacy_csv(str(sheet))
+        try:
+            projects = conn.execute("SELECT project_name FROM project").fetchall()
+            sample_rows = conn.execute(
+                "SELECT sample_name FROM input_sample"
+            ).fetchall()
+        finally:
+            conn.close()
+        padded_names = [
+            name for (name,) in sample_rows if name != name.strip(" \u200b")
+        ]
+        self.assertEqual((projects, padded_names), ([("S4_20006",)], []))
+
+
+class TestAmpliconPrepBlankLines(unittest.TestCase):
+    def test_load_legacy_csv_skips_whitespace_only_prep_template_lines(self):
+        # Lines of only whitespace or invisible characters are skipped, as on
+        # the sectioned-CSV path
+        src = (DATA_DIR / "good_amplicon_v1.txt").read_text()
+        blank_lines = "  " + chr(0x200B) + "\n\t\n"
+        counts = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in (("plain", src), ("padded", src + blank_lines)):
+                sheet = Path(tmp) / f"{name}.txt"
+                sheet.write_text(text)
+                conn = load_legacy_csv(str(sheet))
+                try:
+                    count = _helpers.count_input_samples(conn)
+                finally:
+                    conn.close()
+                counts.append(count)
+        self.assertEqual(counts[1], counts[0])
+
+    def test__split_prep_template_skip_all_blank_row(self):
+        # A row whose every cell is blank is skipped whatever the delimiter
+        results = {}
+        for delimiter in (",", "\t"):
+            text = f"a{delimiter}b\n1{delimiter}2\n {delimiter}{chr(0x200B)}\n"
+            results[delimiter] = _split_prep_template(text, delimiter)
+        expected_rows = [["a", "b"], ["1", "2"]]
+        self.assertEqual(results, {",": expected_rows, "\t": expected_rows})
 
 
 class TestAmpliconPrepRejection(unittest.TestCase):

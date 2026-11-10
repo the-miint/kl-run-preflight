@@ -89,14 +89,25 @@ class TestKatharoseq(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def test_add_and_get_katharoseq_sample(self):
-        with open_db(self.db_path) as conn:
-            proj = seed_project(conn, bioproject_accession="PRJNA1")
-            plate = seed_plate(conn, proj)
-            ins = seed_input_sample(
-                conn, plate, None, sample_name="kath1",
+    def _seed_katharoseq_controls(self, conn, sample_names: list[str]) -> list[int]:
+        """Seed one KatharoSeq control per name on one plate; return their idxs."""
+        proj = seed_project(conn, bioproject_accession="PRJNA1")
+        plate = seed_plate(conn, proj)
+        control_idxs = [
+            seed_input_sample(
+                conn,
+                plate,
+                None,
+                sample_name=name,
                 sample_type_name="katharoseq_cells_positive_control",
             )
+            for name in sample_names
+        ]
+        return control_idxs
+
+    def test_add_and_get_katharoseq_sample(self):
+        with open_db(self.db_path) as conn:
+            (ins,) = self._seed_katharoseq_controls(conn, ["kath1"])
             add_katharoseq_sample(conn, ins, number_of_cells=7000, rack_id="R1")
             conn.commit()
 
@@ -105,6 +116,41 @@ class TestKatharoseq(unittest.TestCase):
                 get_katharoseq_sample_info(conn),
                 [KatharoseqSampleInfo(ins, "kath1", 7000, "R1")],
             )
+
+    def test_add_katharoseq_sample_raise_rack_id_type_err(self):
+        with open_db(self.db_path) as conn:
+            (ins,) = self._seed_katharoseq_controls(conn, ["kath1"])
+            with self.assertRaisesRegex(TypeError, "rack_id must be a str, not int"):
+                add_katharoseq_sample(conn, ins, number_of_cells=10, rack_id=5)
+
+    def test_add_katharoseq_sample_raise_no_metric_err(self):
+        # A row with neither metric asserts nothing, so it is refused
+        with open_db(self.db_path) as conn:
+            (ins,) = self._seed_katharoseq_controls(conn, ["kath1"])
+            for rack_id in (None, " "):
+                with (
+                    self.subTest(rack_id=rack_id),
+                    self.assertRaisesRegex(ValueError, "number_of_cells or rack_id"),
+                ):
+                    add_katharoseq_sample(
+                        conn, ins, number_of_cells=None, rack_id=rack_id
+                    )
+
+    def test_add_katharoseq_sample_strips_rack_id(self):
+        # A padded rack_id is stripped; a blank one is stored as None
+        with open_db(self.db_path) as conn:
+            kath_idxs = self._seed_katharoseq_controls(conn, ["kath1", "kath2"])
+            add_katharoseq_sample(
+                conn, kath_idxs[0], number_of_cells=10, rack_id=" R1\u200b"
+            )
+            add_katharoseq_sample(conn, kath_idxs[1], number_of_cells=20, rack_id=" ")
+            conn.commit()
+            infos = get_katharoseq_sample_info(conn)
+        expected = [
+            KatharoseqSampleInfo(kath_idxs[0], "kath1", 10, "R1"),
+            KatharoseqSampleInfo(kath_idxs[1], "kath2", 20, None),
+        ]
+        self.assertEqual(infos, expected)
 
 
 if __name__ == "__main__":

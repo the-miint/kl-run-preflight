@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import textwrap
 from pathlib import Path
@@ -13,12 +14,109 @@ from run_preflight.db import create_db
 from run_preflight.file_io import load_db_file
 from run_preflight.legacy.api import load_file
 from run_preflight.migrate import (
+    _PATCHES_DIR,
+    _discover_patches,
     SchemaVersionTooNewError,
     apply_patches,
     get_latest_version,
     get_pending_patches,
     get_schema_version,
 )
+
+from . import _helpers
+
+# Shipped patches that rebuild project and input_sample
+_TABLE_REBUILD_PATCH_NUMS = (3, 4)
+
+# Shipped patch that makes every project identifier unique
+_UNIQUE_PROJECT_ID_PATCH_NUM = 3
+
+# Shipped patch that adds the identity-value CHECKs
+_IDENTITY_CHECK_PATCH_NUM = 4
+
+# Seeded-row key naming each identity table's row
+_SEEDED_ROW_KEYS = {"project": "project_idx", "input_sample": "ins_idx"}
+_IDENTITY_CASES = [
+    (table, pk_col, _SEEDED_ROW_KEYS[table], column)
+    for (table, pk_col), columns in _helpers.IDENTITY_COLUMNS.items()
+    for column in columns
+]
+
+
+def _fetch_all(conn: sqlite3.Connection, sql: str) -> list[tuple]:
+    """Run *sql* and return every result row."""
+    cur = conn.execute(sql)
+    rows = cur.fetchall()
+    return rows
+
+
+def _fetch_scalar(conn: sqlite3.Connection, sql: str):
+    """Run *sql* and return the first column of its first row."""
+    cur = conn.execute(sql)
+    row = cur.fetchone()
+    return row[0]
+
+
+def _build_populated_db_before_patch(
+    tmp_path: Path, patch_num: int, encoding: str = "UTF-8"
+) -> tuple[sqlite3.Connection, dict[str, int]]:
+    """Build an FK-enforcing DB one version short of *patch_num*, seeded.
+
+    The DB stores text in *encoding*. Seeds one project, plate, run, and
+    sample chain, and returns the connection plus the seeded row keys.
+    """
+    # Stage only the shipped patches that precede patch_num
+    earlier_dir = tmp_path / "earlier_patches"
+    earlier_dir.mkdir()
+    shipped_patches = _discover_patches(_PATCHES_DIR)
+    for shipped_num, patch_path in shipped_patches.items():
+        if shipped_num < patch_num:
+            shutil.copy(patch_path, earlier_dir / patch_path.name)
+
+    # Bring the frozen baseline forward to just before patch_num
+    conn = _helpers.build_encoded_schema_db("schema_v0.sql", encoding)
+    apply_patches(conn, earlier_dir)
+    assert get_schema_version(conn) == patch_num - 1
+
+    # Seed a minimal sample chain that references both rebuilt tables
+    project_idx, plate_idx = _helpers.seed_project_and_plate(conn)
+    run_idx = _helpers.seed_processing_run(conn)
+    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+        conn, plate_idx, project_idx, run_idx
+    )
+    conn.commit()
+    keys = {
+        "project_idx": project_idx,
+        "plate_idx": plate_idx,
+        "ins_idx": ins_idx,
+        "prs_idx": prs_idx,
+    }
+    return conn, keys
+
+
+def _build_db_with_identity_value(
+    tmp_path: Path,
+    encoding: str,
+    table: str,
+    pk_col: str,
+    key_name: str,
+    column: str,
+    value: str,
+) -> tuple[sqlite3.Connection, int]:
+    """Build a DB awaiting the identity-check patch, holding *value*.
+
+    The seeded *table* row's *column* is set to *value*; returns the
+    connection plus that row's key.
+    """
+    conn, keys = _build_populated_db_before_patch(
+        tmp_path, _IDENTITY_CHECK_PATCH_NUM, encoding
+    )
+    row_idx = keys[key_name]
+    conn.execute(
+        f"UPDATE {table} SET {column} = ? WHERE {pk_col} = ?", (value, row_idx)
+    )
+    conn.commit()
+    return conn, row_idx
 
 
 def _seed_v0_db_with_pending_patch(tmp_path) -> tuple[str, Path]:
@@ -160,6 +258,36 @@ class TestApplyPatches:
         assert result == 2
         assert get_schema_version(conn) == 2
 
+    @pytest.mark.parametrize("foreign_keys", ["ON", "OFF"])
+    def test_apply_patches_open_transaction_raise_err(self, tmp_path, foreign_keys):
+        """An open transaction raises before any patch runs, whatever FK setting."""
+        (tmp_path / "001_unrelated.sql").write_text("CREATE TABLE unrelated (id INT);")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute(f"PRAGMA foreign_keys = {foreign_keys}")
+        conn.execute("CREATE TABLE held (id INT)")
+        # Leave an uncommitted write so the connection holds a transaction
+        conn.execute("BEGIN")
+        conn.execute("INSERT INTO held VALUES (1)")
+        with pytest.raises(RuntimeError, match="open transaction"):
+            apply_patches(conn, tmp_path)
+        # The caller's pending write must not have been committed
+        conn.rollback()
+        held_rows = _fetch_all(conn, "SELECT id FROM held")
+        assert (get_schema_version(conn), held_rows) == (0, [])
+
+    def test_apply_patches_already_current_in_open_transaction(self, tmp_path):
+        """A current DB returns its version even with a transaction open."""
+        (tmp_path / "001_a.sql").write_text("CREATE TABLE t (id INT);")
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute("PRAGMA user_version = 1")
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("CREATE TABLE held (id INT)")
+        # Leave an uncommitted write so the connection holds a transaction
+        conn.execute("BEGIN")
+        conn.execute("INSERT INTO held VALUES (1)")
+        result = apply_patches(conn, tmp_path)
+        assert (result, conn.in_transaction) == (1, True)
+
     def test_apply_patches_already_current(self, tmp_path):
         """No-op when DB is already at latest version."""
         (tmp_path / "001_a.sql").write_text("CREATE TABLE should_not_run (id INT);")
@@ -188,6 +316,66 @@ class TestApplyPatches:
         conn.execute("PRAGMA user_version = 5")
         with pytest.raises(SchemaVersionTooNewError, match="exceeds"):
             apply_patches(conn, tmp_path)
+
+    def test_apply_patches_restores_foreign_keys(self, tmp_path):
+        """FK enforcement is suspended for the patch and restored after."""
+        # The patch records the enforcement setting it ran under
+        (tmp_path / "001_record_fk.py").write_text(
+            textwrap.dedent("""\
+                def apply(conn):
+                    fk = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+                    conn.execute("CREATE TABLE fk_seen (value INTEGER)")
+                    conn.execute("INSERT INTO fk_seen VALUES (?)", (fk,))
+            """)
+        )
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute("PRAGMA foreign_keys = ON")
+        apply_patches(conn, tmp_path)
+        seen = _fetch_scalar(conn, "SELECT value FROM fk_seen")
+        after = _fetch_scalar(conn, "PRAGMA foreign_keys")
+        assert (seen, after) == (0, 1)
+
+    def test_apply_patches_rolls_back_fk_violation(self, tmp_path):
+        """A patch introducing a dangling reference is rolled back and raises."""
+        (tmp_path / "001_dangling.sql").write_text(
+            "CREATE TABLE parent (id INTEGER PRIMARY KEY);\n"
+            "CREATE TABLE child (parent_id INTEGER REFERENCES parent(id));\n"
+            "INSERT INTO child VALUES (99);"
+        )
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.execute("PRAGMA foreign_keys = ON")
+        with pytest.raises(sqlite3.IntegrityError, match="foreign-key violations"):
+            apply_patches(conn, tmp_path)
+        table_names = _fetch_all(
+            conn, "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+        fk = _fetch_scalar(conn, "PRAGMA foreign_keys")
+        assert (get_schema_version(conn), table_names, fk) == (0, [], 1)
+
+    def test_apply_patches_ignores_preexisting_fk_violation(self, tmp_path):
+        """A violation already in the DB is not blamed on the patch."""
+        (tmp_path / "001_unrelated.sql").write_text("CREATE TABLE unrelated (id INT);")
+        # Plant a dangling reference while enforcement is off
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        conn.executescript(
+            "CREATE TABLE parent (id INTEGER PRIMARY KEY);\n"
+            "CREATE TABLE child (parent_id INTEGER REFERENCES parent(id));\n"
+            "INSERT INTO child VALUES (99);"
+        )
+        conn.execute("PRAGMA foreign_keys = ON")
+        result = apply_patches(conn, tmp_path)
+        assert result == 1
+
+    def test_apply_patches_restores_legacy_alter_table(self, tmp_path):
+        """A failing patch cannot leave legacy ALTER TABLE mode switched on."""
+        (tmp_path / "001_fails.sql").write_text(
+            "PRAGMA legacy_alter_table = ON;\nSELECT * FROM no_such_table;"
+        )
+        conn = sqlite3.connect(IN_MEMORY_PATH)
+        with pytest.raises(sqlite3.OperationalError, match="no_such_table"):
+            apply_patches(conn, tmp_path)
+        legacy_alter = _fetch_scalar(conn, "PRAGMA legacy_alter_table")
+        assert legacy_alter == 0
 
     def test_apply_patches_py_missing_apply(self, tmp_path):
         """Python patch without apply() raises AttributeError."""
@@ -265,3 +453,163 @@ class TestCreateDbVersion:
         conn = create_db(db_path)
         assert get_schema_version(conn) == get_latest_version()
         conn.close()
+
+
+class TestTableRebuildPatches:
+    @pytest.mark.parametrize("patch_num", _TABLE_REBUILD_PATCH_NUMS)
+    def test_apply_patches_table_rebuild_preserves_rows(self, tmp_path, patch_num):
+        """Rebuilding project and input_sample keeps rows, keys, and views."""
+        conn, keys = _build_populated_db_before_patch(tmp_path, patch_num)
+        apply_patches(conn)
+
+        # Read back the rebuilt rows, a view joining through them, and the
+        # connection state the runner must leave behind
+        actual = {
+            "projects": _fetch_all(
+                conn,
+                "SELECT project_idx, project_name, external_project_id, "
+                "bioproject_accession, study_export_entity_id FROM project",
+            ),
+            "input_samples": _fetch_all(
+                conn,
+                "SELECT input_sample_idx, sample_name, biosample_accession, "
+                "matrix_tube_id, biosample_export_entity_id FROM input_sample",
+            ),
+            "view_rows": _fetch_all(
+                conn,
+                "SELECT prepped_sample_idx, project_idx FROM prepped_sample_project",
+            ),
+            "fk_violations": _fetch_all(conn, "PRAGMA foreign_key_check"),
+            "foreign_keys": _fetch_scalar(conn, "PRAGMA foreign_keys"),
+            "version": get_schema_version(conn),
+        }
+        conn.close()
+
+        expected = {
+            "projects": [(keys["project_idx"], "proj1", "1", None, None)],
+            "input_samples": [(keys["ins_idx"], "sample1", None, None, None)],
+            "view_rows": [(keys["prs_idx"], keys["project_idx"])],
+            "fk_violations": [],
+            "foreign_keys": 1,
+            "version": get_latest_version(),
+        }
+        assert actual == expected
+
+    @pytest.mark.parametrize("patch_num", _TABLE_REBUILD_PATCH_NUMS)
+    def test_apply_patches_table_rebuild_keeps_autoincrement(self, tmp_path, patch_num):
+        """Ids of rows deleted before the rebuild are never reissued."""
+        conn, keys = _build_populated_db_before_patch(tmp_path, patch_num)
+
+        # Raise each high-water mark above the surviving rows, then delete
+        doomed_project_idx = _helpers.seed_project(
+            conn, project_name="proj2", external_project_id="2"
+        )
+        doomed_ins_idx = _helpers.seed_input_sample(
+            conn, keys["plate_idx"], keys["project_idx"], sample_name="sample2"
+        )
+        conn.execute(
+            "DELETE FROM input_sample WHERE input_sample_idx = ?", (doomed_ins_idx,)
+        )
+        conn.execute("DELETE FROM project WHERE project_idx = ?", (doomed_project_idx,))
+        conn.commit()
+        sequence_sql = "SELECT name, seq FROM sqlite_sequence WHERE name IN ('project', 'input_sample') ORDER BY name"  # noqa: E501
+        before = _fetch_all(conn, sequence_sql)
+
+        apply_patches(conn)
+        after = _fetch_all(conn, sequence_sql)
+        conn.close()
+
+        expected = [("input_sample", doomed_ins_idx), ("project", doomed_project_idx)]
+        assert (before, after) == (expected, expected)
+
+    @pytest.mark.parametrize("column", ["external_project_id", "bioproject_accession"])
+    def test_apply_patches_project_identity_raise_duplicate_err(self, tmp_path, column):
+        """A project identifier shared by two rows fails the patch, naming both."""
+        conn, _keys = _build_populated_db_before_patch(
+            tmp_path, _UNIQUE_PROJECT_ID_PATCH_NUM
+        )
+
+        # Seed two more projects sharing one value of the column under test
+        duplicate_value = "DUP9"
+        clashing_idxs = []
+        for suffix in ("2", "3"):
+            identifiers = {"external_project_id": suffix, "bioproject_accession": None}
+            identifiers[column] = duplicate_value
+            project_idx = _helpers.seed_project(
+                conn, project_name=f"proj{suffix}", **identifiers
+            )
+            clashing_idxs.append(project_idx)
+        conn.commit()
+
+        with pytest.raises(ValueError) as excinfo:
+            apply_patches(conn)
+        version = get_schema_version(conn)
+        conn.close()
+
+        expected_message = (
+            "Project identifiers must be unique; fix these before upgrading: "
+            f"project.{column} 'DUP9' in rows {clashing_idxs[0]}, {clashing_idxs[1]}"
+        )
+        assert (str(excinfo.value), version) == (
+            expected_message,
+            _UNIQUE_PROJECT_ID_PATCH_NUM - 1,
+        )
+
+    @pytest.mark.parametrize("encoding", _helpers.SQLITE_TEXT_ENCODINGS)
+    @pytest.mark.parametrize(("table", "pk_col", "key_name", "column"), _IDENTITY_CASES)
+    @pytest.mark.parametrize("clean_value", _helpers.CLEAN_IDENTITY_VALUES)
+    def test_apply_patches_identity_check_accept_clean_value(
+        self, tmp_path, encoding, table, pk_col, key_name, column, clean_value
+    ):
+        """A clean identity value passes the patch in any text encoding."""
+        conn, row_idx = _build_db_with_identity_value(
+            tmp_path, encoding, table, pk_col, key_name, column, clean_value
+        )
+        apply_patches(conn)
+        stored_value = _fetch_scalar(
+            conn, f"SELECT {column} FROM {table} WHERE {pk_col} = {row_idx}"
+        )
+        version = get_schema_version(conn)
+        conn.close()
+        assert (stored_value, version) == (clean_value, get_latest_version())
+
+    @pytest.mark.parametrize("encoding", _helpers.SQLITE_TEXT_ENCODINGS)
+    @pytest.mark.parametrize(("table", "pk_col", "key_name", "column"), _IDENTITY_CASES)
+    @pytest.mark.parametrize("unclean_value", _helpers.UNCLEAN_IDENTITY_VALUES)
+    def test_apply_patches_identity_check_raise_unclean_value_err(
+        self, tmp_path, encoding, table, pk_col, key_name, column, unclean_value
+    ):
+        """An unclean identity value fails the patch, naming its row."""
+        conn, row_idx = _build_db_with_identity_value(
+            tmp_path, encoding, table, pk_col, key_name, column, unclean_value
+        )
+        with pytest.raises(ValueError, match=rf"{table}\.{column} row {row_idx}:"):
+            apply_patches(conn)
+        version = get_schema_version(conn)
+        conn.close()
+        assert version == _IDENTITY_CHECK_PATCH_NUM - 1
+
+    def test_apply_patches_identity_check_caps_listed_values(self, tmp_path):
+        """Past the cap, the error lists the first values and counts the rest."""
+        conn, keys = _build_populated_db_before_patch(
+            tmp_path, _IDENTITY_CHECK_PATCH_NUM
+        )
+        padded_idxs = [
+            _helpers.seed_input_sample(
+                conn, keys["plate_idx"], keys["project_idx"], sample_name=f" S{i}"
+            )
+            for i in range(25)
+        ]
+        conn.commit()
+        with pytest.raises(ValueError) as excinfo:
+            apply_patches(conn)
+        conn.close()
+        listed_values = [
+            idx
+            for idx in padded_idxs
+            if f"input_sample.sample_name row {idx}:" in str(excinfo.value)
+        ]
+        assert (listed_values, str(excinfo.value).endswith("; and 5 more")) == (
+            padded_idxs[:20],
+            True,
+        )

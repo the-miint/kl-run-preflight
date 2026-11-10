@@ -15,6 +15,32 @@ until the first release is tagged.
 
 ### Added
 
+- **Identity values must be clean** (schema patch `004`): a CHECK on each
+  identity column of `project` and `input_sample` rejects a value that is
+  empty or has surrounding whitespace or invisible characters (every Unicode
+  format character in the Basic Multilingual Plane, such as left-to-right
+  marks and bidi controls, plus NUL). A preflight already holding such a value
+  fails to load, naming the first 20 offending values and counting the rest.
+
+- **Projects and input samples carry a Qiita-MIINT export entity ID** (schema
+  patch `003`): `project.study_export_entity_id`, unique, and
+  `input_sample.biosample_export_entity_id`, not unique, since one biosample
+  can appear as several input samples. Both are nullable, so existing
+  preflights load with them unset. Either one now satisfies its table's
+  identity CHECK, as does `input_sample.matrix_tube_id`. `external_project_id`
+  and `bioproject_accession` become unique too; a preflight in which two
+  projects share either one fails to load, naming each shared value and its
+  rows.
+
+- **`set_input_sample_identifier` and `set_project_identifier` set any one
+  identifier** on an existing preflight, named by `identifier_kind`:
+  `biosample_accession`, `biosample_export_entity_id`, or `matrix_tube_id`
+  on an input sample found by `sample_name`; `bioproject_accession` or
+  `study_export_entity_id` on a project found by `project_name` or
+  `external_project_id`. Each change is logged to `change_log`. Setting a
+  project identifier that another project already holds raises
+  `sqlite3.IntegrityError`.
+
 - **Amplicon prep templates load through the shared pipeline.** A flat,
   section-less prep template is now parsed by `parse_amplicon_prep`, which
   regroups its single table into the same sections a sectioned sheet parses
@@ -24,7 +50,8 @@ until the first release is tagged.
   match; an unrecognised layout fails to load naming its header, rather than
   being silently absorbed. `legacy/flat.py`, which reimplemented parsing,
   population, and reconstruction alongside the omnibus path, is deleted, and
-  no `INSERT` statement remains anywhere under `legacy/`.
+  no `INSERT` statement remains anywhere under `legacy/`. A row whose every
+  cell is blank is skipped whatever the format's delimiter.
 
 - **A format declares whether its replicate well semantics round-trip**
   (`replicates_supported`, schema patch `002`). The loader previously rejected
@@ -219,13 +246,12 @@ until the first release is tagged.
   good_ legacy CSV has a native pair, that the native directory stays paired
   (`.sqlite` ↔ snapshot), and that each committed `.sqlite` matches both its
   snapshot and a fresh load of its source CSV.
-- Content-derived stage signalling for native fixtures: each committed
-  `.sqlite` carries a fact-based filename suffix — bare for a true preflight,
-  `.accessioned` once NCBI accessions are populated — derived from its contents
-  and guarded against drift, so a consumer can pick a fixture matching the
-  stage their code needs. Includes an accessioned PacBio fixture that reads
-  cleanly through `get_pacbio_sample_info` (a true-preflight fixture raises,
-  by design, until its accessions are set).
+- Content-derived fact suffixes for native fixtures: each committed `.sqlite`
+  carries a filename suffix for each fact its contents hold, guarded against
+  drift. `.accessioned` marks a fixture whose `has_external_ids` fact is true;
+  a fixture with no such fact keeps the bare source stem.
+  Includes an accessioned PacBio fixture that reads cleanly through
+  `get_pacbio_sample_info`.
 
 ### Removed
 
@@ -235,6 +261,54 @@ until the first release is tagged.
   values — while asserting `contains_replicates` in four spellings.
 
 ### Changed
+
+- **Breaking: the sample-info readers return identifiers grouped per
+  entity.** `PlatformSampleInfo` from `get_illumina_sample_info`,
+  `get_pacbio_sample_info`, and `get_amplicon_sample_info` replaces
+  `biosample_accession`, `primary_bioproject_accession`, and
+  `secondary_bioproject_accessions` with `biosample` (an
+  `InputSampleIdentifiers`), `primary_project` (a `ProjectIdentifiers`), and
+  `secondary_projects` (a tuple of `ProjectIdentifiers`, one per project,
+  ordered by project name rather than by accession). The record fields are
+  named for their database columns: `biosample_accession`,
+  `ena_sample_accession`, `biosample_export_entity_id`, and `matrix_tube_id`,
+  and `bioproject_accession`, `ena_study_accession`, and
+  `study_export_entity_id`; the ENA fields have no column and are always
+  `None`. The readers now refuse a sample only when its biosample, primary
+  project, or a secondary project carries none of its identifiers, rather
+  than whenever an NCBI accession is missing, and the error category is
+  "missing required identifier".
+
+- **Every project identifier is unique** (schema patch `003`):
+  `external_project_id` and `bioproject_accession` join
+  `study_export_entity_id` in rejecting a value already held by another
+  project in the same preflight. A legacy sheet that gives two projects the
+  same QiitaID fails validation, naming the projects that share it.
+
+- A legacy sheet that names the same `[Bioinformatics]` project in more
+  than one row fails validation, naming the repeated project.
+
+- The update setters strip surrounding whitespace and invisible format
+  characters, such as the zero-width space and byte-order mark, from values,
+  lookup keys, and `reason`, and reject a string left empty. Legacy CSV and
+  amplicon prep-template cells, and a KatharoSeq `rack_id`, are stripped
+  with the same characters, and both legacy loaders skip lines left blank;
+  a blank `rack_id` is stored as None.
+- **Breaking:** a non-str value, key, or `reason` passed to an update setter,
+  including the deprecated aliases, now raises `TypeError`; pass integers
+  such as Qiita study IDs as strings.
+- **Breaking:** `set_prepped_sample_do_not_use` accepts only `True` or
+  `None`, and `set_input_sample_do_not_use` only `True` or `False`; an
+  integer such as `1` or `0`, previously accepted, now raises `ValueError`.
+- `add_katharoseq_sample` raises `ValueError` when given neither
+  `number_of_cells` nor `rack_id`.
+
+- **Schema patches run with foreign-key enforcement suspended**, so a patch
+  can rebuild a table that other tables reference. A patch that introduces a
+  foreign-key violation is rolled back with `sqlite3.IntegrityError`;
+  violations already in the database are not blamed on it. The connection's
+  foreign-key and legacy ALTER TABLE settings are restored afterward, even
+  when a patch fails.
 
 - **Prep-template facts land in typed homes rather than a verbatim store.**
   The prep template previously typed only nine columns, keeping the rest in
@@ -441,12 +515,33 @@ until the first release is tagged.
 
 ### Deprecated
 
+- `set_biosample_accession` and `set_bioproject_accession` are thin aliases
+  for `set_input_sample_identifier` and `set_project_identifier` and emit a
+  `DeprecationWarning`. Their signatures are unchanged and they delegate, so
+  their behavior matches the previous functions' except that they strip and
+  raise `TypeError` as described under Changed, that some error messages
+  differ, and that `set_bioproject_accession` treats an empty-string project
+  key as supplied, so passing it alongside the other key is rejected as
+  supplying both rather than falling back to the other key.
+
 - `open_file` is now a thin alias for `load_file` and emits a
   `DeprecationWarning`. Every read entry point is named `load_*`, and `open`
   implied a handle on the caller's file that no load path has returned since
   the detached-load change. The alias delegates, so behaviour is identical.
 
 ### Fixed
+
+- `set_prepped_sample_do_not_use` no longer stores an explicit "not flagged"
+  value for `0`; `update_lane` rejects a lane that is not a positive integer;
+  and `set_illumina_run_setting` raises `ValueError` on a run with no
+  Illumina settings row.
+
+- The sample-info readers no longer report the plate's primary project's
+  BioProject accession for a non-control sample whose own project is not the
+  plate's primary project and has no accession. Each sample's identifiers now
+  come from its own effective project only, so such a non-control sample is
+  refused as missing an identifier instead of being attributed to a different
+  project. Controls, which take the plate's primary project, are unaffected.
 
 - CI lint enforces a stated ruff rule set (`E4`, `E7`, `E9`, `F`) rather than
   inheriting ruff's implicit default, which shifts between ruff releases and so

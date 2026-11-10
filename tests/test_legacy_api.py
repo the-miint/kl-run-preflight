@@ -17,10 +17,10 @@ from run_preflight import (
     save_legacy_sample_id_map_csv,
     set_input_sample_do_not_use,
 )
-from run_preflight.constants import IN_MEMORY_PATH
+from run_preflight.constants import COL_QIITA_ID, COL_SAMPLE_PROJECT, IN_MEMORY_PATH
 from run_preflight.legacy import LegacyExtraColumnWarning
 from run_preflight.legacy.roundtrip import roundtrip_via_api
-from run_preflight.legacy.validate import validate_sections
+from run_preflight.legacy.validate import _check_qiita_ids, validate_sections
 
 from . import _helpers
 from ._helpers import open_db
@@ -280,18 +280,7 @@ class TestLegacyApi(unittest.TestCase):
         db_path = self.tmp_dir / "no_qid.db"
         conn = create_db(str(db_path))
         try:
-            project_idx = _helpers.seed_project(
-                conn,
-                project_name="proj_no_qid",
-                external_project_id=None,
-                bioproject_accession="PRJNA001",
-            )
-            plate_idx = _helpers.seed_plate(conn, project_idx)
-            run_idx = _helpers.seed_processing_run(conn)
-            _helpers.seed_sample_chain(
-                conn, plate_idx, project_idx, run_idx, sample_name="S1"
-            )
-            conn.commit()
+            _helpers.seed_run_with_project_lacking_qiita_id(conn)
         finally:
             conn.close()
 
@@ -322,6 +311,102 @@ class TestLegacyApi(unittest.TestCase):
         # locate the offending cell in a multi-section file.
         db_path = self.tmp_dir / "empty_qid.db"
         with self.assertRaisesRegex(ValueError, r"Bioinformatics.*QiitaID.*empty"):
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
+        self.assertFalse(db_path.exists())
+
+    def test_load_legacy_csv_rejects_shared_qiita_id(self):
+        # Two projects sharing a QiitaID would violate external_project_id's
+        # uniqueness; validation names both projects instead
+        src = (
+            DATA_DIR
+            / "good_yyyy_mm_dd_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"  # noqa: E501
+        ).read_text()
+        corrupted = src.replace("TestProjB_10001,10001,", "TestProjB_10001,12986,")
+        bad_csv = self.tmp_dir / "shared_qid.csv"
+        bad_csv.write_text(corrupted)
+
+        db_path = self.tmp_dir / "shared_qid.db"
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Bioinformatics.*QiitaID '12986'.*Celeste_Adaptation_12986.*TestProjB_10001",
+        ):
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
+        self.assertFalse(db_path.exists())
+
+    def test_load_legacy_csv_rejects_empty_qiita_ids_without_sharing_err(self):
+        # Several empty QiitaID cells are reported once as empty, never as
+        # one QiitaID shared by those projects
+        src = (
+            DATA_DIR
+            / "good_yyyy_mm_dd_Celeste_Adaptation_12986_16_17_18_21_matrix_samplesheet_novaseq.csv"  # noqa: E501
+        ).read_text()
+        corrupted = src.replace(
+            "Celeste_Adaptation_12986,12986,", "Celeste_Adaptation_12986,,"
+        ).replace("TestProjB_10001,10001,", "TestProjB_10001,,")
+        bad_csv = self.tmp_dir / "two_empty_qids.csv"
+        bad_csv.write_text(corrupted)
+
+        db_path = self.tmp_dir / "two_empty_qids.db"
+        with self.assertRaises(ValueError) as ctx:
+            migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
+        expected = (
+            "Validation errors:\n  [Bioinformatics] QiitaID cell is empty; "
+            "every project requires a non-empty value"
+        )
+        self.assertEqual(str(ctx.exception), expected)
+
+    def test_load_legacy_csv_rejects_duplicated_project_row(self):
+        # A repeated Bioinformatics row is reported as a duplicated project,
+        # not as a QiitaID shared by that project with itself
+        src = (DATA_DIR / "good_standard_metagv90.csv").read_text()
+        project_row = "Project_1111,1111,False,AACC,GGTT,False,Knight Lab Kapa HP,Eqiiperiment,,,\n"  # noqa: E501
+        expected = (
+            "Validation errors:\n  [Bioinformatics] Sample_Project "
+            "'Project_1111' appears in more than one row; every project "
+            "requires exactly one"
+        )
+        # The project is reported once however many times its row repeats
+        for row_count in (2, 3):
+            with self.subTest(row_count=row_count):
+                corrupted = src.replace(project_row, project_row * row_count)
+                bad_csv = self.tmp_dir / f"dup_project_row_{row_count}.csv"
+                bad_csv.write_text(corrupted)
+
+                db_path = self.tmp_dir / f"dup_project_row_{row_count}.db"
+                with self.assertRaises(ValueError) as ctx:
+                    migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
+                self.assertEqual(str(ctx.exception), expected)
+
+    def test__check_qiita_ids_skips_absent_project_names(self):
+        # Empty or missing Sample_Project cells are never reported as one
+        # repeated project
+        cases = {
+            "empty": [
+                {COL_SAMPLE_PROJECT: "", COL_QIITA_ID: "1"},
+                {COL_SAMPLE_PROJECT: "", COL_QIITA_ID: "2"},
+            ],
+            "missing_column": [{COL_QIITA_ID: "1"}, {COL_QIITA_ID: "2"}],
+        }
+        for case_name, rows in cases.items():
+            with self.subTest(case=case_name):
+                errors = _check_qiita_ids("Bioinformatics", rows)
+                self.assertEqual(errors, [])
+
+    def test_load_legacy_csv_reports_missing_sample_project_column(self):
+        # A Bioinformatics section lacking Sample_Project is reported as a
+        # missing column rather than crashing the QiitaID check
+        src = (DATA_DIR / "good_test1_Skin_replicates_15459_novaseq.csv").read_text()
+        corrupted = src.replace(
+            "Sample_Project,QiitaID,BarcodesAreRC,",
+            "Sample_Projectx,QiitaID,BarcodesAreRC,",
+        )
+        bad_csv = self.tmp_dir / "no_sample_project.csv"
+        bad_csv.write_text(corrupted)
+
+        db_path = self.tmp_dir / "no_sample_project.db"
+        with self.assertRaisesRegex(
+            ValueError, r"\[Bioinformatics\] missing columns: \['Sample_Project'\]"
+        ):
             migrate_legacy_csv_to_db_file(str(bad_csv), str(db_path))
         self.assertFalse(db_path.exists())
 
@@ -500,6 +585,40 @@ class TestSaveLegacySampleIdMapCsv(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, r"no illumina_sample rows"):
             save_legacy_sample_id_map_csv(self.conn, str(self.out_path))
+
+
+class TestLoadLegacyCsvInvisibleChars(unittest.TestCase):
+    def test_load_legacy_csv_text_ignores_invisible_format_chars(self):
+        # A leading byte-order mark, a zero-width space beside a section
+        # label, or a row of only zero-width spaces does not hide structure
+        src = (DATA_DIR / "good_standard_metagv90.csv").read_text()
+        src_lines = src.splitlines(keepends=True)
+        data_label_pos = next(
+            i for i, line in enumerate(src_lines) if line.startswith("[Data]")
+        )
+        zwsp_row_lines = [
+            *src_lines[: data_label_pos + 1],
+            "\u200b,\u200b\n",
+            *src_lines[data_label_pos + 1 :],
+        ]
+        variants = {
+            "leading_bom": "\ufeff" + src,
+            "zwsp_after_data_label": src.replace("[Data]", "[Data]\u200b", 1),
+            "zwsp_only_row_in_data": "".join(zwsp_row_lines),
+        }
+        expected_conn = load_legacy_csv_text(src)
+        try:
+            expected_count = _helpers.count_input_samples(expected_conn)
+        finally:
+            expected_conn.close()
+        for variant_name, text in variants.items():
+            with self.subTest(variant=variant_name):
+                conn = load_legacy_csv_text(text)
+                try:
+                    count = _helpers.count_input_samples(conn)
+                finally:
+                    conn.close()
+                self.assertEqual(count, expected_count)
 
 
 if __name__ == "__main__":
