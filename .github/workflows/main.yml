@@ -20,8 +20,10 @@ jobs:
         fetch-depth: 0
 
     - name: Set up Conda
-      uses: conda-incubator/setup-miniconda@v2
+      uses: conda-incubator/setup-miniconda@v3
       with:
+        miniconda-version: latest
+        installation-dir: ${{ runner.temp }}/miniconda3
         auto-update-conda: true
 
     - name: Install conda environment
